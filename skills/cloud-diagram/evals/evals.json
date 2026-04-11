@@ -1,0 +1,69 @@
+{
+  "skill_name": "cloud-diagram",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "/cloud-diagram A 3-tier AWS web app with ALB, EC2 in private subnets, and RDS Aurora across two AZs",
+      "expected_output": "Creates a .drawio file with AWS Cloud, Region, VPC, AZ, subnet containers; ALB, EC2, Aurora icons; proper edge routing with protocol labels",
+      "files": [],
+      "expectations": [
+        "Output file has .drawio extension",
+        "Contains AWS Cloud, Region, and VPC container hierarchy",
+        "Uses correct aws4 shape names (resIcon=mxgraph.aws4.*)",
+        "All edge elements contain <mxGeometry relative='1' as='geometry' /> child",
+        "Service icon dimensions are 50x50",
+        "No HTML tags in label text",
+        "Edges include protocol:port labels"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "/cloud-diagram Azure web app with App Service, Azure SQL, and Blob Storage behind Application Gateway in a VNet",
+      "expected_output": "Creates a .drawio file with Subscription, Resource Group, VNet, Subnet containers; correct Azure SVG image references",
+      "files": [],
+      "expectations": [
+        "Uses Azure image references (img/lib/azure2/...)",
+        "Contains VNet container with strokeWidth=4 and correct Azure styling",
+        "Contains subnet containers with dashed borders",
+        "Does not use AWS shape names",
+        "All mentioned services are present in the diagram"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "/cloud-diagram Serverless API on AWS: API Gateway, Lambda, DynamoDB with Cognito auth",
+      "expected_output": "Creates a serverless architecture diagram with correct service icons and flow edges, without adding unrequested services",
+      "files": [],
+      "expectations": [
+        "Does NOT add services the user did not mention (no EC2, no RDS, no VPC unless user specified)",
+        "API Gateway, Lambda, DynamoDB, and Cognito are present",
+        "Edges show request flow direction with labels",
+        "Uses correct aws4 shape names for all four services"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "/cloud-diagram GCP data pipeline: Pub/Sub ingestion, Dataflow processing, BigQuery storage, Looker dashboards",
+      "expected_output": "Creates a GCP data pipeline diagram with correct gcp2 shapes and left-to-right data flow",
+      "files": [],
+      "expectations": [
+        "Uses mxgraph.gcp2.* shape names",
+        "Contains Pub/Sub, Dataflow, BigQuery, and Looker",
+        "Shows data flow direction with labeled edges",
+        "Uses GCP blue colour scheme (#4285F4)"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "/cloud-diagram png A simple AWS architecture with S3, CloudFront, and Route 53",
+      "expected_output": "Creates a .drawio file and attempts PNG export if draw.io CLI is available",
+      "files": [],
+      "expectations": [
+        "Creates a .drawio file first",
+        "Attempts to export to PNG with --embed-diagram flag",
+        "Contains S3, CloudFront, and Route 53 with correct shapes",
+        "Does not add unnecessary VPC or subnet containers for a CDN architecture"
+      ]
+    }
+  ]
+}

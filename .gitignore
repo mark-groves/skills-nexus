@@ -1,0 +1,4 @@
+working/
+skills/*/working/
+__pycache__/
+*.pyc

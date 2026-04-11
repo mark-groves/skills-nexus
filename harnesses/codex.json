@@ -1,0 +1,6 @@
+{
+  "name": "codex",
+  "skill_layout": "directory",
+  "user_install_root": "~/.codex/skills",
+  "project_install_root": ".codex/skills"
+}
