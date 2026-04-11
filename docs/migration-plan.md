@@ -11,7 +11,6 @@ harnesses.
 - Reusable skills and their bundled scripts/references/assets
 - Skill inventory and portability metadata
 - Harness deployment adapters
-- Shared templates for creating new skills
 
 ## What Stays In Harness Repos
 

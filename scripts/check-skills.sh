@@ -8,9 +8,7 @@ check_pattern() {
   local pattern="$1"
   local label="$2"
 
-  if rg -n "$pattern" \
-    "$REPO_DIR/skills" \
-    "$REPO_DIR/templates/skill/claude-template/SKILL.md"
+  if rg -n "$pattern" "$REPO_DIR/skills"
   then
     echo "Found forbidden install-discovery pattern: $label" >&2
     status=1

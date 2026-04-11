@@ -22,9 +22,6 @@ The current migration strategy is pragmatic:
 ```text
 skills/
   <skill-name>/              # Canonical skill folders
-templates/
-  skill/
-    claude-template/         # Starter template from the original harness
 harnesses/
   claude-code.json           # Install roots and adapter metadata
   codex.json

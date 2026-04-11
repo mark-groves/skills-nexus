@@ -1,8 +1,0 @@
-{
-  "schema_version": 1,
-  "id": "skill-name",
-  "path": ".",
-  "canonical_format": "skill-directory",
-  "status": "draft",
-  "portable": true
-}
