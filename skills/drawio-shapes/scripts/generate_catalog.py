@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate cloud-diagram markdown catalogs from extracted draw.io JSON."""
+"""Generate import-ready cloud-diagram catalog fragments from extracted JSON."""
 
 from __future__ import annotations
 
@@ -10,8 +10,6 @@ from pathlib import Path
 
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 WORKING_ROOT = SKILL_ROOT / "working"
-CLOUD_DIAGRAM_ROOT = SKILL_ROOT.parent / "cloud-diagram"
-GENERATED_MARKER = "<!-- GENERATED BELOW -->"
 
 GCP_STENCIL_BASE = (
     "sketch=0;outlineConnect=0;fontColor=#232F3E;fillColor=#4285F4;"
@@ -142,25 +140,20 @@ DISPLAY_NAMES = {
 PROVIDERS = {
     "AWS4": {
         "library": "AWS4",
-        "target": CLOUD_DIAGRAM_ROOT / "references/aws4-shapes.md",
-        "sources": [
-            {
-                "path": WORKING_ROOT / "AWS4_extracted.json",
-                "family": "AWS4",
-            }
-        ],
+        "fragment_name": "aws4-shapes.generated.md",
+        "sources": [{"filename": "AWS4_extracted.json", "family": "AWS4"}],
     },
     "GCP2": {
         "library": "GCP2",
-        "target": CLOUD_DIAGRAM_ROOT / "references/gcp-shapes.md",
+        "fragment_name": "gcp-shapes.generated.md",
         "sources": [
             {
-                "path": WORKING_ROOT / "GCP2_extracted.json",
+                "filename": "GCP2_extracted.json",
                 "family": "GCP2",
                 "start_category": "GeneralIcons",
             },
             {
-                "path": WORKING_ROOT / "GCPIcons_extracted.json",
+                "filename": "GCPIcons_extracted.json",
                 "family": "GCPIcons",
                 "category_prefix": "GCPIcons",
                 "suffix_overlaps_with_primary": "GCPIcons",
@@ -169,13 +162,8 @@ PROVIDERS = {
     },
     "Azure2": {
         "library": "Azure2",
-        "target": CLOUD_DIAGRAM_ROOT / "references/azure-shapes.md",
-        "sources": [
-            {
-                "path": WORKING_ROOT / "Azure2_extracted.json",
-                "family": "Azure2",
-            }
-        ],
+        "fragment_name": "azure-shapes.generated.md",
+        "sources": [{"filename": "Azure2_extracted.json", "family": "Azure2"}],
     },
 }
 
@@ -215,54 +203,6 @@ def require_file(path: Path, description: str) -> Path:
     return path
 
 
-def preserve_header(target: Path) -> str:
-    text = require_file(
-        target,
-        "same-tree cloud-diagram reference file",
-    ).read_text()
-    marker = f"{GENERATED_MARKER}\n"
-    if marker not in text:
-        raise RuntimeError(
-            f"{target} is missing the required generated marker: {GENERATED_MARKER}"
-        )
-    header, _ = text.split(marker, 1)
-    return header.rstrip() + "\n\n" + GENERATED_MARKER + "\n\n"
-
-
-def refresh_header_summary(library: str, header: str, final_count: int) -> str:
-    replacements = {
-        "AWS4": (
-            r"A (?:curated reference of ~90 commonly used|complete catalog of \d+ unique) "
-            r"AWS(?:4)? .*?`mxgraph\.aws4` stencil library\. Every style string is "
-            r"copy-paste ready\nfor draw\.io XML generation\.",
-            (
-                f"A complete catalog of {final_count} unique AWS4 shapes extracted from the\n"
-                "`mxgraph.aws4` stencil library. Every style string is copy-paste ready\n"
-                "for draw.io XML generation."
-            ),
-        ),
-        "GCP2": (
-            r"Complete catalog of .*?Google Cloud Platform shapes extracted\n"
-            r"from the jgraph/drawio .*?sidebar librar(?:y|ies) \(\d+ entries\)\.",
-            (
-                "Complete catalog of unique Google Cloud Platform shapes extracted\n"
-                f"from the jgraph/drawio GCP2 and GCPIcons sidebar libraries ({final_count} entries)."
-            ),
-        ),
-        "Azure2": (
-            r"A (?:curated catalog of ~80 commonly used|complete catalog of \d+ unique) "
-            r"Azure(?:2)? service shapes for draw\.io\ndiagram generation using SVG image references\.",
-            (
-                f"A complete catalog of {final_count} unique Azure2 service shapes for draw.io\n"
-                "diagram generation using SVG image references."
-            ),
-        ),
-    }
-
-    pattern, replacement = replacements[library]
-    return re.sub(pattern, replacement, header, count=1)
-
-
 def gcp_style(entry: dict) -> str | None:
     entry_type = entry["type"]
     if entry_type in {"stencil", "service_card", "user_device_card", "product_card_logo"}:
@@ -285,13 +225,13 @@ def azure_style(entry: dict) -> str:
 
 
 def display_size(library: str, category: str, entry: dict) -> tuple[int, int]:
-    def fallback(value):
+    def fallback(value: object) -> int:
         if value is None:
             return 50
-        value = float(value)
-        if value <= 5:
-            return int(round(value * 100))
-        return int(round(value))
+        float_value = float(value)
+        if float_value <= 5:
+            return int(round(float_value * 100))
+        return int(round(float_value))
 
     width = int(round(entry["width"])) if "width" in entry else fallback(entry.get("width_scale"))
     height = int(round(entry["height"])) if "height" in entry else fallback(entry.get("height_scale"))
@@ -333,12 +273,12 @@ def render_entry(library: str, category: str, entry: dict) -> list[str]:
     return lines
 
 
-def categories_from_source(source: dict) -> list[tuple[str, list[dict]]]:
+def categories_from_source(source: dict, input_dir: Path) -> list[tuple[str, list[dict]]]:
     source_path = require_file(
-        source["path"],
-        "extracted JSON in drawio-shapes/working (run scripts/extract.py first)",
+        input_dir / source["filename"],
+        "extracted JSON (run scripts/extract.py first or use --input-dir)",
     )
-    data = json.loads(source_path.read_text())
+    data = json.loads(source_path.read_text(encoding="utf-8"))
     categories = list(data["categories"].items())
     start_category = source.get("start_category")
     if not start_category:
@@ -350,16 +290,16 @@ def categories_from_source(source: dict) -> list[tuple[str, list[dict]]]:
     return categories
 
 
-def load_provider_categories(config: dict) -> list[tuple[str, list[dict]]]:
-    categories = []
+def load_provider_categories(config: dict, input_dir: Path) -> list[tuple[str, list[dict]]]:
+    categories: list[tuple[str, list[dict]]] = []
     primary_family = config["sources"][0]["family"]
-    primary_names = set()
+    primary_names: set[str] = set()
 
     for source in config["sources"]:
         prefix = source.get("category_prefix", "")
         family = source["family"]
         suffix_family = source.get("suffix_overlaps_with_primary")
-        for category, entries in categories_from_source(source):
+        for category, entries in categories_from_source(source, input_dir):
             adjusted_entries = []
             for entry in entries:
                 clone = dict(entry)
@@ -422,18 +362,16 @@ def dedupe_entries(library: str, categories: list[tuple[str, list[dict]]]):
     return deduped, total_before, removed_duplicates, removed_categories
 
 
-def build_catalog(provider_key: str) -> dict:
+def build_fragment(provider_key: str, input_dir: Path) -> dict:
     config = PROVIDERS[provider_key]
-    categories = load_provider_categories(config)
+    categories = load_provider_categories(config, input_dir)
     deduped, total_before, removed_duplicates, removed_categories = dedupe_entries(
         config["library"],
         categories,
     )
 
     final_count = sum(len(entries) for _, entries in deduped)
-    header = preserve_header(config["target"])
-    header = refresh_header_summary(config["library"], header, final_count)
-    lines = [header.rstrip(), ""]
+    lines = []
     for category, entries in deduped:
         lines.append(f"## {display_name(config['library'], category)}")
         lines.append("")
@@ -442,11 +380,11 @@ def build_catalog(provider_key: str) -> dict:
 
     output = "\n".join(lines).strip() + "\n"
     output = re.sub(r"\n{3,}", "\n\n", output)
-    config["target"].write_text(output)
 
     return {
         "library": config["library"],
-        "target": config["target"],
+        "fragment_name": config["fragment_name"],
+        "text": output,
         "total_before": total_before,
         "removed_duplicates": removed_duplicates,
         "removed_categories": removed_categories,
@@ -456,12 +394,22 @@ def build_catalog(provider_key: str) -> dict:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Generate cloud-diagram markdown catalogs from extracted draw.io JSON."
+        description="Generate import-ready cloud-diagram markdown fragments from extracted draw.io JSON."
     )
     parser.add_argument(
         "providers",
         nargs="*",
         help="Providers to generate: aws, gcp, azure, or all (default: all)",
+    )
+    parser.add_argument(
+        "--input-dir",
+        default=str(WORKING_ROOT),
+        help="Directory containing extracted JSON files (default: drawio-shapes/working)",
+    )
+    parser.add_argument(
+        "--output-dir",
+        default=".",
+        help="Directory for generated *.generated.md fragments (default: current working directory)",
     )
     return parser.parse_args()
 
@@ -482,16 +430,22 @@ def normalize_provider_args(values: list[str]) -> list[str]:
     return normalized
 
 
-def main():
+def main() -> None:
     args = parse_args()
+    input_dir = Path(args.input_dir).resolve()
+    output_dir = Path(args.output_dir).resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)
+
     try:
         for provider_key in normalize_provider_args(args.providers):
-            stats = build_catalog(provider_key)
+            stats = build_fragment(provider_key, input_dir)
+            fragment_path = output_dir / stats["fragment_name"]
+            fragment_path.write_text(stats["text"], encoding="utf-8")
             print(
                 f"{stats['library']}: {stats['total_before']} -> {stats['final_count']} "
                 f"entries, removed {stats['removed_duplicates']} duplicates, "
                 f"removed {stats['removed_categories']} empty categories, "
-                f"wrote {stats['target']}"
+                f"wrote {fragment_path}"
             )
     except RuntimeError as err:
         raise SystemExit(str(err))

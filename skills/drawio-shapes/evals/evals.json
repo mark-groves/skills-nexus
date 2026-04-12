@@ -17,17 +17,17 @@
     {
       "id": 2,
       "prompt": "/drawio-shapes update the GCP shape catalog for cloud-diagram",
-      "expected_output": "Extracts GCP2 and GCPIcons, produces a merged markdown catalog matching the existing gcp-shapes.md format, preserves the hand-maintained header above the generated marker, and keeps overlapping icon-family variants addressable",
+      "expected_output": "Extracts GCP2 and GCPIcons, produces an import-ready gcp-shapes.generated.md fragment, keeps overlapping icon-family variants addressable, and stops at the generated artifact without invoking sibling-skill import logic",
       "files": [],
       "assertions": [
-        "A .md file exists in outputs",
+        "A gcp-shapes.generated.md file exists in outputs",
         "Entries follow ### Name / - **Style:** / - **Size:** pattern",
-        "Contains colour palette and group/container style sections",
+        "Fragment contains generated content only and no cloud-diagram header prelude",
         "More service entries than the original ~50 shapes",
         "Style strings contain shape=mxgraph.gcp2.* references",
         "GCPIcons categories are present in the merged output",
         "At least one overlapping GCP icon name is preserved with a ' (GCPIcons)' suffix",
-        "The generated markdown replaces content only below an explicit GENERATED marker"
+        "Does not instruct the user to run sibling-skill scripts as part of this skill"
       ]
     },
     {
@@ -59,14 +59,16 @@
     {
       "id": 5,
       "prompt": "/drawio-shapes refresh cloud-diagram catalogs for AWS, GCP, and Azure and run an end-to-end check",
-      "expected_output": "Downloads AWS4, GCP2, GCPIcons, and Azure2, runs extract.py for each, regenerates the cloud-diagram catalogs with the committed generator script, and then attempts a real diagram-generation plus PNG export check when a runnable cloud-diagram implementation exists",
+      "expected_output": "Downloads AWS4, GCP2, GCPIcons, and Azure2, runs extract.py for each, regenerates provider-specific import fragments with the committed generator script, verifies the generated artifacts are structurally complete, and states that downstream import or render checks belong to the consumer after handoff",
       "files": [],
       "assertions": [
         "Uses gh api blob downloads for each upstream sidebar file",
         "Uses the committed scripts/generate_catalog.py rather than a throwaway generator in working/",
         "AWS4 is treated as style-expression extraction, not generic base64 decoding",
         "Merged GCP output includes both GCP2 and GCPIcons families",
-        "If diagram generation is not runnable in the repo, the limitation is stated explicitly instead of claiming a full render test passed"
+        "Does not mutate cloud-diagram directly during fragment generation",
+        "Does not invoke sibling-skill importers or renderers from this skill",
+        "States explicitly when downstream validation must happen in the consumer after handoff"
       ]
     }
   ]

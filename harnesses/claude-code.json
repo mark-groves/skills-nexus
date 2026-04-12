@@ -1,6 +1,4 @@
 {
-  "name": "claude-code",
-  "skill_layout": "directory",
   "user_install_root": "~/.claude/skills",
   "project_install_root": ".claude/skills"
 }

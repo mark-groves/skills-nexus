@@ -1,0 +1,22 @@
+{
+  "source": "fixture GCPIcons",
+  "library": "GCPIcons",
+  "categories": {
+    "Compute": [
+      {
+        "name": "BigQuery",
+        "type": "vertex_icon",
+        "base64_svg": "PHN2Zy8+",
+        "width": 50,
+        "height": 50
+      },
+      {
+        "name": "CloudRun",
+        "type": "vertex_icon",
+        "base64_svg": "PHN2Zy8+",
+        "width": 50,
+        "height": 50
+      }
+    ]
+  }
+}

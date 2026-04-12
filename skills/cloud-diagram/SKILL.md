@@ -64,6 +64,12 @@ runtime.
 catalog is the authority for visual styling — containers, icons,
 edges, and labels.
 
+When the bundled shape catalogs need refresh, this skill uses its own
+bundled import tooling to validate and update the references it ships
+with. That importer is part of the skill implementation; normal
+diagram-generation runtime still consumes only the bundled reference
+files above.
+
 ## Step 4 — Select template
 
 If the architecture pattern matches a pre-built template, read it from

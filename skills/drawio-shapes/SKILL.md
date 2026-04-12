@@ -4,9 +4,9 @@ description: >-
   Extract and catalog draw.io shape libraries from the jgraph/drawio
   GitHub repo. Use this skill whenever the user wants to pull the
   latest shapes from draw.io, update or refresh a cloud provider shape
-  catalog (like gcp-shapes.md, aws4-shapes.md, or azure-shapes.md),
-  see what icons are available for GCP/AWS/Azure in draw.io, or keep
-  the cloud-diagram skill's shape references in sync with upstream.
+  catalog fragment, see what icons are available for GCP/AWS/Azure in
+  draw.io, or prepare downstream-consumable shape artifacts by
+  artifact handoff.
   Even if the user just says "update the shapes" or "refresh the icon
   library", this is the right skill.
 user-invocable: true
@@ -26,10 +26,9 @@ sidebar JS files from the jgraph/drawio GitHub repo, run the bundled
 extraction script to parse icon definitions, and produce structured
 catalogs that other skills (like cloud-diagram) can consume.
 
-Use only bundled files from this skill's own directory. For catalog
-refreshes, update the sibling `cloud-diagram` skill in the same
-canonical skills tree. Do not probe user-level or project-level
-install roots at runtime.
+Use only bundled files from this skill's own directory plus user-
+provided inputs. Do not probe user-level or project-level install
+roots at runtime, and do not write into sibling skills.
 
 ## Step 1 — Identify the target library
 
@@ -50,7 +49,8 @@ files, download methods, and shape encoding formats.
 Use the GitHub API via `gh` to download — the files are too large for
 the contents API, so use the git blob endpoint. If `gh auth status`
 shows a broken local token, retry the public fetch with `env GH_TOKEN=`
-to bypass the bad credential. Create `working/` first because it is
+to bypass the bad credential. Create the skill-local working directory
+first because it is
 gitignored and may not exist in a fresh checkout:
 
 ```bash
@@ -63,7 +63,7 @@ sha=$(env GH_TOKEN= gh api repos/jgraph/drawio/contents/src/main/webapp/js/diagr
 env GH_TOKEN= gh api repos/jgraph/drawio/git/blobs/$sha -q '.content' | base64 -d > working/<FILE>
 ```
 
-Save downloaded files to the `working/` directory in this skill.
+Save downloaded files to the skill-local working directory.
 
 ## Step 3 — Extract shapes
 
@@ -94,9 +94,9 @@ that as a hard failure and update the patterns before proceeding.
 
 ## Step 4 — Output the catalog
 
-Ask the user which format they want. Default to JSON if they don't
-specify. If the user mentions updating a shapes file or the
-cloud-diagram skill, produce the markdown catalog.
+If the user only wants machine-readable data, the extracted JSON is the
+output. If the user wants to refresh `cloud-diagram` or another
+consumer, generate import-ready markdown fragments.
 
 ### JSON (for programmatic use)
 
@@ -125,23 +125,27 @@ The extraction script already produces this. The JSON at
 }
 ```
 
-### Markdown catalog (for cloud-diagram skill)
+### Markdown fragment (for downstream consumers)
 
 Use the committed generator at `scripts/generate_catalog.py` rather
-than writing one ad hoc in `working/`. This keeps the refresh workflow
+than writing one ad hoc in the working directory. This keeps the
+refresh workflow
 reproducible:
 
 ```bash
-python scripts/generate_catalog.py <provider>
+python scripts/generate_catalog.py <provider> --output-dir <destination>
 ```
 
-The output markdown format is one `## Category` section per
-extracted category, with one `### Entry` per shape. Preserve the
-catalog's header sections (naming convention, colour palette,
-group/container styles, service card pattern) at the top. The
-cloud-diagram reference files must contain an explicit
-`<!-- GENERATED BELOW -->` marker; the generator replaces everything
-after that marker and leaves the hand-maintained header untouched.
+The generator writes provider-specific fragments to the current working
+directory by default:
+
+- AWS → `aws4-shapes.generated.md`
+- GCP → `gcp-shapes.generated.md`
+- Azure → `azure-shapes.generated.md`
+
+Each fragment contains only the generated section content that belongs
+below the consumer marker. It does not include consumer-specific
+headers and it does not mutate sibling files.
 
 #### Building style strings by entry type
 
@@ -207,26 +211,20 @@ both families, keep both entries and suffix the `GCPIcons` variant as
 
 #### Verifying completeness
 
-After generating and cleaning the catalog, report:
+After generating and cleaning the fragment, report:
 
 - Total entries before and after deduplication
 - Number of entries removed as duplicates
 - Number of categories removed as empty
 - Final unique entry count
 
-Save to the cloud-diagram catalog used by the provider:
-
-- GCP → `../cloud-diagram/references/gcp-shapes.md`
-- AWS → `../cloud-diagram/references/aws4-shapes.md`
-- Azure → `../cloud-diagram/references/azure-shapes.md`
-
 If the user asks for an end-to-end test, do not stop at catalog
-refresh. Regenerate the catalogs, then attempt to generate one sample
-AWS, GCP, and Azure `.drawio` file and export them via the `drawio`
-CLI. If the sibling `cloud-diagram` skill in this canonical tree does
-not contain a runnable implementation, report that limitation
-explicitly and treat the catalog refresh pipeline as the deepest
-available test.
+refresh. Regenerate the fragments and verify that each requested
+provider produces a non-empty, import-ready markdown fragment with the
+expected category and entry structure. Do not invoke sibling-skill
+importers or renderers from this skill. If the user wants downstream
+import or rendering validation, state that it must be performed by the
+consumer after artifact handoff.
 
 ## Step 5 — Report results
 
@@ -236,7 +234,8 @@ Summarize what was extracted:
 - Breakdown by category
 - Any categories that returned 0 results (may indicate a new
   encoding pattern that needs handling)
-- File paths of outputs
+- Extracted JSON paths
+- Generated fragment paths
 
 ## Adapting to new encoding patterns
 

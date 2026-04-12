@@ -33,7 +33,7 @@ env GH_TOKEN= gh api "repos/jgraph/drawio/git/blobs/$sha" \
   -q '.content' | base64 -d > "working/<FILE>"
 ```
 
-Write downloaded files into the skill-local `working/` directory.
+Write downloaded files into the skill-local working directory.
 
 If `gh auth status` reports a broken local token, keep `env GH_TOKEN=`
 in place for public-repo fetches so bad credentials do not poison
@@ -224,8 +224,11 @@ this.addGCP2UserProductCardSet('Compute\nEngine', 130, 170, ...);
 - The committed markdown generator lives at
   `scripts/generate_catalog.py` in the `drawio-shapes` skill
   directory.
-- The cloud-diagram reference files should preserve their hand-written
-  prelude above an explicit `<!-- GENERATED BELOW -->` marker.
+- The generator writes import-ready fragments such as
+  `aws4-shapes.generated.md`, `gcp-shapes.generated.md`, and
+  `azure-shapes.generated.md`.
+- Downstream import is owned by the consuming skill or repository.
+  This skill stops at producing the fragment artifacts.
 - Deduplicate repeated entries only within a single library family.
   For example, shrink duplicate `GCP2` icon variants down to one entry,
   but keep overlapping `GCPIcons` variants distinct.

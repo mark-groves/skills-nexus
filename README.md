@@ -1,89 +1,46 @@
 # skills-nexus
 
-Portable, reusable agentic skills with harness-specific deployment.
+`skills-nexus` is the portable home for reusable agent skills. The stable contract is simple: each skill lives in `skills/<name>/`, harness config stays thin, deployment is explicit, and repo validation is offline.
 
 ## Purpose
 
-`skills-nexus` is the source of truth for reusable skills that should
-outlive any single agent harness. The repository keeps skills in one
-place, tracks their portability status, and provides deployment scripts
-that install them into a specific harness at either user or project
-scope.
+This repository keeps reusable skills in one place so they can be installed into different harnesses without changing the skill artifact itself. The top-level tooling exists to deploy those skills and to verify that the repo still matches the contract.
 
-The current migration strategy is pragmatic:
+## Repo Contract
 
-- Keep each existing skill folder intact as the canonical source.
-- Remove repo-specific and harness-specific path assumptions.
-- Add thin harness adapters around the skill folders instead of
-  duplicating the skills per harness.
+- `skills/<name>/` is the portable artifact.
+- An immediate child of `skills/` is a valid skill only if it contains `SKILL.md`.
+- Harness manifests are thin install-root JSON only, with the harness id inferred from the manifest filename.
+- Top-level helper scripts are limited to install/deploy and validation concerns.
+- `README.md` is the single repo guide.
+- What this repo is not: no harness-specific skill variants, no shared runtime content outside skill folders, no generic automation dumping ground.
 
-## Repository Layout
+## Install/Deploy Usage
 
-```text
-skills/
-  <skill-name>/              # Canonical skill folders
-harnesses/
-  claude-code.json           # Install roots and adapter metadata
-  codex.json
-catalog/
-  skills.json                # Skill inventory and migration notes
-docs/
-  migration-plan.md          # Recommended migration sequence
-scripts/
-  deploy-skills.sh           # Install selected skills by harness/scope
-```
-
-## Current Position
-
-- Source skills migrated from `claude-crucible`: `commit`, `pr`,
-  `cloud-diagram`, `drawio-shapes`
-- Initial harness adapters scaffolded for `claude-code` and `codex`
-- Canonical skills use bundled files via skill-root-relative paths;
-  harnesses own install discovery and precedence
-
-## Deployment
-
-The deploy script supports:
-
-- `--harness <name>`: target harness adapter
-- `--scope user|project`: install to user home or into a project
-- `--mode symlink|copy`: symlink by default, copy when isolation matters
-- `--skill <name>` or `--all`: select which skills to install
-
-Examples:
+`--skill` is the primary path. `--all` is a convenience flag that deploys every immediate child of `skills/` that contains `SKILL.md`.
 
 ```bash
-./scripts/deploy-skills.sh --harness claude-code --scope user --all
-./scripts/deploy-skills.sh --harness codex --scope user --skill commit --skill pr
-./scripts/deploy-skills.sh --harness codex --scope project --project-root /path/to/project --all
-./scripts/deploy-skills.sh --harness claude-code --scope user --all --dry-run
+bash scripts/deploy-skills.sh --harness claude-code --skill commit --scope user
+bash scripts/deploy-skills.sh --harness codex --skill pr --scope project --project-root /path/to/project
+bash scripts/deploy-skills.sh --harness claude-code --all --dry-run
 ```
 
-## Recommended Migration Model
+Use `--harness <name>` to select `harnesses/<name>.json`. The script stays neutral: it only chooses destination roots from the manifest and does not add overlays or harness-specific behavior.
 
-1. Treat `skills/<name>/` as the canonical artifact.
-2. Keep harness install rules in `harnesses/*.json`, not inside the
-   skills themselves.
-3. Put only reusable skill content here.
-4. Leave harness-specific hooks, agents, and rules in each harness repo.
-5. Convert genuinely harness-specific skills into adapters or forked
-   variants only when the behavior cannot be shared.
+## Validation
 
-## Portability Rule
+Run the repo validator with:
 
-Follow the Agent Skills Open convention:
+```bash
+bash scripts/check-skills.sh
+```
 
-- Skills reference bundled scripts, references, and assets relative to
-  their own root.
-- Skills do not probe user-level or project-level install locations at
-  runtime.
-- Harnesses and clients handle install discovery, scope precedence, and
-  deployment layout.
+It checks the skill directory contract, optional `evals/evals.json` files, tracked generated junk, portability rules, backticked skill-local file references, thin harness manifests, and deploy dry-run behavior. The validator runs deterministically and offline.
 
-## Maintenance
+## Maintainer Workflow For Shape-Catalog Refresh
 
-- Run `bash scripts/check-skills.sh` to catch install-discovery
-  regressions in canonical skills.
-- Add optional per-skill metadata files once adapter behavior diverges.
-- Split any future harness-specific prompting into adapter overlays
-  rather than mutating the canonical skill body.
+1. Invoke the `drawio-shapes` skill to refresh the extracted draw.io data and produce provider-specific generated fragments.
+2. Review the generated fragments before importing them anywhere else.
+3. Invoke the `cloud-diagram` skill to validate and import those fragments into its bundled references.
+4. Keep the generated fragments under review; the consumer skill owns mutation of its bundled references.
+5. Rerun `bash scripts/check-skills.sh` to confirm the repo still satisfies the contract.

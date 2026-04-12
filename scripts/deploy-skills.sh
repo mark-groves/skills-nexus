@@ -12,6 +12,7 @@ PROJECT_ROOT=""
 DRY_RUN=0
 ALL=0
 declare -a SKILL_NAMES=()
+declare -A SEEN_SKILLS=()
 
 usage() {
   cat <<'EOF'
@@ -19,12 +20,12 @@ Usage:
   ./scripts/deploy-skills.sh --harness <name> [options]
 
 Options:
-  --harness <name>          Harness adapter name from harnesses/*.json
+  --harness <name>          Harness manifest filename stem from harnesses/<name>.json
+  --skill <name>            Skill to deploy (repeatable, primary path)
+  --all                     Convenience: deploy every skill directory containing SKILL.md
   --scope <user|project>    Install scope (default: user)
   --project-root <path>     Project root for project-scoped installs
   --mode <symlink|copy>     Install mode (default: symlink)
-  --skill <name>            Skill to deploy (repeatable)
-  --all                     Deploy all skills
   --dry-run                 Print actions without changing anything
   --help                    Show this message
 EOF
@@ -81,6 +82,44 @@ link_or_copy() {
   esac
 }
 
+read_manifest_value() {
+  local file="$1" key="$2" label="$3"
+
+  python3 - "$file" "$key" "$label" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+key = sys.argv[2]
+label = sys.argv[3]
+
+try:
+    data = json.loads(path.read_text(encoding="utf-8"))
+except Exception as exc:  # pragma: no cover - shell surfaces the error
+    print(f"Error: invalid harness manifest {label}: {exc}", file=sys.stderr)
+    raise SystemExit(1)
+
+value = data.get(key)
+if not isinstance(value, str) or not value.strip():
+    print(f"Error: invalid harness manifest {label}: missing or empty {key}", file=sys.stderr)
+    raise SystemExit(1)
+
+print(value)
+PY
+}
+
+add_skill() {
+  local skill_name="$1"
+
+  if [[ -n "${SEEN_SKILLS[$skill_name]:-}" ]]; then
+    return
+  fi
+
+  SEEN_SKILLS["$skill_name"]=1
+  SKILL_NAMES+=("$skill_name")
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --harness)
@@ -105,7 +144,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     --skill)
       [[ $# -ge 2 ]] || fail "--skill requires a value"
-      SKILL_NAMES+=("$2")
+      add_skill "$2"
       shift 2
       ;;
     --all)
@@ -133,22 +172,18 @@ done
 HARNESS_FILE="$HARNESS_DIR/$HARNESS.json"
 [[ -f "$HARNESS_FILE" ]] || fail "unknown harness: $HARNESS"
 
-if ! command -v jq >/dev/null 2>&1; then
-  fail "jq is required"
-fi
-
 if (( ALL )); then
-  while IFS= read -r dir; do
-    SKILL_NAMES+=("$(basename "$dir")")
-  done < <(find "$SKILLS_DIR" -mindepth 1 -maxdepth 1 -type d | sort)
+  while IFS= read -r skill_md; do
+    add_skill "$(basename "$(dirname "$skill_md")")"
+  done < <(find "$SKILLS_DIR" -mindepth 2 -maxdepth 2 -type f -name SKILL.md | sort)
 fi
 
 if [[ ${#SKILL_NAMES[@]} -eq 0 ]]; then
   fail "select skills with --skill or use --all"
 fi
 
-USER_INSTALL_ROOT="$(jq -r '.user_install_root' "$HARNESS_FILE")"
-PROJECT_INSTALL_ROOT="$(jq -r '.project_install_root' "$HARNESS_FILE")"
+USER_INSTALL_ROOT="$(read_manifest_value "$HARNESS_FILE" user_install_root "$HARNESS")"
+PROJECT_INSTALL_ROOT="$(read_manifest_value "$HARNESS_FILE" project_install_root "$HARNESS")"
 
 case "$SCOPE" in
   user)
@@ -177,6 +212,7 @@ for skill_name in "${SKILL_NAMES[@]}"; do
   src="$SKILLS_DIR/$skill_name"
   dst="$TARGET_ROOT/$skill_name"
   [[ -d "$src" ]] || fail "missing skill: $skill_name"
+  [[ -f "$src/SKILL.md" ]] || fail "missing skill: $skill_name"
   link_or_copy "$src" "$dst"
 done
 
