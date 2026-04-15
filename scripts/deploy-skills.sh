@@ -56,13 +56,14 @@ link_or_copy() {
     else
       rm "$dst"
     fi
-  elif [[ -e "$dst" ]]; then
-    echo "skip existing non-symlink: $dst" >&2
-    return
   fi
 
   case "$MODE" in
     symlink)
+      if [[ -e "$dst" ]]; then
+        echo "skip existing non-symlink: $dst" >&2
+        return
+      fi
       if (( DRY_RUN )); then
         echo "ln -s $src $dst"
       else
@@ -70,6 +71,17 @@ link_or_copy() {
       fi
       ;;
     copy)
+      if [[ -e "$dst" ]]; then
+        if [[ -d "$dst" ]]; then
+          if (( DRY_RUN )); then
+            echo "rm -rf $dst"
+          else
+            rm -rf "$dst"
+          fi
+        else
+          fail "existing non-directory path blocks copy mode: $dst"
+        fi
+      fi
       if (( DRY_RUN )); then
         echo "cp -R $src $dst"
       else

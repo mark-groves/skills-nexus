@@ -329,6 +329,97 @@ def validate_deploy_script(valid_skills: list[str]) -> None:
     if "missing skill" not in unknown_skill.stderr.lower():
         fail("Unknown skill error message changed unexpectedly")
 
+    manifest = json.loads(read_text(HARNESS_DIR / f"{harnesses[0]}.json"))
+    project_install_root = manifest["project_install_root"]
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        project_root = Path(temp_dir)
+        destination = project_root / project_install_root / explicit_skill
+
+        run_command(
+            "bash",
+            "scripts/deploy-skills.sh",
+            "--harness",
+            harnesses[0],
+            "--scope",
+            "project",
+            "--project-root",
+            str(project_root),
+            "--mode",
+            "copy",
+            "--skill",
+            explicit_skill,
+            expect_success=True,
+            label="copy-mode initial deploy",
+        )
+        if not destination.is_dir():
+            fail("Copy-mode initial deploy did not create the skill directory")
+
+        sentinel = destination / "stale.txt"
+        sentinel.write_text("stale\n", encoding="utf-8")
+
+        dry_run_redeploy = run_command(
+            "bash",
+            "scripts/deploy-skills.sh",
+            "--harness",
+            harnesses[0],
+            "--scope",
+            "project",
+            "--project-root",
+            str(project_root),
+            "--mode",
+            "copy",
+            "--skill",
+            explicit_skill,
+            "--dry-run",
+            expect_success=True,
+            label="copy-mode redeploy dry-run",
+        )
+        if f"rm -rf {destination}" not in dry_run_redeploy.stdout:
+            fail("Copy-mode dry-run did not announce removal of an existing destination directory")
+        if f"cp -R {SKILLS_DIR / explicit_skill} {destination}" not in dry_run_redeploy.stdout:
+            fail("Copy-mode dry-run did not announce copying after directory replacement")
+
+        run_command(
+            "bash",
+            "scripts/deploy-skills.sh",
+            "--harness",
+            harnesses[0],
+            "--scope",
+            "project",
+            "--project-root",
+            str(project_root),
+            "--mode",
+            "copy",
+            "--skill",
+            explicit_skill,
+            expect_success=True,
+            label="copy-mode redeploy",
+        )
+        if sentinel.exists():
+            fail("Copy-mode redeploy left stale copied content in place")
+
+        shutil.rmtree(destination)
+        destination.write_text("collision\n", encoding="utf-8")
+        file_collision = run_command(
+            "bash",
+            "scripts/deploy-skills.sh",
+            "--harness",
+            harnesses[0],
+            "--scope",
+            "project",
+            "--project-root",
+            str(project_root),
+            "--mode",
+            "copy",
+            "--skill",
+            explicit_skill,
+            expect_success=False,
+            label="copy-mode file collision check",
+        )
+        if "existing non-directory path blocks copy mode" not in file_collision.stderr.lower():
+            fail("Copy-mode file collision error message changed unexpectedly")
+
 
 def validate_handoff_smoke_tests() -> None:
     tracked_refs = {
