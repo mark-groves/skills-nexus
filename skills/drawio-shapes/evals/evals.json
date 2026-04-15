@@ -1,0 +1,75 @@
+{
+  "skill_name": "drawio-shapes",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "/drawio-shapes GCP",
+      "expected_output": "Downloads Sidebar-GCP2.js and Sidebar-GCPIcons.js from jgraph/drawio, runs extract.py on each, produces JSON catalogs in working/ with 400+ entries across 30+ categories",
+      "files": [],
+      "assertions": [
+        "At least one JSON file with a 'categories' key exists in outputs",
+        "Downloaded sidebar JS via gh api blob endpoint, not curl/wget",
+        "Total extracted shape count >= 400 across all categories",
+        "At least 15 distinct categories present in output",
+        "No base64 decode errors (or at most 1 known benign warning)"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "/drawio-shapes update the GCP shape catalog for cloud-diagram",
+      "expected_output": "Extracts GCP2 and GCPIcons, produces an import-ready gcp-shapes.generated.md fragment, keeps overlapping icon-family variants addressable, and stops at the generated artifact without invoking sibling-skill import logic",
+      "files": [],
+      "assertions": [
+        "A gcp-shapes.generated.md file exists in outputs",
+        "Entries follow ### Name / - **Style:** / - **Size:** pattern",
+        "Fragment contains generated content only and no cloud-diagram header prelude",
+        "More service entries than the original ~50 shapes",
+        "Style strings contain shape=mxgraph.gcp2.* references",
+        "GCPIcons categories are present in the merged output",
+        "At least one overlapping GCP icon name is preserved with a ' (GCPIcons)' suffix",
+        "Does not instruct the user to run sibling-skill scripts as part of this skill"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "/drawio-shapes what AWS icons are available in drawio?",
+      "expected_output": "Downloads Sidebar-AWS4.js, extracts shapes, and presents a human-readable summary of available AWS icons grouped by category",
+      "files": [],
+      "assertions": [
+        "A summary file with category breakdown exists",
+        "References AWS4 as the library, not AWS3",
+        "Concrete shape names and counts are listed",
+        "Output organized by category, not flat list"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "/drawio-shapes what Azure icons are available in drawio?",
+      "expected_output": "Downloads Sidebar-Azure2.js, extracts Azure2 SVG image-path entries, and presents a category-organized summary with real Azure service labels and image paths",
+      "files": [],
+      "assertions": [
+        "At least one JSON file with library=Azure2 exists in outputs",
+        "At least 10 distinct categories are present in output",
+        "Total extracted shape count is non-zero",
+        "At least one entry has type=svg_image",
+        "At least one entry has image_path starting with img/lib/azure2/",
+        "Known Azure labels such as Virtual Machine, Azure SQL, or Load Balancers are present"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "/drawio-shapes refresh cloud-diagram catalogs for AWS, GCP, and Azure and run an end-to-end check",
+      "expected_output": "Downloads AWS4, GCP2, GCPIcons, and Azure2, runs extract.py for each, regenerates provider-specific import fragments with the committed generator script, verifies the generated artifacts are structurally complete, and states that downstream import or render checks belong to the consumer after handoff",
+      "files": [],
+      "assertions": [
+        "Uses gh api blob downloads for each upstream sidebar file",
+        "Uses the committed scripts/generate_catalog.py rather than a throwaway generator in working/",
+        "AWS4 is treated as style-expression extraction, not generic base64 decoding",
+        "Merged GCP output includes both GCP2 and GCPIcons families",
+        "Does not mutate cloud-diagram directly during fragment generation",
+        "Does not invoke sibling-skill importers or renderers from this skill",
+        "States explicitly when downstream validation must happen in the consumer after handoff"
+      ]
+    }
+  ]
+}

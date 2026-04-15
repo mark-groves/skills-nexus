@@ -1,0 +1,4 @@
+{
+  "user_install_root": "~/.claude/skills",
+  "project_install_root": ".claude/skills"
+}

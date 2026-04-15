@@ -1,0 +1,24 @@
+{
+  "source": "fixture GCP2",
+  "library": "GCP2",
+  "categories": {
+    "GeneralIcons": [
+      {
+        "name": "Big Query",
+        "type": "stencil",
+        "stencil_name": "mxgraph.gcp2.big_query",
+        "width": 50,
+        "height": 50
+      }
+    ],
+    "IconsCompute": [
+      {
+        "name": "Cloud Run",
+        "type": "vertex_icon",
+        "base64_svg": "PHN2Zy8+",
+        "width": 200,
+        "height": 200
+      }
+    ]
+  }
+}

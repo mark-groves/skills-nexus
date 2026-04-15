@@ -1,0 +1,41 @@
+{
+  "skill_name": "commit",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "/commit fix: typo in readme",
+      "expected_output": "Commits without conversational approval, no body in commit message, only README.md staged",
+      "files": [],
+      "expectations": [
+        "Does NOT ask the user for approval before committing",
+        "Commit subject starts with 'fix:'",
+        "Commit message has NO body paragraph",
+        "Only README.md is included in the commit"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "commit my changes",
+      "expected_output": "Commits only the 2 pre-staged files, mentions unstaged files as FYI without staging them",
+      "files": [],
+      "expectations": [
+        "Only the 2 pre-staged files (src/auth.py and src/auth_test.py) are committed",
+        "Unstaged files (config.yaml, docs/setup.md, src/utils.py) are NOT staged or committed",
+        "Mentions the unstaged files as an FYI to the user",
+        "Commit message uses a conventional commit prefix"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "commit",
+      "expected_output": "Proposes multiple separate commits for unrelated changes, presents all groups before executing",
+      "files": [],
+      "expectations": [
+        "Proposes at least 2 separate commits for the unrelated changes",
+        "Presents all proposed groups to the user BEFORE executing any commits",
+        "Each proposed commit has an appropriate conventional commit prefix",
+        "Does not bundle all changes into a single commit"
+      ]
+    }
+  ]
+}
