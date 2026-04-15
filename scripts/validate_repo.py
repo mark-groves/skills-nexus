@@ -420,6 +420,53 @@ def validate_deploy_script(valid_skills: list[str]) -> None:
         if "existing non-directory path blocks copy mode" not in file_collision.stderr.lower():
             fail("Copy-mode file collision error message changed unexpectedly")
 
+        symlink_destination = project_root / project_install_root / explicit_skill
+        symlink_destination.unlink()
+        run_command(
+            "bash",
+            "scripts/deploy-skills.sh",
+            "--harness",
+            harnesses[0],
+            "--scope",
+            "project",
+            "--project-root",
+            str(project_root),
+            "--mode",
+            "symlink",
+            "--skill",
+            explicit_skill,
+            expect_success=True,
+            label="symlink-mode initial deploy",
+        )
+        if not symlink_destination.is_symlink():
+            fail("Symlink-mode initial deploy did not create a symlink")
+
+        dry_run_symlink_redeploy = run_command(
+            "bash",
+            "scripts/deploy-skills.sh",
+            "--harness",
+            harnesses[0],
+            "--scope",
+            "project",
+            "--project-root",
+            str(project_root),
+            "--mode",
+            "symlink",
+            "--skill",
+            explicit_skill,
+            "--dry-run",
+            expect_success=True,
+            label="symlink-mode redeploy dry-run",
+        )
+        if f"remove symlink {symlink_destination}" not in dry_run_symlink_redeploy.stdout:
+            fail("Symlink-mode dry-run did not announce removal of an existing symlink")
+        if f"ln -s {SKILLS_DIR / explicit_skill} {symlink_destination}" not in dry_run_symlink_redeploy.stdout:
+            fail("Symlink-mode dry-run did not announce relinking after symlink replacement")
+        if "skip existing non-symlink" in dry_run_symlink_redeploy.stderr.lower():
+            fail("Symlink-mode dry-run incorrectly reported an existing symlink as a non-symlink collision")
+        if not symlink_destination.is_symlink():
+            fail("Symlink-mode dry-run should not mutate the existing symlink")
+
 
 def validate_handoff_smoke_tests() -> None:
     tracked_refs = {

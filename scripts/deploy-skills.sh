@@ -49,8 +49,10 @@ expand_home() {
 
 link_or_copy() {
   local src="$1" dst="$2"
+  local removed_existing_symlink=0
 
   if [[ -L "$dst" ]]; then
+    removed_existing_symlink=1
     if (( DRY_RUN )); then
       echo "remove symlink $dst"
     else
@@ -60,7 +62,7 @@ link_or_copy() {
 
   case "$MODE" in
     symlink)
-      if [[ -e "$dst" ]]; then
+      if [[ -e "$dst" && $removed_existing_symlink -eq 0 ]]; then
         echo "skip existing non-symlink: $dst" >&2
         return
       fi
