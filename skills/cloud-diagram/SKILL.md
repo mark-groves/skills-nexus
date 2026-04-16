@@ -1,15 +1,6 @@
 ---
 name: cloud-diagram
-description: >-
-  Generate cloud architecture diagrams as .drawio files. Use when the
-  user asks for an architecture diagram, infrastructure diagram, cloud
-  diagram, or system design for AWS, Azure, or GCP.
-user-invocable: true
-allowed-tools:
-  - Read
-  - Write
-  - Bash
-argument-hint: "<architecture description>"
+description: Generate cloud architecture diagrams as `.drawio` files. Use when the user asks for an architecture diagram, infrastructure diagram, cloud diagram, or system design for AWS, Azure, GCP, or multi-cloud environments.
 ---
 
 # Instructions

@@ -1,0 +1,62 @@
+{
+  "skill_name": "pr",
+  "trigger_evals": [
+    {
+      "id": 1,
+      "query": "open a pull request for my branch",
+      "should_trigger": true
+    },
+    {
+      "id": 2,
+      "query": "publish this branch as a GitHub PR against main",
+      "should_trigger": true
+    },
+    {
+      "id": 3,
+      "query": "commit the staged files",
+      "should_trigger": false
+    },
+    {
+      "id": 4,
+      "query": "review the code changes in this PR",
+      "should_trigger": false
+    }
+  ],
+  "behavior_evals": [
+    {
+      "id": 1,
+      "prompt": "/pr",
+      "expected_behavior": "Uses `main` as the default base branch, drafts a structured PR title and body, and waits for approval before pushing or creating the PR.",
+      "fixtures": [],
+      "checks": [
+        "Defaults the base branch to main when no argument is provided",
+        "Drafts a PR title under 70 characters",
+        "Drafts a PR body with Summary and Test plan sections",
+        "Waits for explicit approval before pushing or creating the PR"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "/pr release/2026-04",
+      "expected_behavior": "Uses the supplied base branch, checks the branch state and diff, and reports whether a push is needed before PR creation.",
+      "fixtures": [],
+      "checks": [
+        "Uses release/2026-04 as the base branch",
+        "Checks git status and gh availability before proceeding",
+        "Inspects commits and diff against the requested base branch",
+        "Reports whether the current branch already has upstream tracking"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "create a PR",
+      "expected_behavior": "Stops when the working tree is dirty and tells the user to commit first unless they explicitly override.",
+      "fixtures": [],
+      "checks": [
+        "Warns when uncommitted changes are present",
+        "Suggests running /commit first",
+        "Does not push or create a PR until the user explicitly approves continuing"
+      ]
+    }
+  ]
+}

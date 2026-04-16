@@ -1,10 +1,6 @@
 ---
 name: pr
-description: Push the current branch and open a GitHub pull request with a structured summary and test plan. Use when the user asks to create, open, or submit a PR.
-user-invocable: true
-allowed-tools:
-  - Bash
-argument-hint: "[base-branch]"
+description: Push the current git branch and open a GitHub pull request with a structured summary and test plan. Use when the user asks to create, open, submit, or publish a PR from the current branch.
 ---
 
 # Instructions
