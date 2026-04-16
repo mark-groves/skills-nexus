@@ -48,6 +48,49 @@ class ValidateRepoFrontmatterTests(unittest.TestCase):
         )
         self.assertEqual(validate_repo.ERRORS, [])
 
+    def test_parse_yaml_string_map_strips_inline_comments_from_plain_scalars(self) -> None:
+        frontmatter = textwrap.dedent(
+            """\
+            name: example-skill # canonical id
+            description: Example skill # summary
+            metadata:
+              short-description: Short summary # visible in catalog
+            """
+        )
+
+        payload = validate_repo.parse_yaml_string_map(frontmatter, "skills/example-skill/SKILL.md")
+
+        self.assertEqual(
+            payload,
+            {
+                "name": "example-skill",
+                "description": "Example skill",
+                "metadata": {
+                    "short-description": "Short summary",
+                },
+            },
+        )
+        self.assertEqual(validate_repo.ERRORS, [])
+
+    def test_parse_yaml_string_map_allows_comments_after_quoted_scalars(self) -> None:
+        frontmatter = textwrap.dedent(
+            """\
+            name: "example-skill" # canonical id
+            description: 'Example # skill' # summary
+            """
+        )
+
+        payload = validate_repo.parse_yaml_string_map(frontmatter, "skills/example-skill/SKILL.md")
+
+        self.assertEqual(
+            payload,
+            {
+                "name": "example-skill",
+                "description": "Example # skill",
+            },
+        )
+        self.assertEqual(validate_repo.ERRORS, [])
+
     def test_validate_frontmatter_accepts_structured_metadata(self) -> None:
         with tempfile.TemporaryDirectory(dir=REPO_DIR) as temp_dir:
             temp_root = Path(temp_dir)
@@ -63,6 +106,29 @@ class ValidateRepoFrontmatterTests(unittest.TestCase):
                     metadata:
                       short-description: Short summary
                       docs-url: https://example.com/skills/{skill_dir.name}
+                    ---
+                    # {skill_dir.name}
+                    """
+                ),
+                encoding="utf-8",
+            )
+
+            validate_repo.validate_frontmatter(skill_dir, skill_md)
+
+        self.assertEqual(validate_repo.ERRORS, [])
+
+    def test_validate_frontmatter_accepts_inline_comments(self) -> None:
+        with tempfile.TemporaryDirectory(dir=REPO_DIR) as temp_dir:
+            temp_root = Path(temp_dir)
+            skill_dir = temp_root / "inline-comment-skill"
+            skill_dir.mkdir()
+            skill_md = skill_dir / "SKILL.md"
+            skill_md.write_text(
+                textwrap.dedent(
+                    f"""\
+                    ---
+                    name: {skill_dir.name} # canonical id
+                    description: Example skill # summary
                     ---
                     # {skill_dir.name}
                     """

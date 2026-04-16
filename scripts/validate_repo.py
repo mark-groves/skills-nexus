@@ -231,6 +231,48 @@ def parse_double_quoted_yaml(value: str) -> str | None:
     return None
 
 
+def strip_yaml_inline_comment(value: str) -> str:
+    in_single = False
+    in_double = False
+    escaped = False
+    index = 0
+
+    while index < len(value):
+        char = value[index]
+        if in_single:
+            if char == "'":
+                if index + 1 < len(value) and value[index + 1] == "'":
+                    index += 2
+                    continue
+                in_single = False
+            index += 1
+            continue
+
+        if in_double:
+            if escaped:
+                escaped = False
+                index += 1
+                continue
+            if char == "\\":
+                escaped = True
+                index += 1
+                continue
+            if char == '"':
+                in_double = False
+            index += 1
+            continue
+
+        if char == "'":
+            in_single = True
+        elif char == '"':
+            in_double = True
+        elif char == "#" and (index == 0 or value[index - 1].isspace()):
+            return value[:index].rstrip()
+        index += 1
+
+    return value.rstrip()
+
+
 def fold_yaml_lines(lines: list[str]) -> str:
     folded: list[str] = []
     previous_blank = False
@@ -306,7 +348,7 @@ def parse_yaml_string_map(frontmatter_text: str, rel: str) -> dict[str, Frontmat
             fail(f"Malformed frontmatter in {rel}: {line!r}")
             return None
 
-        value_text = raw_value.lstrip()
+        value_text = strip_yaml_inline_comment(raw_value.lstrip())
         if not value_text:
             if key != "metadata":
                 fail(f"Frontmatter value must be a YAML string in {rel}: {key}")
