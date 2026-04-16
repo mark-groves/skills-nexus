@@ -1,22 +1,6 @@
 ---
 name: drawio-shapes
-description: >-
-  Extract and catalog draw.io shape libraries from the jgraph/drawio
-  GitHub repo. Use this skill whenever the user wants to pull the
-  latest shapes from draw.io, update or refresh a cloud provider shape
-  catalog fragment, see what icons are available for GCP/AWS/Azure in
-  draw.io, or prepare downstream-consumable shape artifacts by
-  artifact handoff.
-  Even if the user just says "update the shapes" or "refresh the icon
-  library", this is the right skill.
-user-invocable: true
-allowed-tools:
-  - Bash
-  - Read
-  - Write
-  - Grep
-  - Glob
-argument-hint: "<provider or library name>"
+description: Extract and catalog draw.io shape libraries from the jgraph/drawio GitHub repo. Use when the user asks to refresh provider catalogs, inspect available AWS, Azure, or GCP icons, update the shape library, or prepare downstream shape artifacts for another skill.
 ---
 
 # Instructions

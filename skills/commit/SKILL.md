@@ -1,10 +1,6 @@
 ---
 name: commit
-description: Stage and commit changes using conventional commit format. Use when the user asks to commit changes or make a commit.
-user-invocable: true
-allowed-tools:
-  - Bash
-argument-hint: "[type: description hint]"
+description: Stage and commit git changes using conventional commit messages. Use when the user asks to commit current work, make a git commit, or split staged and unstaged changes into intentional commits.
 ---
 
 # Instructions

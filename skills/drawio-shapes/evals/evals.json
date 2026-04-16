@@ -1,12 +1,34 @@
 {
   "skill_name": "drawio-shapes",
-  "evals": [
+  "trigger_evals": [
+    {
+      "id": 1,
+      "query": "update the AWS draw.io icon library",
+      "should_trigger": true
+    },
+    {
+      "id": 2,
+      "query": "what Azure icons are available in draw.io?",
+      "should_trigger": true
+    },
+    {
+      "id": 3,
+      "query": "generate an AWS architecture diagram",
+      "should_trigger": false
+    },
+    {
+      "id": 4,
+      "query": "open a pull request for these changes",
+      "should_trigger": false
+    }
+  ],
+  "behavior_evals": [
     {
       "id": 1,
       "prompt": "/drawio-shapes GCP",
-      "expected_output": "Downloads Sidebar-GCP2.js and Sidebar-GCPIcons.js from jgraph/drawio, runs extract.py on each, produces JSON catalogs in working/ with 400+ entries across 30+ categories",
-      "files": [],
-      "assertions": [
+      "expected_behavior": "Downloads the GCP sidebar sources, runs the bundled extractor, and produces JSON catalogs in `working/` with broad category coverage.",
+      "fixtures": [],
+      "checks": [
         "At least one JSON file with a 'categories' key exists in outputs",
         "Downloaded sidebar JS via gh api blob endpoint, not curl/wget",
         "Total extracted shape count >= 400 across all categories",
@@ -17,9 +39,9 @@
     {
       "id": 2,
       "prompt": "/drawio-shapes update the GCP shape catalog for cloud-diagram",
-      "expected_output": "Extracts GCP2 and GCPIcons, produces an import-ready gcp-shapes.generated.md fragment, keeps overlapping icon-family variants addressable, and stops at the generated artifact without invoking sibling-skill import logic",
-      "files": [],
-      "assertions": [
+      "expected_behavior": "Extracts the GCP libraries, generates an import-ready fragment, preserves overlapping icon-family variants, and stops at the handoff artifact.",
+      "fixtures": [],
+      "checks": [
         "A gcp-shapes.generated.md file exists in outputs",
         "Entries follow ### Name / - **Style:** / - **Size:** pattern",
         "Fragment contains generated content only and no cloud-diagram header prelude",
@@ -33,9 +55,9 @@
     {
       "id": 3,
       "prompt": "/drawio-shapes what AWS icons are available in drawio?",
-      "expected_output": "Downloads Sidebar-AWS4.js, extracts shapes, and presents a human-readable summary of available AWS icons grouped by category",
-      "files": [],
-      "assertions": [
+      "expected_behavior": "Downloads AWS4, extracts shapes, and presents a human-readable summary grouped by category.",
+      "fixtures": [],
+      "checks": [
         "A summary file with category breakdown exists",
         "References AWS4 as the library, not AWS3",
         "Concrete shape names and counts are listed",
@@ -45,9 +67,9 @@
     {
       "id": 4,
       "prompt": "/drawio-shapes what Azure icons are available in drawio?",
-      "expected_output": "Downloads Sidebar-Azure2.js, extracts Azure2 SVG image-path entries, and presents a category-organized summary with real Azure service labels and image paths",
-      "files": [],
-      "assertions": [
+      "expected_behavior": "Downloads Azure2, extracts SVG image-path entries, and presents a category-organized summary with real Azure service labels.",
+      "fixtures": [],
+      "checks": [
         "At least one JSON file with library=Azure2 exists in outputs",
         "At least 10 distinct categories are present in output",
         "Total extracted shape count is non-zero",
@@ -59,9 +81,9 @@
     {
       "id": 5,
       "prompt": "/drawio-shapes refresh cloud-diagram catalogs for AWS, GCP, and Azure and run an end-to-end check",
-      "expected_output": "Downloads AWS4, GCP2, GCPIcons, and Azure2, runs extract.py for each, regenerates provider-specific import fragments with the committed generator script, verifies the generated artifacts are structurally complete, and states that downstream import or render checks belong to the consumer after handoff",
-      "files": [],
-      "assertions": [
+      "expected_behavior": "Downloads all required upstream libraries, regenerates the provider fragments with the committed generator, verifies the generated artifacts, and leaves downstream validation to the consumer.",
+      "fixtures": [],
+      "checks": [
         "Uses gh api blob downloads for each upstream sidebar file",
         "Uses the committed scripts/generate_catalog.py rather than a throwaway generator in working/",
         "AWS4 is treated as style-expression extraction, not generic base64 decoding",

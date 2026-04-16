@@ -1,12 +1,34 @@
 {
   "skill_name": "commit",
-  "evals": [
+  "trigger_evals": [
+    {
+      "id": 1,
+      "query": "commit my changes",
+      "should_trigger": true
+    },
+    {
+      "id": 2,
+      "query": "make a conventional commit for the staged files",
+      "should_trigger": true
+    },
+    {
+      "id": 3,
+      "query": "open a pull request for my branch",
+      "should_trigger": false
+    },
+    {
+      "id": 4,
+      "query": "show the git diff without committing anything",
+      "should_trigger": false
+    }
+  ],
+  "behavior_evals": [
     {
       "id": 1,
       "prompt": "/commit fix: typo in readme",
-      "expected_output": "Commits without conversational approval, no body in commit message, only README.md staged",
-      "files": [],
-      "expectations": [
+      "expected_behavior": "Commits without conversational approval, uses a subject-only conventional commit message, and stages only README.md.",
+      "fixtures": [],
+      "checks": [
         "Does NOT ask the user for approval before committing",
         "Commit subject starts with 'fix:'",
         "Commit message has NO body paragraph",
@@ -16,9 +38,9 @@
     {
       "id": 2,
       "prompt": "commit my changes",
-      "expected_output": "Commits only the 2 pre-staged files, mentions unstaged files as FYI without staging them",
-      "files": [],
-      "expectations": [
+      "expected_behavior": "Commits only the intentionally staged files and mentions unstaged files as an FYI without staging them.",
+      "fixtures": [],
+      "checks": [
         "Only the 2 pre-staged files (src/auth.py and src/auth_test.py) are committed",
         "Unstaged files (config.yaml, docs/setup.md, src/utils.py) are NOT staged or committed",
         "Mentions the unstaged files as an FYI to the user",
@@ -28,9 +50,9 @@
     {
       "id": 3,
       "prompt": "commit",
-      "expected_output": "Proposes multiple separate commits for unrelated changes, presents all groups before executing",
-      "files": [],
-      "expectations": [
+      "expected_behavior": "Proposes multiple separate commits for unrelated changes and presents all groups before executing anything.",
+      "fixtures": [],
+      "checks": [
         "Proposes at least 2 separate commits for the unrelated changes",
         "Presents all proposed groups to the user BEFORE executing any commits",
         "Each proposed commit has an appropriate conventional commit prefix",
