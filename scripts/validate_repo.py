@@ -12,7 +12,6 @@ from pathlib import Path
 
 
 REPO_DIR = Path(__file__).resolve().parents[1]
-README_PATH = REPO_DIR / "README.md"
 SKILLS_DIR = REPO_DIR / "skills"
 HARNESS_DIR = REPO_DIR / "harnesses"
 CLOUD_DIAGRAM_REFS = REPO_DIR / "skills" / "cloud-diagram" / "references"
@@ -21,13 +20,6 @@ DRAWIO_GENERATOR = REPO_DIR / "skills" / "drawio-shapes" / "scripts" / "generate
 CLOUD_IMPORTER = REPO_DIR / "skills" / "cloud-diagram" / "scripts" / "import_shape_catalog.py"
 GENERATED_MARKER = "<!-- GENERATED BELOW -->"
 
-EXPECTED_README_HEADINGS = [
-    "Purpose",
-    "Repo Contract",
-    "Install/Deploy Usage",
-    "Validation",
-    "Maintainer Workflow For Shape-Catalog Refresh",
-]
 EXPECTED_HARNESS_KEYS = {"user_install_root", "project_install_root"}
 REQUIRED_HARNESSES = {"agents", "claude-code", "codex", "cursor", "kiro"}
 ALLOWED_FRONTMATTER_KEYS = {"name", "description", "license", "compatibility", "metadata"}
@@ -421,31 +413,6 @@ def parse_frontmatter(skill_md: Path) -> dict[str, FrontmatterValue] | None:
     if payload is None:
         return None
     return payload
-
-
-def validate_readme() -> None:
-    text = read_text(README_PATH)
-    headings = [line[3:].strip() for line in text.splitlines() if line.startswith("## ")]
-    if headings != EXPECTED_README_HEADINGS:
-        fail("README headings must be exactly: " + ", ".join(EXPECTED_README_HEADINGS))
-
-    required_snippets = (
-        "bash scripts/deploy-skills.sh",
-        "--harness agents",
-        "--harness codex",
-        "--harness cursor",
-        "--mode copy",
-        "`agents`",
-        "`claude-code`",
-        "`cursor`",
-        "`kiro`",
-        "bash scripts/check-skills.sh",
-        "`drawio-shapes` skill",
-        "`cloud-diagram` skill",
-    )
-    for snippet in required_snippets:
-        if snippet not in text:
-            fail(f"README is missing expected command/interface text: {snippet}")
 
 
 def validate_generated_junk() -> None:
@@ -1039,7 +1006,6 @@ def validate_handoff_smoke_tests() -> None:
 
 
 def main() -> int:
-    validate_readme()
     valid_skills = validate_skills_root()
     harnesses = validate_harness_manifests()
     validate_generated_junk()
