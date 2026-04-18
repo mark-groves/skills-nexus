@@ -13,11 +13,16 @@
     },
     {
       "id": 3,
+      "query": "split these changes into two commits",
+      "should_trigger": true
+    },
+    {
+      "id": 4,
       "query": "open a pull request for my branch",
       "should_trigger": false
     },
     {
-      "id": 4,
+      "id": 5,
       "query": "show the git diff without committing anything",
       "should_trigger": false
     }
@@ -26,8 +31,10 @@
     {
       "id": 1,
       "prompt": "/commit fix: typo in readme",
-      "expected_behavior": "Commits without conversational approval, uses a subject-only conventional commit message, and stages only README.md.",
-      "fixtures": [],
+      "expected_behavior": "Fast-path commits a single obvious README change without conversational approval using a subject-only conventional commit message.",
+      "fixtures": [
+        "single-readme-fix-on-feature-branch"
+      ],
       "checks": [
         "Does NOT ask the user for approval before committing",
         "Commit subject starts with 'fix:'",
@@ -39,7 +46,9 @@
       "id": 2,
       "prompt": "commit my changes",
       "expected_behavior": "Commits only the intentionally staged files and mentions unstaged files as an FYI without staging them.",
-      "fixtures": [],
+      "fixtures": [
+        "pre-staged-files-with-extra-unstaged-files"
+      ],
       "checks": [
         "Only the 2 pre-staged files (src/auth.py and src/auth_test.py) are committed",
         "Unstaged files (config.yaml, docs/setup.md, src/utils.py) are NOT staged or committed",
@@ -49,14 +58,87 @@
     },
     {
       "id": 3,
-      "prompt": "commit",
-      "expected_behavior": "Proposes multiple separate commits for unrelated changes and presents all groups before executing anything.",
-      "fixtures": [],
+      "prompt": "split these changes into two commits",
+      "expected_behavior": "Proposes multiple separate commits only when the unrelated changes map cleanly to separate files or already-staged hunks, and presents all groups before executing anything.",
+      "fixtures": [
+        "safe-multi-file-split"
+      ],
       "checks": [
         "Proposes at least 2 separate commits for the unrelated changes",
         "Presents all proposed groups to the user BEFORE executing any commits",
         "Each proposed commit has an appropriate conventional commit prefix",
         "Does not bundle all changes into a single commit"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "commit these changes",
+      "expected_behavior": "Stops immediately when the repo has unmerged paths or an in-progress sequencer operation instead of attempting a commit.",
+      "fixtures": [
+        "sequencer-merge-resolved"
+      ],
+      "checks": [
+        "Detects unmerged/conflicted paths or an in-progress merge, rebase, cherry-pick, or revert",
+        "Does NOT stage any files",
+        "Does NOT create a commit",
+        "Tells the user what must be resolved first"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "/commit",
+      "expected_behavior": "Stops on detached HEAD and warns the user before any staging or commit.",
+      "fixtures": [
+        "detached-head"
+      ],
+      "checks": [
+        "Detects detached HEAD from repo state",
+        "Warns the user that committing on detached HEAD is unsafe",
+        "Does NOT stage any files",
+        "Does NOT create a commit"
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "commit the staged changes",
+      "expected_behavior": "When a file is partially staged, commits only the staged hunks and leaves unstaged hunks untouched.",
+      "fixtures": [
+        "partial-staging"
+      ],
+      "checks": [
+        "Commits only the staged hunks from src/auth.py",
+        "Does NOT restage src/auth.py",
+        "Mentions that unstaged hunks remain in the working tree",
+        "Commit message uses a conventional commit prefix"
+      ]
+    },
+    {
+      "id": 7,
+      "prompt": "split these into two commits",
+      "expected_behavior": "Does not auto-split unrelated unstaged hunks inside the same file; instead it tells the user to pre-stage or accept a single commit.",
+      "fixtures": [
+        "mixed-unstaged-hunks"
+      ],
+      "checks": [
+        "Does NOT propose separate commits for unrelated unstaged hunks in the same file",
+        "Does NOT use interactive staging such as git add -p",
+        "Tells the user to pre-stage the intended hunks or accept a single commit",
+        "Does NOT create a commit before the user resolves the ambiguity"
+      ]
+    },
+    {
+      "id": 8,
+      "prompt": "commit my changes",
+      "expected_behavior": "Gathers read-only git context with minimal tool chatter, checks sequencer sentinel paths in the same inspection pass, and keeps mutating steps separate.",
+      "fixtures": [
+        "sequencer-cherry-pick-resolved"
+      ],
+      "checks": [
+        "Uses git status --short --branch for branch and worktree state",
+        "Gathers read-only status, diffs, and recent log in a single Bash invocation when possible",
+        "Checks git-dir sentinel paths for merge, cherry-pick, revert, and rebase state before mutating",
+        "Uses git symbolic-ref --quiet --short HEAD when branch identity is needed",
+        "Keeps staging, committing, and verification as separate mutating steps"
       ]
     }
   ]
