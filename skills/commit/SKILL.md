@@ -47,6 +47,19 @@ creating a feature branch first (using a conventional prefix like
 `feat/`, `fix/`, etc.). Do not proceed until the user is on a
 non-default branch or explicitly overrides.
 
+If the current branch is already a non-default feature branch, evaluate
+whether its name appears to match the primary change being committed.
+Use the same primary-change priorities described below. Make an educated
+judgment from the branch name, the diff, and recent history.
+
+- If the branch clearly matches the change, proceed.
+- If the branch clearly does not match, stop and ask whether to create
+  or switch to a more appropriate branch first.
+- If the match is ambiguous, stop and ask the user instead of guessing.
+
+Do not commit to a non-default branch merely because it is not `main` or
+`master`; branch relevance must be checked first.
+
 ### Suggesting a branch name
 
 When proposing a branch name on `main`, identify the **primary**
@@ -128,6 +141,8 @@ second approval step when the fast-path is clearly safe.
 
 1. The list of files that will be staged or committed.
 2. The draft commit message.
+3. Any branch mismatch or branch-ambiguity concern that needs the
+   user's decision before committing.
 
 Wait for the user to approve, request changes, or cancel.
 

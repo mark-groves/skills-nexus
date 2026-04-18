@@ -86,6 +86,30 @@
     },
     {
       "id": 5,
+      "prompt": "commit these changes",
+      "expected_behavior": "Checks whether the current non-default branch matches the primary change and stops when the branch clearly points at unrelated work.",
+      "fixtures": [],
+      "checks": [
+        "Evaluates whether the current branch name is related to the primary change being committed",
+        "Does NOT assume any non-default branch is acceptable",
+        "Warns when the branch clearly does not match the change",
+        "Asks whether to create or switch to a more appropriate branch before committing"
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "commit my changes",
+      "expected_behavior": "When branch relevance is ambiguous, surfaces the ambiguity and asks the user instead of guessing.",
+      "fixtures": [],
+      "checks": [
+        "Evaluates branch relevance before committing",
+        "Treats an ambiguous branch-to-change mapping as a stop condition",
+        "Asks the user whether to keep using the current branch or move the commit elsewhere",
+        "Does NOT create a commit before the ambiguity is resolved"
+      ]
+    },
+    {
+      "id": 7,
       "prompt": "/commit",
       "expected_behavior": "Stops on detached HEAD and warns the user before any staging or commit.",
       "fixtures": [
@@ -99,7 +123,7 @@
       ]
     },
     {
-      "id": 6,
+      "id": 8,
       "prompt": "commit the staged changes",
       "expected_behavior": "When a file is partially staged, commits only the staged hunks and leaves unstaged hunks untouched.",
       "fixtures": [
@@ -113,7 +137,7 @@
       ]
     },
     {
-      "id": 7,
+      "id": 9,
       "prompt": "split these into two commits",
       "expected_behavior": "Does not auto-split unrelated unstaged hunks inside the same file; instead it tells the user to pre-stage or accept a single commit.",
       "fixtures": [
@@ -127,7 +151,7 @@
       ]
     },
     {
-      "id": 8,
+      "id": 10,
       "prompt": "commit my changes",
       "expected_behavior": "Gathers read-only git context with minimal tool chatter, checks sequencer sentinel paths in the same inspection pass, and keeps mutating steps separate.",
       "fixtures": [
