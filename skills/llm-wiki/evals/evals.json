@@ -53,7 +53,7 @@
       "checks": [
         "Does not modify raw/karpathy-llm-wiki.md",
         "Creates or updates a page under wiki/sources/",
-        "Links from wiki/sources/ to raw files with a correct relative path such as ../../raw/karpathy-llm-wiki.md",
+        "Links from wiki/sources/ to raw files with a correct relative path such as `../../raw/karpathy-llm-wiki.md`",
         "Includes source-page provenance such as raw_path, author or origin, source_date, and captured date when available",
         "Uses Obsidian-style wikilinks for related pages",
         "Updates wiki/index.md with the new source and related pages",

@@ -148,24 +148,38 @@ class ValidateRepoPortabilityTests(unittest.TestCase):
     def tearDown(self) -> None:
         validate_repo.ERRORS.clear()
 
-    def test_validate_portability_allows_relative_paths_within_outputs(self) -> None:
-        with tempfile.TemporaryDirectory(dir=validate_repo.SKILLS_DIR) as temp_dir:
-            skill_dir = Path(temp_dir)
-            skill_md = skill_dir / "SKILL.md"
-            skill_md.write_text(
+    def test_validate_portability_allows_llm_wiki_output_raw_refs(self) -> None:
+        with tempfile.TemporaryDirectory(dir=REPO_DIR) as temp_dir:
+            skill_dir = Path(temp_dir) / "llm-wiki"
+            references_dir = skill_dir / "references"
+            fixture_dir = skill_dir / "evals" / "fixtures" / "wiki" / "sources"
+            references_dir.mkdir(parents=True)
+            fixture_dir.mkdir(parents=True)
+            (skill_dir / "evals").mkdir(exist_ok=True)
+
+            (references_dir / "wiki-contract.md").write_text(
                 textwrap.dedent(
                     """\
-                    ---
-                    name: relative-path-skill
-                    description: Example skill
-                    ---
-                    # Example
+                    # Contract
 
-                    Generate links such as `../../raw/source.md` from nested
-                    wiki pages and `../raw/source.md` from top-level wiki files
-                    when the target format requires them.
+                    Use normal markdown links for raw file paths:
+
+                    [raw transcript](../../raw/2026-04-19-interview.md)
+
+                    From nested wiki pages, use `../../raw/source.md`. From
+                    top-level wiki files, use `../raw/source.md`.
+
+                    raw_path: ../../raw/example-source.md
                     """
                 ),
+                encoding="utf-8",
+            )
+            (fixture_dir / "source-example.md").write_text(
+                "raw_path: ../../raw/example-source.md\n",
+                encoding="utf-8",
+            )
+            (skill_dir / "evals" / "evals.json").write_text(
+                '{"expected": "Links with `../../raw/example-source.md`."}\n',
                 encoding="utf-8",
             )
 
@@ -242,6 +256,53 @@ class ValidateRepoPortabilityTests(unittest.TestCase):
             validate_repo.validate_portability_patterns(skill_dir)
 
         self.assertEqual(len(validate_repo.ERRORS), 3)
+        self.assertTrue(
+            all(
+                error.startswith("Forbidden parent-path reference")
+                for error in validate_repo.ERRORS
+            )
+        )
+
+    def test_validate_portability_rejects_raw_refs_outside_output_contexts(self) -> None:
+        with tempfile.TemporaryDirectory(dir=REPO_DIR) as temp_dir:
+            temp_root = Path(temp_dir)
+            other_skill_dir = temp_root / "other-skill"
+            other_skill_dir.mkdir()
+            (other_skill_dir / "SKILL.md").write_text(
+                "See [raw](../raw/source.md) and raw_path: ../raw/source.md.\n",
+                encoding="utf-8",
+            )
+
+            validate_repo.validate_portability_patterns(other_skill_dir)
+
+        self.assertEqual(len(validate_repo.ERRORS), 2)
+        self.assertTrue(
+            all(
+                error.startswith("Forbidden parent-path reference")
+                for error in validate_repo.ERRORS
+            )
+        )
+
+    def test_validate_portability_rejects_command_like_raw_refs(self) -> None:
+        with tempfile.TemporaryDirectory(dir=REPO_DIR) as temp_dir:
+            skill_dir = Path(temp_dir) / "llm-wiki"
+            references_dir = skill_dir / "references"
+            references_dir.mkdir(parents=True)
+            (references_dir / "wiki-contract.md").write_text(
+                textwrap.dedent(
+                    """\
+                    # Contract
+
+                    Do not treat bash ../raw/secret.sh as a generated output link.
+                    Do not treat `bash ../raw/secret.sh` as one either.
+                    """
+                ),
+                encoding="utf-8",
+            )
+
+            validate_repo.validate_portability_patterns(skill_dir)
+
+        self.assertEqual(len(validate_repo.ERRORS), 2)
         self.assertTrue(
             all(
                 error.startswith("Forbidden parent-path reference")
