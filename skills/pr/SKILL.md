@@ -97,17 +97,19 @@ Determine whether a push is needed:
 
 Analyze **all** commits on the branch (not just the latest) and draft:
 
-- **Title:** under 70 characters, summarizing the change.
+- **Title:** imperative, under 70 characters, summarizing the change.
+  Use a conventional-style prefix such as `feat:`, `fix:`, or `docs:`
+  only when it clearly matches the change; do not force one.
 - **Body** using this template:
 
 ```markdown
 ## Summary
-- bullet 1
-- bullet 2
+- What changed and why.
+- Any user-visible or behavioral impact.
 
 ## Test plan
-- [ ] step 1
-- [ ] step 2
+- Ran `...`
+- Not run: reason, if applicable
 ```
 
 ## Step 6 — Present for approval
@@ -135,7 +137,8 @@ gh pr create --base "$base" --title "$title" --body-file - <<'EOF'
 - ...
 
 ## Test plan
-- [ ] ...
+- Ran `...`
+- Not run: ...
 EOF
 ```
 
