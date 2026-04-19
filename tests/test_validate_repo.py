@@ -162,8 +162,8 @@ class ValidateRepoPortabilityTests(unittest.TestCase):
                     # Example
 
                     Generate links such as `../../raw/source.md` from nested
-                    wiki pages and `[asset](../assets/image.png)` from output
-                    documents when the target format requires them.
+                    wiki pages and `../raw/source.md` from top-level wiki files
+                    when the target format requires them.
                     """
                 ),
                 encoding="utf-8",
@@ -172,6 +172,14 @@ class ValidateRepoPortabilityTests(unittest.TestCase):
             validate_repo.validate_portability_patterns(skill_dir)
 
         self.assertEqual(validate_repo.ERRORS, [])
+
+    def test_allowed_output_parent_paths_are_limited_to_raw_links(self) -> None:
+        self.assertTrue(validate_repo.is_allowed_output_parent_path("../raw/source.md"))
+        self.assertTrue(validate_repo.is_allowed_output_parent_path("../../raw/assets/image.png"))
+        self.assertFalse(validate_repo.is_allowed_output_parent_path("../assets/image.png"))
+        self.assertFalse(validate_repo.is_allowed_output_parent_path("../../scripts/check-skills.sh"))
+        self.assertFalse(validate_repo.is_allowed_output_parent_path("../../../raw/source.md"))
+        self.assertFalse(validate_repo.is_allowed_output_parent_path("../../raw/../README.md"))
 
     def test_validate_portability_rejects_sibling_skill_refs(self) -> None:
         with tempfile.TemporaryDirectory(dir=validate_repo.SKILLS_DIR) as temp_dir:
@@ -196,6 +204,33 @@ class ValidateRepoPortabilityTests(unittest.TestCase):
 
         self.assertEqual(len(validate_repo.ERRORS), 1)
         self.assertIn("Forbidden sibling-skill path reference", validate_repo.ERRORS[0])
+
+    def test_validate_portability_rejects_generic_parent_refs(self) -> None:
+        with tempfile.TemporaryDirectory(dir=validate_repo.SKILLS_DIR) as temp_dir:
+            skill_dir = Path(temp_dir)
+            skill_md = skill_dir / "SKILL.md"
+            skill_md.write_text(
+                textwrap.dedent(
+                    """\
+                    ---
+                    name: repo-parent-ref-skill
+                    description: Example skill
+                    ---
+                    # Example
+
+                    Read ../README.md, run ../scripts/check-skills.sh, or use
+                    ../../scripts/check-skills.sh before using this skill.
+                    """
+                ),
+                encoding="utf-8",
+            )
+
+            validate_repo.validate_portability_patterns(skill_dir)
+
+        self.assertEqual(len(validate_repo.ERRORS), 3)
+        self.assertTrue(
+            all(error.startswith("Forbidden parent-path reference") for error in validate_repo.ERRORS)
+        )
 
 
 if __name__ == "__main__":

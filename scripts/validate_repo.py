@@ -45,6 +45,9 @@ FORBIDDEN_DISCOVERY_PATTERNS = ("git rev-parse --show-toplevel",)
 INLINE_CODE_RE = re.compile(r"`([^`]+)`")
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
 FRONTMATTER_KEY_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+PARENT_PATH_RE = re.compile(
+    r"(?<![A-Za-z0-9_./-])((?:\.\./)+(?:[A-Za-z0-9_.-]+/)*[A-Za-z0-9_.-]+/?)"
+)
 ALLOWED_INLINE_PREFIXES = ("scripts/", "references/", "assets/", "evals/", "working/")
 
 ERRORS: list[str] = []
@@ -130,6 +133,26 @@ def is_explicit_skill_local_path(token: str) -> bool:
     if "://" in token:
         return False
     return True
+
+
+def is_allowed_output_parent_path(path_ref: str) -> bool:
+    parts = path_ref.rstrip("/").split("/")
+    if not parts:
+        return False
+
+    parent_count = 0
+    for part in parts:
+        if part != "..":
+            break
+        parent_count += 1
+
+    if parent_count not in (1, 2):
+        return False
+    if len(parts) <= parent_count:
+        return False
+    if parts[parent_count] != "raw":
+        return False
+    return all(part not in ("", ".", "..") for part in parts[parent_count:])
 
 
 def extract_frontmatter_block(skill_md: Path) -> str | None:
@@ -491,9 +514,14 @@ def validate_portability_patterns(skill_dir: Path) -> None:
         for pattern in FORBIDDEN_DISCOVERY_PATTERNS:
             if pattern in text:
                 fail(f"Forbidden repo discovery pattern in {rel}: {pattern}")
-        for pattern in sibling_skill_refs:
-            if pattern in text:
-                fail(f"Forbidden sibling-skill path reference in {rel}: {pattern}")
+        for match in PARENT_PATH_RE.finditer(text):
+            path_ref = match.group(1)
+            if is_allowed_output_parent_path(path_ref):
+                continue
+            if any(path_ref.startswith(pattern) for pattern in sibling_skill_refs):
+                fail(f"Forbidden sibling-skill path reference in {rel}: {path_ref}")
+            else:
+                fail(f"Forbidden parent-path reference in {rel}: {path_ref}")
 
 
 def validate_skill_local_refs(skill_dir: Path, skill_md: Path) -> None:
