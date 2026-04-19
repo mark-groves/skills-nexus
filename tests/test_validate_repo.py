@@ -141,5 +141,62 @@ class ValidateRepoFrontmatterTests(unittest.TestCase):
         self.assertEqual(validate_repo.ERRORS, [])
 
 
+class ValidateRepoPortabilityTests(unittest.TestCase):
+    def setUp(self) -> None:
+        validate_repo.ERRORS.clear()
+
+    def tearDown(self) -> None:
+        validate_repo.ERRORS.clear()
+
+    def test_validate_portability_allows_relative_paths_within_outputs(self) -> None:
+        with tempfile.TemporaryDirectory(dir=validate_repo.SKILLS_DIR) as temp_dir:
+            skill_dir = Path(temp_dir)
+            skill_md = skill_dir / "SKILL.md"
+            skill_md.write_text(
+                textwrap.dedent(
+                    """\
+                    ---
+                    name: relative-path-skill
+                    description: Example skill
+                    ---
+                    # Example
+
+                    Generate links such as `../../raw/source.md` from nested
+                    wiki pages and `[asset](../assets/image.png)` from output
+                    documents when the target format requires them.
+                    """
+                ),
+                encoding="utf-8",
+            )
+
+            validate_repo.validate_portability_patterns(skill_dir)
+
+        self.assertEqual(validate_repo.ERRORS, [])
+
+    def test_validate_portability_rejects_sibling_skill_refs(self) -> None:
+        with tempfile.TemporaryDirectory(dir=validate_repo.SKILLS_DIR) as temp_dir:
+            skill_dir = Path(temp_dir)
+            skill_md = skill_dir / "SKILL.md"
+            skill_md.write_text(
+                textwrap.dedent(
+                    """\
+                    ---
+                    name: sibling-ref-skill
+                    description: Example skill
+                    ---
+                    # Example
+
+                    Run ../commit/scripts/helper.py before continuing.
+                    """
+                ),
+                encoding="utf-8",
+            )
+
+            validate_repo.validate_portability_patterns(skill_dir)
+
+        self.assertEqual(len(validate_repo.ERRORS), 1)
+        self.assertIn("Forbidden sibling-skill path reference", validate_repo.ERRORS[0])
+
+
 if __name__ == "__main__":
     unittest.main()

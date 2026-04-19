@@ -1,0 +1,117 @@
+{
+  "skill_name": "llm-wiki",
+  "trigger_evals": [
+    {
+      "id": 1,
+      "query": "set up an LLM wiki for my research notes",
+      "should_trigger": true
+    },
+    {
+      "id": 2,
+      "query": "ingest this article into my Obsidian knowledge base",
+      "should_trigger": true
+    },
+    {
+      "id": 3,
+      "query": "lint my wiki for orphan pages and stale claims",
+      "should_trigger": true
+    },
+    {
+      "id": 4,
+      "query": "look up the Wikipedia page for Alan Turing",
+      "should_trigger": false
+    },
+    {
+      "id": 5,
+      "query": "rewrite this README to be clearer",
+      "should_trigger": false
+    }
+  ],
+  "behavior_evals": [
+    {
+      "id": 1,
+      "prompt": "initialize an LLM wiki in this project",
+      "expected_behavior": "Creates the default raw and wiki directory structure with Obsidian-friendly index and log pages while avoiding unrelated documentation files.",
+      "fixtures": [],
+      "checks": [
+        "Creates raw/ and raw/assets/ for immutable sources",
+        "Creates wiki/index.md and wiki/log.md",
+        "Creates wiki/sources, wiki/entities, wiki/concepts, wiki/syntheses, and wiki/questions directories",
+        "Uses YAML frontmatter compatible with the wiki contract",
+        "Does not create extra README or guide files"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "ingest raw/karpathy-llm-wiki.md into my wiki",
+      "expected_behavior": "Preserves the raw source, creates a source summary, updates related concept or synthesis pages, and maintains index and log entries.",
+      "fixtures": [
+        "evals/fixtures/raw/karpathy-llm-wiki.md",
+        "evals/fixtures/wiki/index.md",
+        "evals/fixtures/wiki/log.md"
+      ],
+      "checks": [
+        "Does not modify raw/karpathy-llm-wiki.md",
+        "Creates or updates a page under wiki/sources/",
+        "Links from wiki/sources/ to raw files with a correct relative path such as ../../raw/karpathy-llm-wiki.md",
+        "Includes source-page provenance such as raw_path, author or origin, source_date, and captured date when available",
+        "Uses Obsidian-style wikilinks for related pages",
+        "Updates wiki/index.md with the new source and related pages",
+        "Appends an ingest entry to wiki/log.md"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "answer this using my wiki: what are the strongest arguments for keeping raw sources immutable?",
+      "expected_behavior": "Searches the existing wiki first, answers with cited wiki and source references, distinguishes inference from sourced claims, and offers to file the answer if reusable.",
+      "fixtures": [
+        "evals/fixtures/wiki/index.md",
+        "evals/fixtures/wiki/sources/source-karpathy-llm-wiki.md",
+        "evals/fixtures/wiki/concepts/raw-source-immutability.md"
+      ],
+      "checks": [
+        "Searches wiki/index.md or relevant wiki pages before answering",
+        "Cites wiki pages or raw source paths",
+        "Marks unsupported reasoning as inference",
+        "Does not rely primarily on outside knowledge when wiki evidence exists",
+        "Offers to file the answer under wiki/questions/ or wiki/syntheses/"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "file this answer into the wiki as a reusable note",
+      "expected_behavior": "Saves a focused question or synthesis page, links supporting sources, updates related pages, and records the action in the log.",
+      "fixtures": [
+        "evals/fixtures/wiki/index.md",
+        "evals/fixtures/wiki/log.md",
+        "evals/fixtures/wiki/sources/source-karpathy-llm-wiki.md"
+      ],
+      "checks": [
+        "Chooses wiki/questions/ for a narrow answer or wiki/syntheses/ for a broad synthesis",
+        "Includes supporting source wikilinks in frontmatter or body",
+        "Adds relevant concept and entity links",
+        "Updates wiki/index.md",
+        "Appends a filing entry to wiki/log.md"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "lint this Obsidian wiki and fix small issues",
+      "expected_behavior": "Inspects wiki health, reports issues such as orphan pages, missing frontmatter, broken wikilinks, stale stubs, and unsupported claims, then makes only focused fixes.",
+      "fixtures": [
+        "evals/fixtures/wiki/index.md",
+        "evals/fixtures/wiki/log.md",
+        "evals/fixtures/wiki/concepts/orphan-concept.md",
+        "evals/fixtures/wiki/concepts/broken-link.md"
+      ],
+      "checks": [
+        "Checks required frontmatter on generated wiki pages",
+        "Checks for broken Obsidian wikilinks",
+        "Checks for orphan pages and source pages missing from index",
+        "Preserves existing wiki/index.md and wiki/log.md content while making focused fixes",
+        "Flags contradictions or unsupported claims instead of deleting them",
+        "Avoids broad rewrites unless the user approves a cleanup plan"
+      ]
+    }
+  ]
+}

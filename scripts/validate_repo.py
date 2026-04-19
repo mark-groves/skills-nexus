@@ -45,7 +45,6 @@ FORBIDDEN_DISCOVERY_PATTERNS = ("git rev-parse --show-toplevel",)
 INLINE_CODE_RE = re.compile(r"`([^`]+)`")
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
 FRONTMATTER_KEY_RE = re.compile(r"^[A-Za-z0-9_-]+$")
-SIBLING_PATH_RE = re.compile(r"(^|[^A-Za-z0-9_./-])\.\./[A-Za-z0-9_.-]+/")
 ALLOWED_INLINE_PREFIXES = ("scripts/", "references/", "assets/", "evals/", "working/")
 
 ERRORS: list[str] = []
@@ -479,6 +478,7 @@ def validate_harness_manifests() -> dict[str, dict[str, str]]:
 
 
 def validate_portability_patterns(skill_dir: Path) -> None:
+    sibling_skill_refs = [f"../{entry.name}/" for entry in SKILLS_DIR.iterdir() if entry.is_dir() and entry != skill_dir]
     for file_path in iter_skill_files(skill_dir):
         text = read_text_if_possible(file_path)
         if text is None:
@@ -491,8 +491,9 @@ def validate_portability_patterns(skill_dir: Path) -> None:
         for pattern in FORBIDDEN_DISCOVERY_PATTERNS:
             if pattern in text:
                 fail(f"Forbidden repo discovery pattern in {rel}: {pattern}")
-        if SIBLING_PATH_RE.search(text):
-            fail(f"Forbidden sibling-path reference in {rel}")
+        for pattern in sibling_skill_refs:
+            if pattern in text:
+                fail(f"Forbidden sibling-skill path reference in {rel}: {pattern}")
 
 
 def validate_skill_local_refs(skill_dir: Path, skill_md: Path) -> None:
