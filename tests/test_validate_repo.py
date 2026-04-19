@@ -20,6 +20,18 @@ class ValidateRepoFrontmatterTests(unittest.TestCase):
     def tearDown(self) -> None:
         validate_repo.ERRORS.clear()
 
+    def write_skill_with_frontmatter(
+        self, temp_root: Path, skill_name: str, frontmatter: str
+    ) -> Path:
+        skill_dir = temp_root / skill_name
+        skill_dir.mkdir()
+        frontmatter = textwrap.dedent(frontmatter).strip()
+        (skill_dir / "SKILL.md").write_text(
+            f"---\n{frontmatter}\n---\n# {skill_name}\n",
+            encoding="utf-8",
+        )
+        return skill_dir
+
     def test_parse_yaml_string_map_accepts_structured_metadata(self) -> None:
         frontmatter = textwrap.dedent(
             """\
@@ -139,6 +151,148 @@ class ValidateRepoFrontmatterTests(unittest.TestCase):
             validate_repo.validate_frontmatter(skill_dir, skill_md)
 
         self.assertEqual(validate_repo.ERRORS, [])
+
+    def test_validate_frontmatter_accepts_allowed_tools(self) -> None:
+        with tempfile.TemporaryDirectory(dir=REPO_DIR) as temp_dir:
+            temp_root = Path(temp_dir)
+            skill_dir = self.write_skill_with_frontmatter(
+                temp_root,
+                "allowed-tools-skill",
+                """\
+                name: allowed-tools-skill
+                description: Example skill
+                allowed-tools: Bash(git:*) Bash(jq:*) Read
+                """,
+            )
+
+            validate_repo.validate_frontmatter(skill_dir, skill_dir / "SKILL.md")
+
+        self.assertEqual(validate_repo.ERRORS, [])
+
+    def test_validate_frontmatter_rejects_empty_allowed_tools(self) -> None:
+        with tempfile.TemporaryDirectory(dir=REPO_DIR) as temp_dir:
+            temp_root = Path(temp_dir)
+            skill_dir = self.write_skill_with_frontmatter(
+                temp_root,
+                "empty-allowed-tools-skill",
+                """\
+                name: empty-allowed-tools-skill
+                description: Example skill
+                allowed-tools: "   "
+                """,
+            )
+
+            validate_repo.validate_frontmatter(skill_dir, skill_dir / "SKILL.md")
+
+        self.assertEqual(len(validate_repo.ERRORS), 1)
+        self.assertIn("allowed-tools", validate_repo.ERRORS[0])
+
+    def test_validate_frontmatter_accepts_standard_description_limit(self) -> None:
+        description = "a" * 1024
+
+        with tempfile.TemporaryDirectory(dir=REPO_DIR) as temp_dir:
+            temp_root = Path(temp_dir)
+            skill_dir = self.write_skill_with_frontmatter(
+                temp_root,
+                "long-description-skill",
+                f"""\
+                name: long-description-skill
+                description: {description}
+                """,
+            )
+
+            validate_repo.validate_frontmatter(skill_dir, skill_dir / "SKILL.md")
+
+        self.assertEqual(validate_repo.ERRORS, [])
+
+    def test_validate_frontmatter_rejects_description_over_standard_limit(self) -> None:
+        description = "a" * 1025
+
+        with tempfile.TemporaryDirectory(dir=REPO_DIR) as temp_dir:
+            temp_root = Path(temp_dir)
+            skill_dir = self.write_skill_with_frontmatter(
+                temp_root,
+                "too-long-description-skill",
+                f"""\
+                name: too-long-description-skill
+                description: {description}
+                """,
+            )
+
+            validate_repo.validate_frontmatter(skill_dir, skill_dir / "SKILL.md")
+
+        self.assertEqual(len(validate_repo.ERRORS), 1)
+        self.assertIn("Description is too long", validate_repo.ERRORS[0])
+
+    def test_validate_frontmatter_enforces_compatibility_limit(self) -> None:
+        with tempfile.TemporaryDirectory(dir=REPO_DIR) as temp_dir:
+            temp_root = Path(temp_dir)
+            skill_dir = self.write_skill_with_frontmatter(
+                temp_root,
+                "compatibility-limit-skill",
+                f"""\
+                name: compatibility-limit-skill
+                description: Example skill
+                compatibility: {"a" * 500}
+                """,
+            )
+
+            validate_repo.validate_frontmatter(skill_dir, skill_dir / "SKILL.md")
+
+        self.assertEqual(validate_repo.ERRORS, [])
+
+        validate_repo.ERRORS.clear()
+
+        with tempfile.TemporaryDirectory(dir=REPO_DIR) as temp_dir:
+            temp_root = Path(temp_dir)
+            skill_dir = self.write_skill_with_frontmatter(
+                temp_root,
+                "compatibility-too-long-skill",
+                f"""\
+                name: compatibility-too-long-skill
+                description: Example skill
+                compatibility: {"a" * 501}
+                """,
+            )
+
+            validate_repo.validate_frontmatter(skill_dir, skill_dir / "SKILL.md")
+
+        self.assertEqual(len(validate_repo.ERRORS), 1)
+        self.assertIn("Compatibility is too long", validate_repo.ERRORS[0])
+
+    def test_validate_frontmatter_rejects_trailing_hyphen_names(self) -> None:
+        with tempfile.TemporaryDirectory(dir=REPO_DIR) as temp_dir:
+            temp_root = Path(temp_dir)
+            skill_dir = self.write_skill_with_frontmatter(
+                temp_root,
+                "trailing-hyphen-skill",
+                """\
+                name: trailing-hyphen-skill-
+                description: Example skill
+                """,
+            )
+
+            validate_repo.validate_frontmatter(skill_dir, skill_dir / "SKILL.md")
+
+        self.assertEqual(len(validate_repo.ERRORS), 1)
+        self.assertIn("Invalid skill name", validate_repo.ERRORS[0])
+
+    def test_validate_frontmatter_rejects_consecutive_hyphen_names(self) -> None:
+        with tempfile.TemporaryDirectory(dir=REPO_DIR) as temp_dir:
+            temp_root = Path(temp_dir)
+            skill_dir = self.write_skill_with_frontmatter(
+                temp_root,
+                "consecutive-hyphen-skill",
+                """\
+                name: consecutive--hyphen-skill
+                description: Example skill
+                """,
+            )
+
+            validate_repo.validate_frontmatter(skill_dir, skill_dir / "SKILL.md")
+
+        self.assertEqual(len(validate_repo.ERRORS), 1)
+        self.assertIn("Invalid skill name", validate_repo.ERRORS[0])
 
 
 class ValidateRepoPortabilityTests(unittest.TestCase):
