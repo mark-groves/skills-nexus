@@ -45,7 +45,8 @@ FORBIDDEN_DISCOVERY_PATTERNS = ("git rev-parse --show-toplevel",)
 INLINE_CODE_RE = re.compile(r"`([^`]+)`")
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
 FRONTMATTER_KEY_RE = re.compile(r"^[A-Za-z0-9_-]+$")
-SIBLING_PATH_RE = re.compile(r"(^|[^A-Za-z0-9_./-])\.\./[A-Za-z0-9_.-]+/")
+PATH_SEGMENT_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
+PARENT_PATH_RE = re.compile(r"(?<![A-Za-z0-9_./-])((?:\.\./)+[A-Za-z0-9_./-]+)")
 ALLOWED_INLINE_PREFIXES = ("scripts/", "references/", "assets/", "evals/", "working/")
 
 ERRORS: list[str] = []
@@ -131,6 +132,82 @@ def is_explicit_skill_local_path(token: str) -> bool:
     if "://" in token:
         return False
     return True
+
+
+def is_allowed_output_parent_path(path_ref: str) -> bool:
+    parts = path_ref.rstrip("/").split("/")
+    if not parts:
+        return False
+
+    parent_count = 0
+    for part in parts:
+        if part != "..":
+            break
+        parent_count += 1
+
+    if parent_count not in (1, 2):
+        return False
+    if len(parts) <= parent_count + 1:
+        return False
+    if parts[parent_count] != "raw":
+        return False
+    return all(
+        part not in ("", ".", "..") and PATH_SEGMENT_RE.fullmatch(part) is not None
+        for part in parts[parent_count + 1 :]
+    )
+
+
+def is_llm_wiki_output_context(skill_dir: Path, file_path: Path) -> bool:
+    if skill_dir.name != "llm-wiki":
+        return False
+
+    rel_parts = file_path.relative_to(skill_dir).parts
+    return (
+        rel_parts == ("references", "wiki-contract.md")
+        or rel_parts == ("evals", "evals.json")
+        or rel_parts[:3] == ("evals", "fixtures", "wiki")
+    )
+
+
+def line_containing(text: str, start: int, end: int) -> str:
+    line_start = text.rfind("\n", 0, start) + 1
+    line_end = text.find("\n", end)
+    if line_end == -1:
+        line_end = len(text)
+    return text[line_start:line_end]
+
+
+def is_exact_inline_code_token(text: str, start: int, end: int) -> bool:
+    return start > 0 and end < len(text) and text[start - 1] == "`" and text[end] == "`"
+
+
+def is_markdown_link_destination(text: str, start: int, end: int) -> bool:
+    return start >= 2 and end < len(text) and text[start - 2 : start] == "](" and text[end] == ")"
+
+
+def is_raw_path_frontmatter_value(text: str, start: int, end: int) -> bool:
+    line = line_containing(text, start, end).strip()
+    prefix = "raw_path:"
+    if not line.startswith(prefix):
+        return False
+    value = line[len(prefix) :].strip()
+    return value == text[start:end]
+
+
+def is_allowed_output_parent_path_use(
+    skill_dir: Path, file_path: Path, text: str, match: re.Match[str]
+) -> bool:
+    if not is_allowed_output_parent_path(match.group(1)):
+        return False
+    if not is_llm_wiki_output_context(skill_dir, file_path):
+        return False
+
+    start, end = match.span(1)
+    return (
+        is_exact_inline_code_token(text, start, end)
+        or is_markdown_link_destination(text, start, end)
+        or is_raw_path_frontmatter_value(text, start, end)
+    )
 
 
 def extract_frontmatter_block(skill_md: Path) -> str | None:
@@ -479,6 +556,11 @@ def validate_harness_manifests() -> dict[str, dict[str, str]]:
 
 
 def validate_portability_patterns(skill_dir: Path) -> None:
+    sibling_skill_refs = [
+        f"../{entry.name}/"
+        for entry in SKILLS_DIR.iterdir()
+        if entry.is_dir() and entry != skill_dir
+    ]
     for file_path in iter_skill_files(skill_dir):
         text = read_text_if_possible(file_path)
         if text is None:
@@ -491,8 +573,14 @@ def validate_portability_patterns(skill_dir: Path) -> None:
         for pattern in FORBIDDEN_DISCOVERY_PATTERNS:
             if pattern in text:
                 fail(f"Forbidden repo discovery pattern in {rel}: {pattern}")
-        if SIBLING_PATH_RE.search(text):
-            fail(f"Forbidden sibling-path reference in {rel}")
+        for match in PARENT_PATH_RE.finditer(text):
+            path_ref = match.group(1)
+            if is_allowed_output_parent_path_use(skill_dir, file_path, text, match):
+                continue
+            if any(path_ref.startswith(pattern) for pattern in sibling_skill_refs):
+                fail(f"Forbidden sibling-skill path reference in {rel}: {path_ref}")
+            else:
+                fail(f"Forbidden parent-path reference in {rel}: {path_ref}")
 
 
 def validate_skill_local_refs(skill_dir: Path, skill_md: Path) -> None:
