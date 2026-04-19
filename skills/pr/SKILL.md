@@ -17,8 +17,9 @@ Resolve the repository's default branch for safety checks:
    and strip the `origin/` prefix.
 2. Fall back to `gh repo view --json defaultBranchRef --jq
    '.defaultBranchRef.name'`.
-3. If both commands fail, use `main` and tell the user that fallback was
-   used.
+3. If both commands fail, tell the user the default branch could not be
+   resolved and stop. Ask them to specify the base branch or fix default
+   branch resolution before trying again.
 
 Use the user's argument as the base branch. If no argument is provided,
 use the resolved default branch as the base.
@@ -65,8 +66,17 @@ URL and stop instead of creating a duplicate PR.
 
 Determine whether a push is needed:
 
-- If there is no upstream, a push is needed with `git push -u origin
-  <current-branch>`.
+- If there is no upstream, determine the publish remote before presenting
+  or running a push:
+  1. Prefer `git config branch.<current-branch>.pushRemote`.
+  2. Fall back to `git config remote.pushDefault`.
+  3. Fall back to `git config branch.<current-branch>.remote`.
+  4. Fall back to the only configured remote from `git remote`.
+  5. If multiple remotes exist and none of the configured preferences
+     identify one, ask the user to choose or configure the publish remote
+     and stop.
+- When there is no upstream and the publish remote is known, a push is
+  needed with `git push -u <publish-remote> <current-branch>`.
 - If there is an upstream and the local branch is ahead, a push is
   needed with `git push`.
 - If the upstream is ahead or the branches have diverged, tell the user
@@ -113,7 +123,7 @@ Wait for explicit approval before proceeding.
 
 ## Step 7 — Push and create
 
-- If no upstream exists, push with `git push -u origin
+- If no upstream exists, push with `git push -u <publish-remote>
   <current-branch>`.
 - If an upstream exists and the local branch is ahead, push with
   `git push`.

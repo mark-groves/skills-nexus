@@ -30,7 +30,8 @@
       "fixtures": [],
       "checks": [
         "Resolves the default branch from origin/HEAD or gh repo view when no argument is provided",
-        "Falls back to main only if default branch resolution fails",
+        "Stops if default branch resolution fails",
+        "Does not assume main when the default branch cannot be determined",
         "Drafts a PR title under 70 characters",
         "Drafts a PR body with Summary and Test plan sections",
         "Waits for explicit approval before pushing or creating the PR"
@@ -88,13 +89,15 @@
     {
       "id": 6,
       "prompt": "/pr",
-      "expected_behavior": "Pushes a branch with no upstream using git push -u origin <current-branch> after explicit approval.",
+      "expected_behavior": "Pushes a branch with no upstream using a derived publish remote after explicit approval.",
       "fixtures": [],
       "checks": [
         "Checks upstream tracking with git rev-parse --abbrev-ref @{upstream}",
         "Treats upstream lookup failure as no upstream",
-        "Shows git push -u origin <current-branch> before approval",
-        "Uses git push -u origin <current-branch> after approval"
+        "Derives the publish remote from pushRemote, remote.pushDefault, branch remote, or the only configured remote",
+        "Stops and asks the user to choose a publish remote when multiple remotes exist without a configured preference",
+        "Shows git push -u <publish-remote> <current-branch> before approval",
+        "Uses git push -u <publish-remote> <current-branch> after approval"
       ]
     },
     {
