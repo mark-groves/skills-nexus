@@ -22,7 +22,14 @@ GENERATED_MARKER = "<!-- GENERATED BELOW -->"
 
 EXPECTED_HARNESS_KEYS = {"user_install_root", "project_install_root"}
 REQUIRED_HARNESSES = {"agents", "claude-code", "codex", "cursor", "kiro"}
-ALLOWED_FRONTMATTER_KEYS = {"name", "description", "license", "compatibility", "metadata"}
+ALLOWED_FRONTMATTER_KEYS = {
+    "name",
+    "description",
+    "license",
+    "compatibility",
+    "metadata",
+    "allowed-tools",
+}
 REQUIRED_EVAL_KEYS = {"skill_name", "trigger_evals", "behavior_evals"}
 HARD_CODED_INSTALL_ROOTS = (
     "~/.agents/skills",
@@ -43,7 +50,7 @@ HARD_CODED_INSTALL_ROOTS = (
 )
 FORBIDDEN_DISCOVERY_PATTERNS = ("git rev-parse --show-toplevel",)
 INLINE_CODE_RE = re.compile(r"`([^`]+)`")
-NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
+NAME_RE = re.compile(r"^[a-z0-9](?:[a-z0-9]|-(?!-)){0,62}[a-z0-9]$|^[a-z0-9]$")
 FRONTMATTER_KEY_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 PATH_SEGMENT_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
 PARENT_PATH_RE = re.compile(r"(?<![A-Za-z0-9_./-])((?:\.\./)+[A-Za-z0-9_./-]+)")
@@ -625,13 +632,36 @@ def validate_frontmatter(skill_dir: Path, skill_md: Path) -> None:
     description = description_value.strip() if isinstance(description_value, str) else ""
     if not description:
         fail(f"Missing description in {repo_relative(skill_md)}")
-    elif len(description) > 300:
+    elif len(description) > 1024:
         fail(f"Description is too long in {repo_relative(skill_md)}")
 
-    for key in ("license", "compatibility"):
-        value = frontmatter.get(key)
-        if value is not None and (not isinstance(value, str) or not value.strip()):
-            fail(f"Empty optional frontmatter field {key!r} in {repo_relative(skill_md)}")
+    license_value = frontmatter.get("license")
+    if license_value is not None and (
+        not isinstance(license_value, str) or not license_value.strip()
+    ):
+        fail(f"Empty optional frontmatter field 'license' in {repo_relative(skill_md)}")
+
+    compatibility_value = frontmatter.get("compatibility")
+    if compatibility_value is not None:
+        compatibility = (
+            compatibility_value.strip() if isinstance(compatibility_value, str) else ""
+        )
+        if not compatibility:
+            fail(
+                f"Empty optional frontmatter field 'compatibility' in "
+                f"{repo_relative(skill_md)}"
+            )
+        elif len(compatibility) > 500:
+            fail(f"Compatibility is too long in {repo_relative(skill_md)}")
+
+    allowed_tools_value = frontmatter.get("allowed-tools")
+    if allowed_tools_value is not None and (
+        not isinstance(allowed_tools_value, str) or not allowed_tools_value.strip()
+    ):
+        fail(
+            f"Empty optional frontmatter field 'allowed-tools' in "
+            f"{repo_relative(skill_md)}"
+        )
 
     metadata = frontmatter.get("metadata")
     if metadata is None:

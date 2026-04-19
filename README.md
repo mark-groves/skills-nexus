@@ -57,7 +57,19 @@ Supported harness manifests:
 ## Skill Contract
 
 - `skills/<name>/` is the canonical portable artifact.
-- Canonical `SKILL.md` frontmatter stays within the repo's supported subset: `name`, `description`, and optional `license`, `compatibility`, or `metadata`.
+- Canonical `SKILL.md` frontmatter follows the open Agent Skills
+  standard:
+  - `name` is required, must match the folder name, and uses 1-64
+    lowercase alphanumeric or hyphen characters with no leading,
+    trailing, or repeated hyphens.
+  - `description` is required, non-empty, and at most 1024 characters.
+  - `license`, `compatibility`, `metadata`, and `allowed-tools` are
+    optional standard fields.
+  - `compatibility`, when present, is non-empty and at most 500
+    characters.
+  - `metadata`, when structured, is a string-to-string map.
+  - `allowed-tools` is accepted as the standard experimental
+    space-separated tool allowlist.
 - Skill-local support files may live under `scripts/`, `references/`, `assets/`, and `evals/`.
 - Harness manifests stay thin and define install roots only.
 

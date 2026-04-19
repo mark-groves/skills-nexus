@@ -1,0 +1,112 @@
+{
+  "skill_name": "skill-architect",
+  "trigger_evals": [
+    {
+      "id": 1,
+      "query": "Create a new skill for Kubernetes incident response.",
+      "should_trigger": true
+    },
+    {
+      "id": 2,
+      "query": "Improve this existing PDF processing skill so it triggers better.",
+      "should_trigger": true
+    },
+    {
+      "id": 3,
+      "query": "Design evals for a skill description.",
+      "should_trigger": true
+    },
+    {
+      "id": 4,
+      "query": "Turn this runbook into an Agent Skill.",
+      "should_trigger": true
+    },
+    {
+      "id": 5,
+      "query": "Implement the Kubernetes incident response automation.",
+      "should_trigger": false
+    },
+    {
+      "id": 6,
+      "query": "Rewrite this README.",
+      "should_trigger": false
+    },
+    {
+      "id": 7,
+      "query": "Review this PR.",
+      "should_trigger": false
+    },
+    {
+      "id": 8,
+      "query": "Install my existing skills into Codex.",
+      "should_trigger": false
+    }
+  ],
+  "behavior_evals": [
+    {
+      "id": 1,
+      "prompt": "Create a portable Agent Skill for Kubernetes incident response from the runbook in docs/incidents.md.",
+      "expected_behavior": "Inspects the target environment and source runbook, then designs or creates a complete portable skill package with frontmatter, workflow, resources, and validation steps.",
+      "fixtures": [],
+      "checks": [
+        "Inspects existing skill directories, validators, docs, and local conventions before asking questions",
+        "Captures goal, audience, trigger examples, non-triggers, outputs, risks, and portability targets",
+        "Produces or proposes SKILL.md plus any needed references, scripts, assets, or evals",
+        "Uses skill-root-relative paths for bundled resources",
+        "Does not hard-code client install roots unless a specific target client requires them"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Audit this existing PDF skill for open Agent Skills compatibility and triggering quality.",
+      "expected_behavior": "Reviews the skill against the standard, progressive disclosure, portability, resource references, and description quality, then recommends focused fixes.",
+      "fixtures": [],
+      "checks": [
+        "Checks required frontmatter and standard optional fields",
+        "Checks that the skill name matches the directory and uses valid naming rules",
+        "Checks whether SKILL.md is concise enough or should move details into references",
+        "Checks relative references to scripts, references, and assets",
+        "Identifies near-miss negative trigger cases, not just obvious positives"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Improve this skill description and design trigger evals for it.",
+      "expected_behavior": "Produces a concise, intent-focused description and realistic positive and negative trigger evals without overfitting to one failed prompt.",
+      "fixtures": [],
+      "checks": [
+        "States what the skill does and when to use it in the description",
+        "Includes varied positive trigger examples",
+        "Includes near-miss negative examples with overlapping vocabulary",
+        "Avoids stuffing exact failed prompt wording into the description",
+        "Recommends a held-back validation set when trigger quality is important"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "This skill keeps asking agents to rewrite fragile shell snippets. Should it have scripts?",
+      "expected_behavior": "Recommends scripts only for repeated or fragile deterministic work and specifies safe, agent-friendly script interface requirements.",
+      "fixtures": [],
+      "checks": [
+        "Explains whether scripts are justified by repetition, fragility, or determinism",
+        "Requires non-interactive input through flags, environment, files, or stdin",
+        "Requires concise --help output and useful error messages",
+        "Separates parseable stdout from diagnostics on stderr",
+        "Adds dry-run or explicit confirmation requirements for risky operations"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "Create a skill in this repo, but follow whatever validation and eval conventions the repo already has.",
+      "expected_behavior": "Adapts to discovered local repo contracts while keeping the skill itself portable where possible.",
+      "fixtures": [],
+      "checks": [
+        "Discovers local validators and eval schemas before writing files",
+        "Uses the repository's existing eval shape when one exists",
+        "Runs or recommends the local validator after changes",
+        "Keeps repository-specific requirements out of the portable skill body unless they are the target",
+        "Does not assume this repository's conventions apply to unrelated targets"
+      ]
+    }
+  ]
+}
