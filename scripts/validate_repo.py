@@ -45,9 +45,8 @@ FORBIDDEN_DISCOVERY_PATTERNS = ("git rev-parse --show-toplevel",)
 INLINE_CODE_RE = re.compile(r"`([^`]+)`")
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
 FRONTMATTER_KEY_RE = re.compile(r"^[A-Za-z0-9_-]+$")
-PARENT_PATH_RE = re.compile(
-    r"(?<![A-Za-z0-9_./-])((?:\.\./)+(?:[A-Za-z0-9_.-]+/)*[A-Za-z0-9_.-]+/?)"
-)
+PATH_SEGMENT_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
+PARENT_PATH_RE = re.compile(r"(?<![A-Za-z0-9_./-])((?:\.\./)+[A-Za-z0-9_./-]+)")
 ALLOWED_INLINE_PREFIXES = ("scripts/", "references/", "assets/", "evals/", "working/")
 
 ERRORS: list[str] = []
@@ -148,11 +147,14 @@ def is_allowed_output_parent_path(path_ref: str) -> bool:
 
     if parent_count not in (1, 2):
         return False
-    if len(parts) <= parent_count:
+    if len(parts) <= parent_count + 1:
         return False
     if parts[parent_count] != "raw":
         return False
-    return all(part not in ("", ".", "..") for part in parts[parent_count:])
+    return all(
+        part not in ("", ".", "..") and PATH_SEGMENT_RE.fullmatch(part) is not None
+        for part in parts[parent_count + 1 :]
+    )
 
 
 def extract_frontmatter_block(skill_md: Path) -> str | None:

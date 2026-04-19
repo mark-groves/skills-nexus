@@ -182,6 +182,16 @@ class ValidateRepoPortabilityTests(unittest.TestCase):
         self.assertFalse(
             validate_repo.is_allowed_output_parent_path("../../scripts/check-skills.sh")
         )
+        self.assertFalse(validate_repo.is_allowed_output_parent_path("../raw"))
+        self.assertFalse(validate_repo.is_allowed_output_parent_path("../raw/"))
+        self.assertFalse(
+            validate_repo.is_allowed_output_parent_path(
+                "../raw//../scripts/check-skills.sh"
+            )
+        )
+        self.assertFalse(
+            validate_repo.is_allowed_output_parent_path("../raw/source name.md")
+        )
         self.assertFalse(validate_repo.is_allowed_output_parent_path("../../../raw/source.md"))
         self.assertFalse(validate_repo.is_allowed_output_parent_path("../../raw/../README.md"))
 
@@ -237,6 +247,38 @@ class ValidateRepoPortabilityTests(unittest.TestCase):
                 error.startswith("Forbidden parent-path reference")
                 for error in validate_repo.ERRORS
             )
+        )
+
+    def test_validate_portability_rejects_raw_prefix_bypass(self) -> None:
+        with tempfile.TemporaryDirectory(dir=validate_repo.SKILLS_DIR) as temp_dir:
+            skill_dir = Path(temp_dir)
+            skill_md = skill_dir / "SKILL.md"
+            skill_md.write_text(
+                textwrap.dedent(
+                    """\
+                    ---
+                    name: raw-prefix-bypass-skill
+                    description: Example skill
+                    ---
+                    # Example
+
+                    Do not allow ../raw//../scripts/check-skills.sh or
+                    ../../raw/source.md/../scripts/check-skills.sh.
+                    """
+                ),
+                encoding="utf-8",
+            )
+
+            validate_repo.validate_portability_patterns(skill_dir)
+
+        self.assertEqual(len(validate_repo.ERRORS), 2)
+        self.assertIn(
+            "../raw//../scripts/check-skills.sh",
+            validate_repo.ERRORS[0],
+        )
+        self.assertIn(
+            "../../raw/source.md/../scripts/check-skills.sh",
+            validate_repo.ERRORS[1],
         )
 
 
