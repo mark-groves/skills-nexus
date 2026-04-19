@@ -175,9 +175,13 @@ class ValidateRepoPortabilityTests(unittest.TestCase):
 
     def test_allowed_output_parent_paths_are_limited_to_raw_links(self) -> None:
         self.assertTrue(validate_repo.is_allowed_output_parent_path("../raw/source.md"))
-        self.assertTrue(validate_repo.is_allowed_output_parent_path("../../raw/assets/image.png"))
+        self.assertTrue(
+            validate_repo.is_allowed_output_parent_path("../../raw/assets/image.png")
+        )
         self.assertFalse(validate_repo.is_allowed_output_parent_path("../assets/image.png"))
-        self.assertFalse(validate_repo.is_allowed_output_parent_path("../../scripts/check-skills.sh"))
+        self.assertFalse(
+            validate_repo.is_allowed_output_parent_path("../../scripts/check-skills.sh")
+        )
         self.assertFalse(validate_repo.is_allowed_output_parent_path("../../../raw/source.md"))
         self.assertFalse(validate_repo.is_allowed_output_parent_path("../../raw/../README.md"))
 
@@ -229,7 +233,10 @@ class ValidateRepoPortabilityTests(unittest.TestCase):
 
         self.assertEqual(len(validate_repo.ERRORS), 3)
         self.assertTrue(
-            all(error.startswith("Forbidden parent-path reference") for error in validate_repo.ERRORS)
+            all(
+                error.startswith("Forbidden parent-path reference")
+                for error in validate_repo.ERRORS
+            )
         )
 
 

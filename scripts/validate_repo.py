@@ -501,7 +501,11 @@ def validate_harness_manifests() -> dict[str, dict[str, str]]:
 
 
 def validate_portability_patterns(skill_dir: Path) -> None:
-    sibling_skill_refs = [f"../{entry.name}/" for entry in SKILLS_DIR.iterdir() if entry.is_dir() and entry != skill_dir]
+    sibling_skill_refs = [
+        f"../{entry.name}/"
+        for entry in SKILLS_DIR.iterdir()
+        if entry.is_dir() and entry != skill_dir
+    ]
     for file_path in iter_skill_files(skill_dir):
         text = read_text_if_possible(file_path)
         if text is None:
