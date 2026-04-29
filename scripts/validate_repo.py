@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -21,7 +22,7 @@ CLOUD_IMPORTER = REPO_DIR / "skills" / "cloud-diagram" / "scripts" / "import_sha
 GENERATED_MARKER = "<!-- GENERATED BELOW -->"
 
 EXPECTED_HARNESS_KEYS = {"user_install_root", "project_install_root"}
-REQUIRED_HARNESSES = {"agents", "claude-code", "codex", "cursor", "kiro"}
+REQUIRED_HARNESSES = {"agents", "claude-code", "codex", "copilot", "cursor", "kiro"}
 ALLOWED_FRONTMATTER_KEYS = {
     "name",
     "description",
@@ -35,16 +36,19 @@ HARD_CODED_INSTALL_ROOTS = (
     "~/.agents/skills",
     "~/.claude/skills",
     "~/.codex/skills",
+    "~/.copilot/skills",
     "~/.cursor/skills",
     "~/.kiro/skills",
     "$HOME/.agents/skills",
     "$HOME/.claude/skills",
     "$HOME/.codex/skills",
+    "$HOME/.copilot/skills",
     "$HOME/.cursor/skills",
     "$HOME/.kiro/skills",
     ".agents/skills",
     ".claude/skills",
     ".codex/skills",
+    ".github/skills",
     ".cursor/skills",
     ".kiro/skills",
 )
@@ -101,12 +105,18 @@ def git_ls_files(*paths: str) -> list[Path]:
     return [REPO_DIR / item for item in result.stdout.split("\0") if item]
 
 
-def run_command(*args: str, expect_success: bool, label: str) -> subprocess.CompletedProcess[str]:
+def run_command(
+    *args: str,
+    expect_success: bool,
+    label: str,
+    env: dict[str, str] | None = None,
+) -> subprocess.CompletedProcess[str]:
     result = subprocess.run(
         list(args),
         cwd=REPO_DIR,
         capture_output=True,
         text=True,
+        env=env,
     )
     if expect_success and result.returncode != 0:
         fail(
@@ -400,7 +410,8 @@ def parse_indented_yaml_string_map(
         fail(f"Frontmatter mapping values must be YAML strings in {rel}: {key}")
         return None, None
 
-    return payload, index
+    string_payload = {name: value for name, value in payload.items() if isinstance(value, str)}
+    return string_payload, index
 
 
 def parse_yaml_string_map(frontmatter_text: str, rel: str) -> dict[str, FrontmatterValue] | None:
@@ -810,6 +821,10 @@ def validate_deploy_script(
 
     with tempfile.TemporaryDirectory() as temp_dir:
         project_root = Path(temp_dir)
+        user_home = project_root / "home"
+        user_home.mkdir()
+        user_env = os.environ.copy()
+        user_env["HOME"] = str(user_home)
         for harness in harnesses:
             dry_run_explicit = run_command(
                 "bash",
@@ -826,10 +841,29 @@ def validate_deploy_script(
                 expect_success=True,
                 label=f"deploy dry-run for {harness} with explicit skill",
             )
-            if "Mode: symlink" not in dry_run_explicit.stdout:
-                fail(f"Default deploy mode must be symlink for {harness}")
-            if "ln -s" not in dry_run_explicit.stdout:
-                fail(f"Dry-run deploy should announce symlink creation for {harness}")
+            if "Mode: copy" not in dry_run_explicit.stdout:
+                fail(f"Default project deploy mode must be copy for {harness}")
+            if "cp -R" not in dry_run_explicit.stdout:
+                fail(f"Project dry-run deploy should announce copying for {harness}")
+
+            dry_run_user = run_command(
+                "bash",
+                "scripts/deploy-skills.sh",
+                "--harness",
+                harness,
+                "--scope",
+                "user",
+                "--skill",
+                explicit_skill,
+                "--dry-run",
+                expect_success=True,
+                label=f"deploy dry-run for {harness} with user scope",
+                env=user_env,
+            )
+            if "Mode: symlink" not in dry_run_user.stdout:
+                fail(f"Default user deploy mode must be symlink for {harness}")
+            if "ln -s" not in dry_run_user.stdout:
+                fail(f"User dry-run deploy should announce symlink creation for {harness}")
 
             run_command(
                 "bash",

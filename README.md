@@ -31,6 +31,12 @@ Deploy all skills:
 bash scripts/deploy-skills.sh --harness cursor --all --mode copy
 ```
 
+Deploy one skill into a Copilot project:
+
+```bash
+bash scripts/deploy-skills.sh --harness copilot --skill pr --scope project --project-root /path/to/project
+```
+
 Validate the repository:
 
 ```bash
@@ -51,6 +57,7 @@ Supported harness manifests:
 - `agents`
 - `claude-code`
 - `codex`
+- `copilot`
 - `cursor`
 - `kiro`
 
@@ -77,7 +84,7 @@ Supported harness manifests:
 
 `--skill` is the primary deployment path. `--all` is only a convenience flag for installing every immediate child of `skills/` that contains `SKILL.md`.
 
-`symlink` is the default mode so edits in this repository show up immediately in installed skills. Use `--mode copy` when a client does not reliably discover symlinked skills.
+`symlink` is the default mode for user-scoped installs so edits in this repository show up immediately in installed skills. `copy` is the default mode for project-scoped installs so deployed skills are normal project files.
 
 Use `--dry-run` to inspect the install actions before making changes.
 
