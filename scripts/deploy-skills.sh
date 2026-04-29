@@ -7,7 +7,7 @@ SKILLS_DIR="$REPO_DIR/skills"
 
 HARNESS=""
 SCOPE="user"
-MODE="symlink"
+MODE=""
 PROJECT_ROOT=""
 DRY_RUN=0
 ALL=0
@@ -25,7 +25,7 @@ Options:
   --all                     Convenience: deploy every skill directory containing SKILL.md
   --scope <user|project>    Install scope (default: user)
   --project-root <path>     Project root for project-scoped installs
-  --mode <symlink|copy>     Install mode (default: symlink)
+  --mode <symlink|copy>     Install mode (default: symlink for user, copy for project)
   --dry-run                 Print actions without changing anything
   --help                    Show this message
 EOF
@@ -38,13 +38,17 @@ fail() {
 
 expand_home() {
   local path="$1"
-  if [[ "$path" == "~" ]]; then
-    printf '%s\n' "$HOME"
-  elif [[ "$path" == "~/"* ]]; then
-    printf '%s\n' "$HOME/${path:2}"
-  else
-    printf '%s\n' "$path"
-  fi
+  case "$path" in
+    \~)
+      printf '%s\n' "$HOME"
+      ;;
+    \~/*)
+      printf '%s\n' "$HOME/${path:2}"
+      ;;
+    *)
+      printf '%s\n' "$path"
+      ;;
+  esac
 }
 
 link_or_copy() {
@@ -181,6 +185,16 @@ done
 
 [[ -n "$HARNESS" ]] || fail "--harness is required"
 [[ "$SCOPE" == "user" || "$SCOPE" == "project" ]] || fail "--scope must be user or project"
+if [[ -z "$MODE" ]]; then
+  case "$SCOPE" in
+    user)
+      MODE="symlink"
+      ;;
+    project)
+      MODE="copy"
+      ;;
+  esac
+fi
 [[ "$MODE" == "symlink" || "$MODE" == "copy" ]] || fail "--mode must be symlink or copy"
 
 HARNESS_FILE="$HARNESS_DIR/$HARNESS.json"

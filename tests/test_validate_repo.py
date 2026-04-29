@@ -8,6 +8,7 @@ from pathlib import Path
 REPO_DIR = Path(__file__).resolve().parents[1]
 MODULE_PATH = REPO_DIR / "scripts" / "validate_repo.py"
 SPEC = importlib.util.spec_from_file_location("validate_repo", MODULE_PATH)
+assert SPEC is not None
 validate_repo = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None
 SPEC.loader.exec_module(validate_repo)
