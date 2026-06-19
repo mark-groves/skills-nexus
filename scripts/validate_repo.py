@@ -14,11 +14,13 @@ from pathlib import Path
 
 REPO_DIR = Path(__file__).resolve().parents[1]
 SKILLS_DIR = REPO_DIR / "skills"
+PORTABLE_SKILLS_DIR = SKILLS_DIR / "portable"
+HARNESS_SKILLS_DIR = SKILLS_DIR / "harness"
 HARNESS_DIR = REPO_DIR / "harnesses"
-CLOUD_DIAGRAM_REFS = REPO_DIR / "skills" / "cloud-diagram" / "references"
-DRAWIO_FIXTURES = REPO_DIR / "skills" / "drawio-shapes" / "fixtures" / "extracted"
-DRAWIO_GENERATOR = REPO_DIR / "skills" / "drawio-shapes" / "scripts" / "generate_catalog.py"
-CLOUD_IMPORTER = REPO_DIR / "skills" / "cloud-diagram" / "scripts" / "import_shape_catalog.py"
+CLOUD_DIAGRAM_REFS = PORTABLE_SKILLS_DIR / "cloud-diagram" / "references"
+DRAWIO_FIXTURES = PORTABLE_SKILLS_DIR / "drawio-shapes" / "fixtures" / "extracted"
+DRAWIO_GENERATOR = PORTABLE_SKILLS_DIR / "drawio-shapes" / "scripts" / "generate_catalog.py"
+CLOUD_IMPORTER = PORTABLE_SKILLS_DIR / "cloud-diagram" / "scripts" / "import_shape_catalog.py"
 GENERATED_MARKER = "<!-- GENERATED BELOW -->"
 
 EXPECTED_HARNESS_KEYS = {"user_install_root", "project_install_root"}
@@ -59,6 +61,7 @@ FRONTMATTER_KEY_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 PATH_SEGMENT_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
 PARENT_PATH_RE = re.compile(r"(?<![A-Za-z0-9_./-])((?:\.\./)+[A-Za-z0-9_./-]+)")
 ALLOWED_INLINE_PREFIXES = ("scripts/", "references/", "assets/", "evals/", "working/")
+ALLOWED_SKILL_ROOTS = {"portable", "harness"}
 
 ERRORS: list[str] = []
 FrontmatterValue = str | dict[str, str]
@@ -70,6 +73,14 @@ def fail(message: str) -> None:
 
 def repo_relative(path: Path) -> str:
     return str(path.relative_to(REPO_DIR))
+
+
+def skill_id(skill_dir: Path) -> str:
+    return str(skill_dir.relative_to(SKILLS_DIR))
+
+
+def skill_install_name(skill_id_value: str) -> str:
+    return Path(skill_id_value).name
 
 
 def read_text(path: Path) -> str:
@@ -576,7 +587,7 @@ def validate_harness_manifests() -> dict[str, dict[str, str]]:
 def validate_portability_patterns(skill_dir: Path) -> None:
     sibling_skill_refs = [
         f"../{entry.name}/"
-        for entry in SKILLS_DIR.iterdir()
+        for entry in skill_dir.parent.iterdir()
         if entry.is_dir() and entry != skill_dir
     ]
     for file_path in iter_skill_files(skill_dir):
@@ -793,17 +804,64 @@ def validate_skill_contract(skill_dir: Path) -> None:
 
 def validate_skills_root() -> list[str]:
     valid_skills: list[str] = []
+    seen_install_names: dict[str, str] = {}
+
     for entry in sorted(SKILLS_DIR.iterdir(), key=lambda path: path.name):
         if not entry.is_dir():
             fail(f"Unexpected file directly under skills/: {repo_relative(entry)}")
             continue
+        if entry.name not in ALLOWED_SKILL_ROOTS:
+            fail(f"Unexpected top-level skill category: {repo_relative(entry)}")
 
-        if not (entry / "SKILL.md").is_file():
-            fail(f"Immediate child of skills/ is not a valid skill: {repo_relative(entry)}")
-            continue
+    if not PORTABLE_SKILLS_DIR.is_dir():
+        fail("Missing portable skill category: skills/portable")
+    else:
+        for skill_dir in sorted(PORTABLE_SKILLS_DIR.iterdir(), key=lambda path: path.name):
+            if not skill_dir.is_dir():
+                fail(f"Unexpected file directly under skills/portable: {repo_relative(skill_dir)}")
+                continue
+            if not (skill_dir / "SKILL.md").is_file():
+                fail(f"Immediate child of skills/portable is not a valid skill: {repo_relative(skill_dir)}")
+                continue
+            skill_id_value = skill_id(skill_dir)
+            install_name = skill_install_name(skill_id_value)
+            if install_name in seen_install_names:
+                fail(
+                    f"Duplicate skill install name {install_name!r}: "
+                    f"{seen_install_names[install_name]} and {skill_id_value}"
+                )
+            else:
+                seen_install_names[install_name] = skill_id_value
+            valid_skills.append(skill_id_value)
+            validate_skill_contract(skill_dir)
 
-        valid_skills.append(entry.name)
-        validate_skill_contract(entry)
+    if not HARNESS_SKILLS_DIR.is_dir():
+        fail("Missing harness-specific skill category: skills/harness")
+    else:
+        for harness_dir in sorted(HARNESS_SKILLS_DIR.iterdir(), key=lambda path: path.name):
+            if not harness_dir.is_dir():
+                fail(f"Unexpected file directly under skills/harness: {repo_relative(harness_dir)}")
+                continue
+            if harness_dir.name not in REQUIRED_HARNESSES:
+                fail(f"Unknown harness-specific skill namespace: {repo_relative(harness_dir)}")
+            for skill_dir in sorted(harness_dir.iterdir(), key=lambda path: path.name):
+                if not skill_dir.is_dir():
+                    fail(f"Unexpected file directly under {repo_relative(harness_dir)}: {repo_relative(skill_dir)}")
+                    continue
+                if not (skill_dir / "SKILL.md").is_file():
+                    fail(f"Immediate child of {repo_relative(harness_dir)} is not a valid skill: {repo_relative(skill_dir)}")
+                    continue
+                skill_id_value = skill_id(skill_dir)
+                install_name = skill_install_name(skill_id_value)
+                if install_name in seen_install_names:
+                    fail(
+                        f"Duplicate skill install name {install_name!r}: "
+                        f"{seen_install_names[install_name]} and {skill_id_value}"
+                    )
+                else:
+                    seen_install_names[install_name] = skill_id_value
+                valid_skills.append(skill_id_value)
+                validate_skill_contract(skill_dir)
 
     if not valid_skills:
         fail("No valid skills found under skills/")
@@ -818,6 +876,8 @@ def validate_deploy_script(
         return
 
     explicit_skill = valid_skills[0]
+    explicit_skill_src = SKILLS_DIR / explicit_skill
+    explicit_install_name = skill_install_name(explicit_skill)
 
     with tempfile.TemporaryDirectory() as temp_dir:
         project_root = Path(temp_dir)
@@ -908,6 +968,39 @@ def validate_deploy_script(
     if "missing skill" not in unknown_skill.stderr.lower():
         fail("Unknown skill error message changed unexpectedly")
 
+    codex_specific_skill = next(
+        (skill for skill in valid_skills if skill.startswith("harness/codex/")),
+        None,
+    )
+    if codex_specific_skill is not None and "agents" in harnesses:
+        wrong_harness = run_command(
+            "bash",
+            "scripts/deploy-skills.sh",
+            "--harness",
+            "agents",
+            "--skill",
+            codex_specific_skill,
+            "--dry-run",
+            expect_success=False,
+            label="deploy cross-harness full skill selector check",
+        )
+        if "not agents" not in wrong_harness.stderr.lower():
+            fail("Cross-harness full skill selector error message changed unexpectedly")
+
+        wrong_harness_bare = run_command(
+            "bash",
+            "scripts/deploy-skills.sh",
+            "--harness",
+            "agents",
+            "--skill",
+            skill_install_name(codex_specific_skill),
+            "--dry-run",
+            expect_success=False,
+            label="deploy cross-harness bare skill selector check",
+        )
+        if "missing skill" not in wrong_harness_bare.stderr.lower():
+            fail("Cross-harness bare skill selector should not resolve")
+
     agents_manifest = harness_manifests.get("agents")
     if agents_manifest is None:
         return
@@ -916,7 +1009,7 @@ def validate_deploy_script(
 
     with tempfile.TemporaryDirectory() as temp_dir:
         project_root = Path(temp_dir)
-        destination = project_root / project_install_root / explicit_skill
+        destination = project_root / project_install_root / explicit_install_name
 
         run_command(
             "bash",
@@ -959,7 +1052,7 @@ def validate_deploy_script(
         )
         if f"rm -rf {destination}" not in dry_run_redeploy.stdout:
             fail("Copy-mode dry-run did not announce removal of an existing destination directory")
-        if f"cp -R {SKILLS_DIR / explicit_skill} {destination}" not in dry_run_redeploy.stdout:
+        if f"cp -R {explicit_skill_src} {destination}" not in dry_run_redeploy.stdout:
             fail("Copy-mode dry-run did not announce copying after directory replacement")
 
         run_command(
@@ -1002,7 +1095,7 @@ def validate_deploy_script(
         if "existing non-directory path blocks copy mode" not in file_collision.stderr.lower():
             fail("Copy-mode file collision error message changed unexpectedly")
 
-        symlink_destination = project_root / project_install_root / explicit_skill
+        symlink_destination = project_root / project_install_root / explicit_install_name
         symlink_destination.unlink()
         run_command(
             "bash",
@@ -1042,7 +1135,7 @@ def validate_deploy_script(
         )
         if f"remove symlink {symlink_destination}" not in dry_run_symlink_redeploy.stdout:
             fail("Symlink-mode dry-run did not announce removal of an existing symlink")
-        if f"ln -s {SKILLS_DIR / explicit_skill} {symlink_destination}" not in dry_run_symlink_redeploy.stdout:
+        if f"ln -s {explicit_skill_src} {symlink_destination}" not in dry_run_symlink_redeploy.stdout:
             fail("Symlink-mode dry-run did not announce relinking after symlink replacement")
         if "skip existing non-symlink" in dry_run_symlink_redeploy.stderr.lower():
             fail("Symlink-mode dry-run incorrectly reported an existing symlink as a non-symlink collision")

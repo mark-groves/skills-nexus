@@ -365,8 +365,12 @@ class ValidateRepoPortabilityTests(unittest.TestCase):
         self.assertFalse(validate_repo.is_allowed_output_parent_path("../../raw/../README.md"))
 
     def test_validate_portability_rejects_sibling_skill_refs(self) -> None:
-        with tempfile.TemporaryDirectory(dir=validate_repo.SKILLS_DIR) as temp_dir:
-            skill_dir = Path(temp_dir)
+        with tempfile.TemporaryDirectory(dir=REPO_DIR) as temp_dir:
+            temp_root = Path(temp_dir)
+            sibling_dir = temp_root / "commit"
+            sibling_dir.mkdir()
+            skill_dir = temp_root / "sibling-ref-skill"
+            skill_dir.mkdir()
             skill_md = skill_dir / "SKILL.md"
             skill_md.write_text(
                 textwrap.dedent(
