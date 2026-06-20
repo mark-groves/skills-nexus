@@ -271,7 +271,11 @@ done
 if [[ -z "$MODE" ]]; then
   case "$SCOPE" in
     user)
-      MODE="symlink"
+      if [[ "$HARNESS" == "codex" ]]; then
+        MODE="copy"
+      else
+        MODE="symlink"
+      fi
       ;;
     project)
       MODE="copy"

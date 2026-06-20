@@ -33,6 +33,11 @@ ALLOWED_FRONTMATTER_KEYS = {
     "metadata",
     "allowed-tools",
 }
+CODEX_HARNESS_FRONTMATTER_KEYS = {
+    "name",
+    "description",
+    "metadata",
+}
 REQUIRED_EVAL_KEYS = {"skill_name", "trigger_evals", "behavior_evals"}
 HARD_CODED_INSTALL_ROOTS = (
     "~/.agents/skills",
@@ -702,6 +707,25 @@ def validate_frontmatter(skill_dir: Path, skill_md: Path) -> None:
             )
 
 
+def validate_codex_harness_frontmatter(skill_dir: Path, skill_md: Path) -> None:
+    try:
+        skill_dir.relative_to(HARNESS_SKILLS_DIR / "codex")
+    except ValueError:
+        return
+
+    frontmatter = parse_frontmatter(skill_md)
+    if frontmatter is None:
+        return
+
+    extra_keys = sorted(set(frontmatter) - CODEX_HARNESS_FRONTMATTER_KEYS)
+    if extra_keys:
+        fail(
+            f"Codex harness skills must keep runtime frontmatter to "
+            f"name, description, and optional metadata in {repo_relative(skill_md)}: "
+            + ", ".join(extra_keys)
+        )
+
+
 def validate_evals(skill_dir: Path) -> None:
     evals_json = skill_dir / "evals" / "evals.json"
     rel = repo_relative(evals_json)
@@ -797,6 +821,7 @@ def validate_skill_contract(skill_dir: Path) -> None:
         return
 
     validate_frontmatter(skill_dir, skill_md)
+    validate_codex_harness_frontmatter(skill_dir, skill_md)
     validate_evals(skill_dir)
     validate_portability_patterns(skill_dir)
     validate_skill_local_refs(skill_dir, skill_md)
@@ -921,8 +946,16 @@ def validate_deploy_script(
                 env=user_env,
             )
             if "Mode: symlink" not in dry_run_user.stdout:
-                fail(f"Default user deploy mode must be symlink for {harness}")
-            if "ln -s" not in dry_run_user.stdout:
+                if harness == "codex":
+                    if "Mode: copy" not in dry_run_user.stdout:
+                        fail("Default user deploy mode must be copy for codex")
+                    if "cp -R" not in dry_run_user.stdout:
+                        fail("Codex user dry-run deploy should announce copying")
+                else:
+                    fail(f"Default user deploy mode must be symlink for {harness}")
+            elif harness == "codex":
+                fail("Default user deploy mode must not be symlink for codex")
+            elif "ln -s" not in dry_run_user.stdout:
                 fail(f"User dry-run deploy should announce symlink creation for {harness}")
 
             run_command(

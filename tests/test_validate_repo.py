@@ -261,6 +261,75 @@ class ValidateRepoFrontmatterTests(unittest.TestCase):
         self.assertEqual(len(validate_repo.ERRORS), 1)
         self.assertIn("Compatibility is too long", validate_repo.ERRORS[0])
 
+    def test_validate_codex_harness_frontmatter_rejects_compatibility(self) -> None:
+        with tempfile.TemporaryDirectory(
+            dir=validate_repo.HARNESS_SKILLS_DIR / "codex"
+        ) as temp_dir:
+            codex_root = Path(temp_dir)
+            skill_dir = self.write_skill_with_frontmatter(
+                codex_root,
+                "codex-frontmatter-skill",
+                """\
+                name: codex-frontmatter-skill
+                description: Example skill
+                compatibility: Codex only
+                """,
+            )
+
+            validate_repo.validate_skill_contract(skill_dir)
+
+        self.assertTrue(
+            any("Codex harness skills must keep runtime frontmatter" in error for error in validate_repo.ERRORS),
+            validate_repo.ERRORS,
+        )
+
+    def test_validate_codex_harness_frontmatter_accepts_metadata(self) -> None:
+        with tempfile.TemporaryDirectory(
+            dir=validate_repo.HARNESS_SKILLS_DIR / "codex"
+        ) as temp_dir:
+            codex_root = Path(temp_dir)
+            skill_dir = self.write_skill_with_frontmatter(
+                codex_root,
+                "codex-metadata-skill",
+                """\
+                name: codex-metadata-skill
+                description: Example skill
+                metadata:
+                  short-description: Example
+                """,
+            )
+            evals_dir = skill_dir / "evals"
+            evals_dir.mkdir()
+            (evals_dir / "evals.json").write_text(
+                textwrap.dedent(
+                    """\
+                    {
+                      "skill_name": "codex-metadata-skill",
+                      "trigger_evals": [
+                        {"id": "positive-1", "query": "use codex metadata skill", "should_trigger": true},
+                        {"id": "positive-2", "query": "run codex metadata workflow", "should_trigger": true},
+                        {"id": "negative-1", "query": "translate this sentence", "should_trigger": false},
+                        {"id": "negative-2", "query": "what time is it", "should_trigger": false}
+                      ],
+                      "behavior_evals": [
+                        {
+                          "id": "basic",
+                          "prompt": "use codex metadata skill",
+                          "expected_behavior": "Uses the skill workflow.",
+                          "fixtures": [],
+                          "checks": ["Mentions the workflow"]
+                        }
+                      ]
+                    }
+                    """
+                ),
+                encoding="utf-8",
+            )
+
+            validate_repo.validate_skill_contract(skill_dir)
+
+        self.assertEqual(validate_repo.ERRORS, [])
+
     def test_validate_frontmatter_rejects_trailing_hyphen_names(self) -> None:
         with tempfile.TemporaryDirectory(dir=REPO_DIR) as temp_dir:
             temp_root = Path(temp_dir)
