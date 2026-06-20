@@ -4,6 +4,8 @@ set -euo pipefail
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 HARNESS_DIR="$REPO_DIR/harnesses"
 SKILLS_DIR="$REPO_DIR/skills"
+PORTABLE_SKILLS_DIR="$SKILLS_DIR/portable"
+HARNESS_SKILLS_DIR="$SKILLS_DIR/harness"
 
 HARNESS=""
 SCOPE="user"
@@ -11,8 +13,12 @@ MODE=""
 PROJECT_ROOT=""
 DRY_RUN=0
 ALL=0
-declare -a SKILL_NAMES=()
+ALL_PORTABLE=0
+ALL_FOR_HARNESS=0
+declare -a SKILL_SELECTORS=()
+declare -a SKILL_IDS=()
 declare -A SEEN_SKILLS=()
+declare -A SEEN_INSTALL_NAMES=()
 
 usage() {
   cat <<'EOF'
@@ -21,8 +27,10 @@ Usage:
 
 Options:
   --harness <name>          Harness manifest filename stem from harnesses/<name>.json
-  --skill <name>            Skill to deploy (repeatable, primary path)
-  --all                     Convenience: deploy every skill directory containing SKILL.md
+  --skill <id|name>         Skill to deploy; accepts portable/pr, harness/codex/name, or an unambiguous folder name
+  --all                     Deploy portable skills plus skills for the selected harness
+  --all-portable            Deploy every portable skill
+  --all-for-harness         Deploy every skill for the selected harness
   --scope <user|project>    Install scope (default: user)
   --project-root <path>     Project root for project-scoped installs
   --mode <symlink|copy>     Install mode (default: symlink for user, copy for project)
@@ -127,15 +135,82 @@ print(value)
 PY
 }
 
-add_skill() {
-  local skill_name="$1"
+add_skill_id() {
+  local skill_id="$1"
+  local install_name
+  install_name="$(basename "$skill_id")"
 
-  if [[ -n "${SEEN_SKILLS[$skill_name]:-}" ]]; then
+  if [[ -n "${SEEN_SKILLS[$skill_id]:-}" ]]; then
     return
   fi
 
-  SEEN_SKILLS["$skill_name"]=1
-  SKILL_NAMES+=("$skill_name")
+  if [[ -n "${SEEN_INSTALL_NAMES[$install_name]:-}" ]]; then
+    fail "multiple selected skills install as $install_name: ${SEEN_INSTALL_NAMES[$install_name]} and $skill_id"
+  fi
+
+  SEEN_SKILLS["$skill_id"]=1
+  SEEN_INSTALL_NAMES["$install_name"]="$skill_id"
+  SKILL_IDS+=("$skill_id")
+}
+
+add_skill_selector() {
+  SKILL_SELECTORS+=("$1")
+}
+
+resolve_skill_selector() {
+  local selector="$1"
+  local skill_dir
+  local rel
+
+  if [[ "$selector" == */* ]]; then
+    case "$selector" in
+      portable/*)
+        ;;
+      harness/"$HARNESS"/*)
+        ;;
+      harness/*)
+        local selector_harness="${selector#harness/}"
+        selector_harness="${selector_harness%%/*}"
+        fail "skill $selector is for harness $selector_harness, not $HARNESS"
+        ;;
+      *)
+        fail "invalid skill selector: $selector"
+        ;;
+    esac
+    skill_dir="$SKILLS_DIR/$selector"
+    [[ -f "$skill_dir/SKILL.md" ]] || fail "missing skill: $selector"
+    rel="${skill_dir#"$SKILLS_DIR/"}"
+    printf '%s\n' "$rel"
+    return
+  fi
+
+  local matches=()
+  while IFS= read -r skill_md; do
+    matches+=("$(dirname "${skill_md#"$SKILLS_DIR/"}")")
+  done < <(
+    find "$PORTABLE_SKILLS_DIR" "$HARNESS_SKILLS_DIR/$HARNESS" \
+      -mindepth 2 -maxdepth 2 -type f -path "*/$selector/SKILL.md" 2>/dev/null | sort
+  )
+
+  case "${#matches[@]}" in
+    0)
+      fail "missing skill: $selector"
+      ;;
+    1)
+      printf '%s\n' "${matches[0]}"
+      ;;
+    *)
+      fail "ambiguous skill name $selector; use one of: ${matches[*]}"
+      ;;
+  esac
+}
+
+add_skills_from_root() {
+  local root="$1"
+  [[ -d "$root" ]] || return 0
+  while IFS= read -r skill_md; do
+    add_skill_id "$(dirname "${skill_md#"$SKILLS_DIR/"}")"
+  done < <(find "$root" -mindepth 2 -maxdepth 2 -type f -name SKILL.md | sort)
 }
 
 while [[ $# -gt 0 ]]; do
@@ -162,11 +237,19 @@ while [[ $# -gt 0 ]]; do
       ;;
     --skill)
       [[ $# -ge 2 ]] || fail "--skill requires a value"
-      add_skill "$2"
+      add_skill_selector "$2"
       shift 2
       ;;
     --all)
       ALL=1
+      shift
+      ;;
+    --all-portable)
+      ALL_PORTABLE=1
+      shift
+      ;;
+    --all-for-harness)
+      ALL_FOR_HARNESS=1
       shift
       ;;
     --dry-run)
@@ -200,14 +283,21 @@ fi
 HARNESS_FILE="$HARNESS_DIR/$HARNESS.json"
 [[ -f "$HARNESS_FILE" ]] || fail "unknown harness: $HARNESS"
 
-if (( ALL )); then
-  while IFS= read -r skill_md; do
-    add_skill "$(basename "$(dirname "$skill_md")")"
-  done < <(find "$SKILLS_DIR" -mindepth 2 -maxdepth 2 -type f -name SKILL.md | sort)
+for selector in "${SKILL_SELECTORS[@]}"; do
+  resolved_skill="$(resolve_skill_selector "$selector")"
+  add_skill_id "$resolved_skill"
+done
+
+if (( ALL || ALL_PORTABLE )); then
+  add_skills_from_root "$PORTABLE_SKILLS_DIR"
 fi
 
-if [[ ${#SKILL_NAMES[@]} -eq 0 ]]; then
-  fail "select skills with --skill or use --all"
+if (( ALL || ALL_FOR_HARNESS )); then
+  add_skills_from_root "$HARNESS_SKILLS_DIR/$HARNESS"
+fi
+
+if [[ ${#SKILL_IDS[@]} -eq 0 ]]; then
+  fail "select skills with --skill, --all, --all-portable, or --all-for-harness"
 fi
 
 USER_INSTALL_ROOT="$(read_manifest_value "$HARNESS_FILE" user_install_root "$HARNESS")"
@@ -236,11 +326,12 @@ echo "Scope: $SCOPE"
 echo "Mode: $MODE"
 echo "Target: $TARGET_ROOT"
 
-for skill_name in "${SKILL_NAMES[@]}"; do
-  src="$SKILLS_DIR/$skill_name"
-  dst="$TARGET_ROOT/$skill_name"
-  [[ -d "$src" ]] || fail "missing skill: $skill_name"
-  [[ -f "$src/SKILL.md" ]] || fail "missing skill: $skill_name"
+for skill_id in "${SKILL_IDS[@]}"; do
+  src="$SKILLS_DIR/$skill_id"
+  install_name="$(basename "$skill_id")"
+  dst="$TARGET_ROOT/$install_name"
+  [[ -d "$src" ]] || fail "missing skill: $skill_id"
+  [[ -f "$src/SKILL.md" ]] || fail "missing skill: $skill_id"
   link_or_copy "$src" "$dst"
 done
 

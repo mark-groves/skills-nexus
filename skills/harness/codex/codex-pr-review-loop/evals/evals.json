@@ -1,0 +1,97 @@
+{
+  "skill_name": "codex-pr-review-loop",
+  "trigger_evals": [
+    {
+      "id": 1,
+      "query": "Codex reviewed my PR and left findings. Fix them, resolve the threads, and verify the automatic follow-up review.",
+      "should_trigger": true
+    },
+    {
+      "id": 2,
+      "query": "Keep handling Codex Cloud PR findings until the automatic review is clean.",
+      "should_trigger": true
+    },
+    {
+      "id": 3,
+      "query": "Address the unresolved Codex review comments on PR #42 and verify the automatic follow-up review.",
+      "should_trigger": true
+    },
+    {
+      "id": 4,
+      "query": "Open a new pull request for this branch.",
+      "should_trigger": false
+    },
+    {
+      "id": 5,
+      "query": "Review this PR and tell me if you see any bugs, but do not change anything.",
+      "should_trigger": false
+    },
+    {
+      "id": 6,
+      "query": "Commit my local changes with a conventional commit message.",
+      "should_trigger": false
+    }
+  ],
+  "behavior_evals": [
+    {
+      "id": 1,
+      "prompt": "Codex left findings on this PR. Address them and keep the loop going.",
+      "expected_behavior": "Fetches unresolved review threads from a thread-level GitHub surface, validates each actionable finding locally, patches only valid issues, commits and pushes fixes, replies to and resolves exact threads, then verifies the automatic Codex Cloud follow-up review for the updated PR head.",
+      "fixtures": [],
+      "checks": [
+        "Uses reviewThreads or an equivalent thread-level API as the source of truth",
+        "Does not rely on flat PR comments alone to decide clean state",
+        "Reads the local files referenced by each actionable thread before editing",
+        "Runs targeted validation for each fix before publishing",
+        "Commits and pushes fixes before replying that a thread is resolved",
+        "Posts a concise thread reply with commit hash, fix summary, and validation",
+        "Resolves the exact matching review thread and re-fetches state to confirm resolution",
+        "Does not post @codex review by default when Codex Cloud automatic review is configured",
+        "Verifies the automatic follow-up review after pushed fixes and thread resolution"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Resolve the Codex review threads on PR #17.",
+      "expected_behavior": "Maps each unresolved review finding to the correct thread, handles valid and invalid findings differently, and never resolves ambiguous issues without evidence.",
+      "fixtures": [],
+      "checks": [
+        "Captures thread id, file path, line, isResolved, isOutdated, and comments",
+        "Filters out resolved, outdated, duplicated, or informational threads",
+        "Validates concerns against local files or runtime behavior before patching",
+        "Replies with evidence instead of changing code when a concern is not valid",
+        "Does not resolve a thread when closure is ambiguous",
+        "If an inline reply id is needed, maps the thread to the exact flat review-comment id instead of guessing"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "The checks are green now. Is the Codex review loop done?",
+      "expected_behavior": "Treats green CI as insufficient by itself and verifies unresolved threads, latest Codex review signal on the latest reviewed head, check status, pushed commits, and local working tree state before declaring the loop complete.",
+      "fixtures": [],
+      "checks": [
+        "Checks for unresolved actionable review threads",
+        "Checks for an explicit latest Codex clean signal such as no findings or approval reaction on the latest reviewed head",
+        "Confirms required checks are passing or unrelated failures are explained",
+        "Confirms review-loop changes are committed and pushed",
+        "Confirms the working tree has no uncommitted loop changes",
+        "Does not declare clean state based only on CI"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "Codex Cloud is configured to review each PR update automatically. Keep the PR review loop moving.",
+      "expected_behavior": "Treats automatic Codex Cloud review as the default follow-up mechanism, uses monitoring to check for asynchronous review results and findings when needed, avoids redundant manual review triggers, and verifies clean state from thread-level review state on the latest PR head.",
+      "fixtures": [],
+      "checks": [
+        "Uses app-level monitoring when the loop needs to continue across asynchronous review completion",
+        "Monitor checks for completed automatic review results, unresolved findings, checks, and whether another implementation pass is needed",
+        "Does not create a heartbeat monitor just to trigger Codex review",
+        "Does not post @codex review unless the user asks or automatic review is known to be unavailable",
+        "Waits for or fetches automatic review results after each pushed update",
+        "Requires the latest reviewed head to match the current PR head before declaring clean state",
+        "Still uses thread-level review state rather than flat comments alone"
+      ]
+    }
+  ]
+}
