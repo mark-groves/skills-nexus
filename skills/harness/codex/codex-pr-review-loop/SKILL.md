@@ -1,6 +1,6 @@
 ---
 name: codex-pr-review-loop
-description: Drive a GitHub pull request through automatic Codex Cloud PR review from inside the Codex app. Use when the user wants Codex review findings addressed end to end after Codex Cloud reviews each PR update: periodically check for new review results, inspect unresolved PR review threads, validate findings locally, patch narrowly, commit and push fixes, reply to and resolve threads, and verify the automatic follow-up review reaches a clean state.
+description: "Drive a GitHub pull request through automatic Codex Cloud PR review from inside the Codex app. Use when the user wants Codex review findings addressed end to end after Codex Cloud reviews each PR update: periodically check for new review results, inspect unresolved PR review threads, validate findings locally, patch narrowly, commit and push fixes, reply to and resolve threads, and verify the automatic follow-up review reaches a clean state."
 ---
 
 # Instructions

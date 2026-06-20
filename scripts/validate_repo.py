@@ -503,6 +503,12 @@ def parse_yaml_string_map(frontmatter_text: str, rel: str) -> dict[str, Frontmat
             if value_text.startswith(("[", "{", "]", "}")):
                 fail(f"Frontmatter value must be a YAML string in {rel}: {key}")
                 return None
+            if ": " in value_text:
+                fail(
+                    f"Frontmatter plain scalar must quote values containing ': ' "
+                    f"in {rel}: {key}"
+                )
+                return None
             parsed = value_text
 
         if parsed is None:

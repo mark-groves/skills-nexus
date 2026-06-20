@@ -104,6 +104,20 @@ class ValidateRepoFrontmatterTests(unittest.TestCase):
         )
         self.assertEqual(validate_repo.ERRORS, [])
 
+    def test_parse_yaml_string_map_rejects_unquoted_mapping_value_marker(self) -> None:
+        frontmatter = textwrap.dedent(
+            """\
+            name: example-skill
+            description: Review loop: inspect findings
+            """
+        )
+
+        payload = validate_repo.parse_yaml_string_map(frontmatter, "skills/example-skill/SKILL.md")
+
+        self.assertIsNone(payload)
+        self.assertEqual(len(validate_repo.ERRORS), 1)
+        self.assertIn("must quote values containing ': '", validate_repo.ERRORS[0])
+
     def test_validate_frontmatter_accepts_structured_metadata(self) -> None:
         with tempfile.TemporaryDirectory(dir=REPO_DIR) as temp_dir:
             temp_root = Path(temp_dir)
