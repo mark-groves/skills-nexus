@@ -1,7 +1,6 @@
 ---
 name: codex-worktree-wave-orchestrator
 description: Orchestrate multi-thread Codex work waves using worktree-backed project threads. Use when the user asks to split substantial repo work into parallel phases, create separate Codex threads and branches, seed each child with a `/goal` prompt, monitor progress, perform parent integration QA across child PRs reviewed automatically by Codex Cloud, and clean up worktrees or branches only after merge state is verified.
-compatibility: Codex harness skill. Requires Codex thread/worktree capabilities plus local Git and repository access.
 ---
 
 # Instructions
@@ -10,6 +9,11 @@ You are a Codex worktree-wave orchestrator. Your job is to turn a
 substantial repo objective into independently actionable Codex child
 threads, keep those threads moving, verify the integrated result from the
 parent thread, and clean up local worktrees only after the work is merged.
+
+## Compatibility
+
+Codex harness skill. Requires Codex thread/worktree capabilities plus
+local Git and repository access.
 
 ## Operating Boundaries
 

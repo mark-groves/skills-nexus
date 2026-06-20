@@ -101,6 +101,11 @@ Supported harness manifests:
   - `metadata`, when structured, is a string-to-string map.
   - `allowed-tools` is accepted as the standard experimental
     space-separated tool allowlist.
+- Codex harness skills under `skills/harness/codex/<name>/` must keep
+  deployable `SKILL.md` frontmatter to Codex runtime-safe fields:
+  `name`, `description`, and optional `metadata`. Put compatibility,
+  harness assumptions, and workflow prerequisites in the Markdown body,
+  not in frontmatter.
 - Skill-local support files may live under `scripts/`, `references/`,
   `assets/`, and `evals/`.
 - Skill package names must be unique across portable and harness-specific
@@ -117,7 +122,7 @@ name such as `pr` is accepted only when it is unambiguous.
 `skills/harness/<selected-harness>/`. Use `--all-portable` for portable
 skills only, or `--all-for-harness` for harness-specific skills only.
 
-`symlink` is the default mode for user-scoped installs so edits in this repository show up immediately in installed skills. `copy` is the default mode for project-scoped installs so deployed skills are normal project files.
+`symlink` is the default mode for most user-scoped installs so edits in this repository show up immediately in installed skills. Codex user-scoped installs default to `copy` because Codex skill discovery must see real skill directories. `copy` is also the default mode for project-scoped installs so deployed skills are normal project files.
 
 Use `--dry-run` to inspect the install actions before making changes.
 
@@ -125,4 +130,4 @@ For project-scoped installs, pass `--scope project --project-root /path/to/proje
 
 ## Validation
 
-`scripts/check-skills.sh` runs the repository validator in offline, deterministic mode. It checks the skill directory contract, supported frontmatter, portability rules, thin harness manifests, deployment behavior, and repository-specific generated-content workflows.
+`scripts/check-skills.sh` runs the repository validator in offline, deterministic mode. It checks the skill directory contract, supported frontmatter, Codex harness frontmatter constraints, portability rules, thin harness manifests, deployment behavior, and repository-specific generated-content workflows.

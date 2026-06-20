@@ -33,6 +33,11 @@ ALLOWED_FRONTMATTER_KEYS = {
     "metadata",
     "allowed-tools",
 }
+CODEX_HARNESS_FRONTMATTER_KEYS = {
+    "name",
+    "description",
+    "metadata",
+}
 REQUIRED_EVAL_KEYS = {"skill_name", "trigger_evals", "behavior_evals"}
 HARD_CODED_INSTALL_ROOTS = (
     "~/.agents/skills",
@@ -498,6 +503,12 @@ def parse_yaml_string_map(frontmatter_text: str, rel: str) -> dict[str, Frontmat
             if value_text.startswith(("[", "{", "]", "}")):
                 fail(f"Frontmatter value must be a YAML string in {rel}: {key}")
                 return None
+            if ": " in value_text:
+                fail(
+                    f"Frontmatter plain scalar must quote values containing ': ' "
+                    f"in {rel}: {key}"
+                )
+                return None
             parsed = value_text
 
         if parsed is None:
@@ -702,6 +713,25 @@ def validate_frontmatter(skill_dir: Path, skill_md: Path) -> None:
             )
 
 
+def validate_codex_harness_frontmatter(skill_dir: Path, skill_md: Path) -> None:
+    try:
+        skill_dir.relative_to(HARNESS_SKILLS_DIR / "codex")
+    except ValueError:
+        return
+
+    frontmatter = parse_frontmatter(skill_md)
+    if frontmatter is None:
+        return
+
+    extra_keys = sorted(set(frontmatter) - CODEX_HARNESS_FRONTMATTER_KEYS)
+    if extra_keys:
+        fail(
+            f"Codex harness skills must keep runtime frontmatter to "
+            f"name, description, and optional metadata in {repo_relative(skill_md)}: "
+            + ", ".join(extra_keys)
+        )
+
+
 def validate_evals(skill_dir: Path) -> None:
     evals_json = skill_dir / "evals" / "evals.json"
     rel = repo_relative(evals_json)
@@ -797,6 +827,7 @@ def validate_skill_contract(skill_dir: Path) -> None:
         return
 
     validate_frontmatter(skill_dir, skill_md)
+    validate_codex_harness_frontmatter(skill_dir, skill_md)
     validate_evals(skill_dir)
     validate_portability_patterns(skill_dir)
     validate_skill_local_refs(skill_dir, skill_md)
@@ -921,8 +952,16 @@ def validate_deploy_script(
                 env=user_env,
             )
             if "Mode: symlink" not in dry_run_user.stdout:
-                fail(f"Default user deploy mode must be symlink for {harness}")
-            if "ln -s" not in dry_run_user.stdout:
+                if harness == "codex":
+                    if "Mode: copy" not in dry_run_user.stdout:
+                        fail("Default user deploy mode must be copy for codex")
+                    if "cp -R" not in dry_run_user.stdout:
+                        fail("Codex user dry-run deploy should announce copying")
+                else:
+                    fail(f"Default user deploy mode must be symlink for {harness}")
+            elif harness == "codex":
+                fail("Default user deploy mode must not be symlink for codex")
+            elif "ln -s" not in dry_run_user.stdout:
                 fail(f"User dry-run deploy should announce symlink creation for {harness}")
 
             run_command(
@@ -1000,6 +1039,63 @@ def validate_deploy_script(
         )
         if "missing skill" not in wrong_harness_bare.stderr.lower():
             fail("Cross-harness bare skill selector should not resolve")
+
+    codex_manifest = harness_manifests.get("codex")
+    codex_portable_skill = next(
+        (
+            skill
+            for skill in valid_skills
+            if skill.startswith("portable/")
+            and "\ncompatibility:" in read_text(SKILLS_DIR / skill / "SKILL.md")
+        ),
+        None,
+    )
+    if codex_manifest is not None and codex_portable_skill is not None:
+        codex_install_name = skill_install_name(codex_portable_skill)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            project_root = Path(temp_dir)
+            destination = (
+                project_root / codex_manifest["project_install_root"] / codex_install_name
+            )
+
+            run_command(
+                "bash",
+                "scripts/deploy-skills.sh",
+                "--harness",
+                "codex",
+                "--scope",
+                "project",
+                "--project-root",
+                str(project_root),
+                "--skill",
+                codex_portable_skill,
+                expect_success=True,
+                label="codex portable copy frontmatter sanitization check",
+            )
+            deployed_skill_md = read_text(destination / "SKILL.md")
+            if "\ncompatibility:" in deployed_skill_md:
+                fail("Codex portable copy deploy left compatibility frontmatter installed")
+            if "name:" not in deployed_skill_md or "description:" not in deployed_skill_md:
+                fail("Codex portable copy deploy removed required frontmatter")
+
+            symlink_result = run_command(
+                "bash",
+                "scripts/deploy-skills.sh",
+                "--harness",
+                "codex",
+                "--scope",
+                "project",
+                "--project-root",
+                str(project_root),
+                "--mode",
+                "symlink",
+                "--skill",
+                codex_portable_skill,
+                expect_success=False,
+                label="codex portable symlink frontmatter safety check",
+            )
+            if "runtime-safe frontmatter" not in symlink_result.stderr:
+                fail("Codex portable symlink deploy did not reject unsafe frontmatter")
 
     agents_manifest = harness_manifests.get("agents")
     if agents_manifest is None:

@@ -33,7 +33,7 @@ Options:
   --all-for-harness         Deploy every skill for the selected harness
   --scope <user|project>    Install scope (default: user)
   --project-root <path>     Project root for project-scoped installs
-  --mode <symlink|copy>     Install mode (default: symlink for user, copy for project)
+  --mode <symlink|copy>     Install mode (default: symlink for user, copy for project; Codex user installs copy)
   --dry-run                 Print actions without changing anything
   --help                    Show this message
 EOF
@@ -106,6 +106,89 @@ link_or_copy() {
       fail "unsupported mode: $MODE"
       ;;
   esac
+}
+
+sanitize_codex_skill_copy() {
+  local skill_md="$1"
+
+  if (( DRY_RUN )); then
+    echo "sanitize Codex frontmatter $skill_md"
+    return
+  fi
+
+  python3 - "$skill_md" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text(encoding="utf-8")
+if not text.startswith("---\n"):
+    raise SystemExit(0)
+
+end = text.find("\n---", 4)
+if end == -1:
+    raise SystemExit(0)
+
+frontmatter = text[4:end].splitlines()
+body = text[end:]
+allowed = {"name", "description", "metadata"}
+kept = []
+keeping = False
+
+for line in frontmatter:
+    stripped = line.strip()
+    if not stripped or stripped.startswith("#"):
+        if keeping:
+            kept.append(line)
+        continue
+    if line[0].isspace():
+        if keeping:
+            kept.append(line)
+        continue
+
+    key = line.split(":", 1)[0].strip()
+    keeping = key in allowed
+    if keeping:
+        kept.append(line)
+
+path.write_text("---\n" + "\n".join(kept).rstrip() + "\n" + body, encoding="utf-8")
+PY
+}
+
+validate_codex_symlink_source() {
+  local skill_md="$1"
+
+  python3 - "$skill_md" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text(encoding="utf-8")
+if not text.startswith("---\n"):
+    raise SystemExit(0)
+
+end = text.find("\n---", 4)
+if end == -1:
+    raise SystemExit(0)
+
+allowed = {"name", "description", "metadata"}
+extra = []
+for line in text[4:end].splitlines():
+    stripped = line.strip()
+    if not stripped or stripped.startswith("#") or line[0].isspace():
+        continue
+    key = line.split(":", 1)[0].strip()
+    if key not in allowed:
+        extra.append(key)
+
+if extra:
+    print(
+        "Error: Codex symlink installs require runtime-safe frontmatter in "
+        f"{path}: {', '.join(sorted(extra))}",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
+PY
 }
 
 read_manifest_value() {
@@ -271,7 +354,11 @@ done
 if [[ -z "$MODE" ]]; then
   case "$SCOPE" in
     user)
-      MODE="symlink"
+      if [[ "$HARNESS" == "codex" ]]; then
+        MODE="copy"
+      else
+        MODE="symlink"
+      fi
       ;;
     project)
       MODE="copy"
@@ -332,7 +419,13 @@ for skill_id in "${SKILL_IDS[@]}"; do
   dst="$TARGET_ROOT/$install_name"
   [[ -d "$src" ]] || fail "missing skill: $skill_id"
   [[ -f "$src/SKILL.md" ]] || fail "missing skill: $skill_id"
+  if [[ "$HARNESS" == "codex" && "$MODE" == "symlink" ]]; then
+    validate_codex_symlink_source "$src/SKILL.md"
+  fi
   link_or_copy "$src" "$dst"
+  if [[ "$HARNESS" == "codex" && "$MODE" == "copy" ]]; then
+    sanitize_codex_skill_copy "$dst/SKILL.md"
+  fi
 done
 
 echo "Deployment complete"
