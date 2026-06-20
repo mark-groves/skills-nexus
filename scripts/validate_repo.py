@@ -1040,6 +1040,63 @@ def validate_deploy_script(
         if "missing skill" not in wrong_harness_bare.stderr.lower():
             fail("Cross-harness bare skill selector should not resolve")
 
+    codex_manifest = harness_manifests.get("codex")
+    codex_portable_skill = next(
+        (
+            skill
+            for skill in valid_skills
+            if skill.startswith("portable/")
+            and "\ncompatibility:" in read_text(SKILLS_DIR / skill / "SKILL.md")
+        ),
+        None,
+    )
+    if codex_manifest is not None and codex_portable_skill is not None:
+        codex_install_name = skill_install_name(codex_portable_skill)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            project_root = Path(temp_dir)
+            destination = (
+                project_root / codex_manifest["project_install_root"] / codex_install_name
+            )
+
+            run_command(
+                "bash",
+                "scripts/deploy-skills.sh",
+                "--harness",
+                "codex",
+                "--scope",
+                "project",
+                "--project-root",
+                str(project_root),
+                "--skill",
+                codex_portable_skill,
+                expect_success=True,
+                label="codex portable copy frontmatter sanitization check",
+            )
+            deployed_skill_md = read_text(destination / "SKILL.md")
+            if "\ncompatibility:" in deployed_skill_md:
+                fail("Codex portable copy deploy left compatibility frontmatter installed")
+            if "name:" not in deployed_skill_md or "description:" not in deployed_skill_md:
+                fail("Codex portable copy deploy removed required frontmatter")
+
+            symlink_result = run_command(
+                "bash",
+                "scripts/deploy-skills.sh",
+                "--harness",
+                "codex",
+                "--scope",
+                "project",
+                "--project-root",
+                str(project_root),
+                "--mode",
+                "symlink",
+                "--skill",
+                codex_portable_skill,
+                expect_success=False,
+                label="codex portable symlink frontmatter safety check",
+            )
+            if "runtime-safe frontmatter" not in symlink_result.stderr:
+                fail("Codex portable symlink deploy did not reject unsafe frontmatter")
+
     agents_manifest = harness_manifests.get("agents")
     if agents_manifest is None:
         return
