@@ -27,7 +27,7 @@ Usage:
 
 Options:
   --harness <name>          Harness manifest filename stem from harnesses/<name>.json
-  --skill <id|name>         Skill to deploy; accepts portable/pr, harness/codex/name, or an unambiguous folder name
+  --skill <id|name>         Skill to deploy; accepts portable/pr, harness/<harness>/name, or an unambiguous folder name
   --all                     Deploy portable skills plus skills for the selected harness
   --all-portable            Deploy every portable skill
   --all-for-harness         Deploy every skill for the selected harness
