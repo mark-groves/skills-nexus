@@ -3,6 +3,7 @@ import tempfile
 import textwrap
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 REPO_DIR = Path(__file__).resolve().parents[1]
@@ -276,21 +277,24 @@ class ValidateRepoFrontmatterTests(unittest.TestCase):
         self.assertIn("Compatibility is too long", validate_repo.ERRORS[0])
 
     def test_validate_codex_harness_frontmatter_rejects_compatibility(self) -> None:
-        with tempfile.TemporaryDirectory(
-            dir=validate_repo.HARNESS_SKILLS_DIR / "codex"
-        ) as temp_dir:
-            codex_root = Path(temp_dir)
-            skill_dir = self.write_skill_with_frontmatter(
-                codex_root,
-                "codex-frontmatter-skill",
-                """\
-                name: codex-frontmatter-skill
-                description: Example skill
-                compatibility: Codex only
-                """,
-            )
+        with tempfile.TemporaryDirectory(dir=REPO_DIR) as temp_dir:
+            harness_skills_dir = Path(temp_dir) / "skills" / "harness"
+            codex_root = harness_skills_dir / "codex"
+            codex_root.mkdir(parents=True)
+            with mock.patch.object(
+                validate_repo, "HARNESS_SKILLS_DIR", harness_skills_dir
+            ):
+                skill_dir = self.write_skill_with_frontmatter(
+                    codex_root,
+                    "codex-frontmatter-skill",
+                    """\
+                    name: codex-frontmatter-skill
+                    description: Example skill
+                    compatibility: Codex only
+                    """,
+                )
 
-            validate_repo.validate_skill_contract(skill_dir)
+                validate_repo.validate_skill_contract(skill_dir)
 
         self.assertTrue(
             any("Codex harness skills must keep runtime frontmatter" in error for error in validate_repo.ERRORS),
@@ -298,49 +302,52 @@ class ValidateRepoFrontmatterTests(unittest.TestCase):
         )
 
     def test_validate_codex_harness_frontmatter_accepts_metadata(self) -> None:
-        with tempfile.TemporaryDirectory(
-            dir=validate_repo.HARNESS_SKILLS_DIR / "codex"
-        ) as temp_dir:
-            codex_root = Path(temp_dir)
-            skill_dir = self.write_skill_with_frontmatter(
-                codex_root,
-                "codex-metadata-skill",
-                """\
-                name: codex-metadata-skill
-                description: Example skill
-                metadata:
-                  short-description: Example
-                """,
-            )
-            evals_dir = skill_dir / "evals"
-            evals_dir.mkdir()
-            (evals_dir / "evals.json").write_text(
-                textwrap.dedent(
+        with tempfile.TemporaryDirectory(dir=REPO_DIR) as temp_dir:
+            harness_skills_dir = Path(temp_dir) / "skills" / "harness"
+            codex_root = harness_skills_dir / "codex"
+            codex_root.mkdir(parents=True)
+            with mock.patch.object(
+                validate_repo, "HARNESS_SKILLS_DIR", harness_skills_dir
+            ):
+                skill_dir = self.write_skill_with_frontmatter(
+                    codex_root,
+                    "codex-metadata-skill",
                     """\
-                    {
-                      "skill_name": "codex-metadata-skill",
-                      "trigger_evals": [
-                        {"id": "positive-1", "query": "use codex metadata skill", "should_trigger": true},
-                        {"id": "positive-2", "query": "run codex metadata workflow", "should_trigger": true},
-                        {"id": "negative-1", "query": "translate this sentence", "should_trigger": false},
-                        {"id": "negative-2", "query": "what time is it", "should_trigger": false}
-                      ],
-                      "behavior_evals": [
+                    name: codex-metadata-skill
+                    description: Example skill
+                    metadata:
+                      short-description: Example
+                    """,
+                )
+                evals_dir = skill_dir / "evals"
+                evals_dir.mkdir()
+                (evals_dir / "evals.json").write_text(
+                    textwrap.dedent(
+                        """\
                         {
-                          "id": "basic",
-                          "prompt": "use codex metadata skill",
-                          "expected_behavior": "Uses the skill workflow.",
-                          "fixtures": [],
-                          "checks": ["Mentions the workflow"]
+                          "skill_name": "codex-metadata-skill",
+                          "trigger_evals": [
+                            {"id": "positive-1", "query": "use codex metadata skill", "should_trigger": true},
+                            {"id": "positive-2", "query": "run codex metadata workflow", "should_trigger": true},
+                            {"id": "negative-1", "query": "translate this sentence", "should_trigger": false},
+                            {"id": "negative-2", "query": "what time is it", "should_trigger": false}
+                          ],
+                          "behavior_evals": [
+                            {
+                              "id": "basic",
+                              "prompt": "use codex metadata skill",
+                              "expected_behavior": "Uses the skill workflow.",
+                              "fixtures": [],
+                              "checks": ["Mentions the workflow"]
+                            }
+                          ]
                         }
-                      ]
-                    }
-                    """
-                ),
-                encoding="utf-8",
-            )
+                        """
+                    ),
+                    encoding="utf-8",
+                )
 
-            validate_repo.validate_skill_contract(skill_dir)
+                validate_repo.validate_skill_contract(skill_dir)
 
         self.assertEqual(validate_repo.ERRORS, [])
 
@@ -377,6 +384,41 @@ class ValidateRepoFrontmatterTests(unittest.TestCase):
 
         self.assertEqual(len(validate_repo.ERRORS), 1)
         self.assertIn("Invalid skill name", validate_repo.ERRORS[0])
+
+
+class ValidateRepoSkillLayoutTests(unittest.TestCase):
+    def setUp(self) -> None:
+        validate_repo.ERRORS.clear()
+
+    def tearDown(self) -> None:
+        validate_repo.ERRORS.clear()
+
+    def test_validate_skills_root_allows_no_harness_skills(self) -> None:
+        with tempfile.TemporaryDirectory(dir=REPO_DIR) as temp_dir:
+            skills_dir = Path(temp_dir) / "skills"
+            portable_skills_dir = skills_dir / "portable"
+            portable_skill_dir = portable_skills_dir / "example-skill"
+            portable_skill_dir.mkdir(parents=True)
+            (portable_skill_dir / "SKILL.md").write_text(
+                "---\nname: example-skill\ndescription: Example skill\n---\n",
+                encoding="utf-8",
+            )
+            harness_skills_dir = skills_dir / "harness"
+
+            with (
+                mock.patch.object(validate_repo, "SKILLS_DIR", skills_dir),
+                mock.patch.object(
+                    validate_repo, "PORTABLE_SKILLS_DIR", portable_skills_dir
+                ),
+                mock.patch.object(
+                    validate_repo, "HARNESS_SKILLS_DIR", harness_skills_dir
+                ),
+                mock.patch.object(validate_repo, "validate_skill_contract"),
+            ):
+                valid_skills = validate_repo.validate_skills_root()
+
+        self.assertEqual(valid_skills, ["portable/example-skill"])
+        self.assertEqual(validate_repo.ERRORS, [])
 
 
 class ValidateRepoPortabilityTests(unittest.TestCase):
