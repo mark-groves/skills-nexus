@@ -150,16 +150,18 @@ once with a sanitized copy of the skill and once without it. A third,
 label-blinded judge turn grades both candidates against the same observable
 checks.
 
-By default, sanitized copies of the repository's other skills are available in
-both conditions. The behavior baseline removes only the selected skill, and
-trigger tests can select among the same peers they encounter after deployment.
-Use `--skill-universe isolated` when measuring the selected skill alone.
+By default, sanitized copies of the repository's other Codex-deployable skills
+(portable skills plus Codex harness skills) are available in both conditions.
+The behavior baseline removes only the selected skill, and trigger tests can
+select among the same peers they encounter after deployment. Use
+`--skill-universe isolated` when measuring the selected skill alone.
 
 The evaluator deliberately removes `evals/` from the installed task copy so
-expected answers cannot leak into the run. It records activation, commands,
-final responses, workspace deltas, Git state, timing, tokens, tool calls,
-check-level evidence, baseline lift, and confidence limitations. Each run
-writes:
+expected answers cannot leak into the run, and applies the same runtime
+frontmatter filtering as Codex copy deployment. It records activation,
+commands, final responses, workspace deltas, Git state, timing, tokens, tool
+calls, check-level evidence, baseline lift, and confidence limitations. Each
+run writes:
 
 - `results.json` for automation and longitudinal analysis;
 - `report.md` for review in Git or a terminal;
@@ -175,8 +177,9 @@ home and deletes that home after every turn.
 
 Fixture references are resolved relative to the selected skill. Files under
 `evals/fixtures/<scenario>/` are copied into the workspace with the scenario
-prefix removed. An optional `setup.sh` in that directory can build staged Git
-state or other deterministic inputs; it receives `EVAL_WORKSPACE` and
+prefix removed. An optional root `setup.sh` in that directory can build staged
+Git state or other deterministic inputs; nested files named `setup.sh` remain
+ordinary fixture content. The root hook receives `EVAL_WORKSPACE` and
 `EVAL_SKILL_DIR` in a minimal environment without inherited credentials. Legacy
 Markdown fixture recipes are supported, but expected
 behavior sections are withheld and the report marks their fidelity as

@@ -95,13 +95,12 @@ def _event_summary(
     }
 
 
-def _scrub(value: str, replacements: dict[str, str], skill_name: str) -> str:
+def _scrub(value: str, replacements: dict[str, str]) -> str:
     result = value
     for original, replacement in sorted(
         replacements.items(), key=lambda item: len(item[0]), reverse=True
     ):
         result = result.replace(original, replacement)
-    result = result.replace(skill_name, "<SELECTED_SKILL>")
     return result
 
 
@@ -336,17 +335,16 @@ class CodexRunner:
                 continue
             commands.append(
                 {
-                    "command": _scrub(command, replacements, self.skill_dir.name),
+                    "command": _scrub(command, replacements),
                     "exit_code": item.get("exit_code"),
                     "status": item.get("status"),
                     "output": _scrub(
                         str(item.get("aggregated_output", ""))[-5000:],
                         replacements,
-                        self.skill_dir.name,
                     ),
                 }
             )
-        final = _scrub(run.get("final_response", ""), replacements, self.skill_dir.name)
+        final = _scrub(run.get("final_response", ""), replacements)
         return {
             "status": run["status"],
             "final_response": final[-20_000:],

@@ -53,7 +53,7 @@ def _case_id(value: object, *, location: str) -> str:
 
 
 def discover_repository_skills(repo_root: Path) -> tuple[Path, ...]:
-    """Return canonical skill packages without descending into eval fixtures."""
+    """Return skill packages deployable to Codex without entering eval fixtures."""
     skills_root = repo_root.resolve() / "skills"
     discovered: list[Path] = []
     portable = skills_root / "portable"
@@ -61,10 +61,10 @@ def discover_repository_skills(repo_root: Path) -> tuple[Path, ...]:
         discovered.extend(
             path.parent.resolve() for path in portable.glob("*/SKILL.md")
         )
-    harness = skills_root / "harness"
-    if harness.is_dir():
+    codex_harness = skills_root / "harness" / "codex"
+    if codex_harness.is_dir():
         discovered.extend(
-            path.parent.resolve() for path in harness.glob("*/*/SKILL.md")
+            path.parent.resolve() for path in codex_harness.glob("*/SKILL.md")
         )
     return tuple(sorted(set(discovered), key=lambda path: str(path)))
 
@@ -201,17 +201,58 @@ def stable_digest(path: Path, *, exclude: Iterable[str] = ()) -> str:
 
 
 def sanitized_skill_copy(skill_dir: Path, destination: Path) -> None:
-    """Install runtime skill content while withholding eval ground truth."""
+    """Install Codex runtime content while withholding eval ground truth."""
     ignored = {"evals", "working", "__pycache__", ".git"}
 
     def ignore(_directory: str, names: list[str]) -> set[str]:
         return ignored.intersection(names)
 
     shutil.copytree(skill_dir, destination, ignore=ignore)
+    skill_md = destination / "SKILL.md"
+    if skill_md.is_file():
+        skill_md.write_text(
+            _sanitize_codex_frontmatter(skill_md.read_text(encoding="utf-8")),
+            encoding="utf-8",
+        )
 
 
-_EXPECTED_HEADING = re.compile(
-    r"^#{1,6}\s+(?:expected(?:\s+behavior)?|checks?|grading|assertions?)\b",
+_CODEX_FRONTMATTER_KEYS = {"name", "description", "metadata"}
+
+
+def _sanitize_codex_frontmatter(text: str) -> str:
+    """Match the frontmatter filtering used by Codex copy deployments."""
+    if not text.startswith("---\n"):
+        return text
+    end = text.find("\n---", 4)
+    if end == -1:
+        return text
+
+    kept: list[str] = []
+    keeping = False
+    for line in text[4:end].splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            if keeping:
+                kept.append(line)
+            continue
+        if line[0].isspace():
+            if keeping:
+                kept.append(line)
+            continue
+
+        key = line.split(":", 1)[0].strip()
+        keeping = key in _CODEX_FRONTMATTER_KEYS
+        if keeping:
+            kept.append(line)
+
+    return "---\n" + "\n".join(kept).rstrip() + "\n" + text[end:]
+
+
+_EXPECTED_SECTION = re.compile(
+    r"^(?:"
+    r"#{1,6}\s+(?:expected(?:\s+behavior)?|checks?|grading|assertions?)\b"
+    r"|(?:expected(?:\s+behavior)?|checks?|grading|assertions?)\s*:"
+    r")",
     flags=re.IGNORECASE,
 )
 
@@ -219,7 +260,7 @@ _EXPECTED_HEADING = re.compile(
 def _sanitized_recipe(text: str) -> str:
     kept: list[str] = []
     for line in text.splitlines():
-        if _EXPECTED_HEADING.match(line.strip()):
+        if _EXPECTED_SECTION.match(line.strip()):
             break
         kept.append(line)
     return "\n".join(kept).rstrip() + "\n"
@@ -309,7 +350,7 @@ def materialize_fixtures(
                 if not item.is_file():
                     continue
                 relative = item.relative_to(source)
-                if relative.name == "setup.sh":
+                if relative == Path("setup.sh"):
                     scripts.append(item)
                     continue
                 destination = workspace / relative
@@ -347,7 +388,7 @@ def materialize_fixtures(
 def initialize_fixture_repository(workspace: Path) -> dict[str, Any]:
     """Create a deterministic baseline Git repository when a fixture did not provide one."""
     if (workspace / ".git").exists():
-        return {"created": False, "reason": "fixture supplied .git"}
+        return {"ok": True, "created": False, "reason": "fixture supplied .git"}
     commands = [
         ["git", "init", "-q", "-b", "eval-base"],
         ["git", "config", "user.name", "Skill Eval"],
@@ -364,6 +405,7 @@ def initialize_fixture_repository(workspace: Path) -> dict[str, Any]:
         )
         if completed.returncode != 0:
             return {
+                "ok": False,
                 "created": False,
                 "reason": f"{' '.join(command)} failed: {completed.stderr.strip()}",
             }
@@ -375,8 +417,12 @@ def initialize_fixture_repository(workspace: Path) -> dict[str, Any]:
         check=False,
     )
     if commit.returncode != 0:
-        return {"created": False, "reason": f"git commit failed: {commit.stderr.strip()}"}
-    return {"created": True, "branch": "eval-base"}
+        return {
+            "ok": False,
+            "created": False,
+            "reason": f"git commit failed: {commit.stderr.strip()}",
+        }
+    return {"ok": True, "created": True, "branch": "eval-base"}
 
 
 def run_fixture_setups(

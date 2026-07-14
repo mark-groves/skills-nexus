@@ -167,9 +167,15 @@ def _git_metadata(repo_root: Path) -> dict[str, Any]:
     }
 
 
-def _fixture_fidelity(records: list[dict[str, Any]], setups: list[dict[str, Any]]) -> str:
+def _fixture_fidelity(
+    records: list[dict[str, Any]],
+    setups: list[dict[str, Any]],
+    repository: dict[str, Any],
+) -> str:
     if any(record["status"] == "missing" for record in records):
         return "missing"
+    if not repository.get("ok", False):
+        return "setup-failed"
     if any(result["exit_code"] != 0 for result in setups):
         return "setup-failed"
     if any(record["status"] == "degraded" for record in records):
@@ -406,7 +412,7 @@ def run_evaluation(args: argparse.Namespace) -> tuple[dict[str, Any], Path]:
                 "setups": setup_results,
                 "initial_snapshot": snapshot_workspace(template),
             }
-            fidelity = _fixture_fidelity(records, setup_results)
+            fidelity = _fixture_fidelity(records, setup_results, repository)
             fixture_manifest["fidelity"] = fidelity
             json_dump(case_root / "fixture.json", fixture_manifest)
             if fidelity in {"missing", "setup-failed", "degraded", "description-only"}:
@@ -567,11 +573,30 @@ def run_evaluation(args: argparse.Namespace) -> tuple[dict[str, Any], Path]:
         str(args.trigger_repeats),
         "--behavior-repeats",
         str(args.behavior_repeats),
+        "--activation-threshold",
+        str(args.activation_threshold),
         "--jobs",
         str(args.jobs),
+        "--timeout",
+        str(args.timeout),
+        "--codex-binary",
+        args.codex_binary,
         "--skill-universe",
         args.skill_universe,
+        "--sandbox",
+        args.sandbox,
+        "--allow-fixture-scripts"
+        if args.allow_fixture_scripts
+        else "--no-allow-fixture-scripts",
+        "--output-root",
+        str(args.output_root),
     ]
+    if args.repo_root.resolve() != REPO_ROOT.resolve():
+        reproduce.extend(["--repo-root", str(args.repo_root)])
+    if args.max_trigger_cases is not None:
+        reproduce.extend(["--max-trigger-cases", str(args.max_trigger_cases)])
+    if args.max_behavior_cases is not None:
+        reproduce.extend(["--max-behavior-cases", str(args.max_behavior_cases)])
     for case_id in args.trigger_case:
         reproduce.extend(["--trigger-case", case_id])
     for case_id in args.behavior_case:
@@ -580,6 +605,8 @@ def run_evaluation(args: argparse.Namespace) -> tuple[dict[str, Any], Path]:
         reproduce.extend(["--model", args.model])
     if args.judge_model:
         reproduce.extend(["--judge-model", args.judge_model])
+    if args.fail_under is not None:
+        reproduce.extend(["--fail-under", str(args.fail_under)])
 
     result = {
         "schema_version": 1,
