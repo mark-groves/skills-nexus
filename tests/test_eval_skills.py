@@ -28,6 +28,7 @@ from skill_eval.core import (  # noqa: E402
     EvalError,
     TriggerCase,
     discover_repository_skills,
+    git_observations,
     load_eval_spec,
     materialize_fixtures,
     initialize_fixture_repository,
@@ -39,6 +40,12 @@ from skill_eval.core import (  # noqa: E402
 
 
 class EvalCoreTests(unittest.TestCase):
+    def test_duplicate_case_filters_are_rejected(self) -> None:
+        case = TriggerCase("1", "demo", True)
+
+        with self.assertRaisesRegex(EvalError, "Duplicate trigger case id"):
+            eval_skills._select_cases((case,), ["1", "1"], None, kind="trigger")
+
     def test_eval_ids_must_be_safe_path_segments(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             skill_dir = Path(temp_dir) / "demo"
@@ -168,6 +175,24 @@ class EvalCoreTests(unittest.TestCase):
             self.assertNotIn("license:", frontmatter)
             self.assertNotIn("compatibility:", frontmatter)
             self.assertNotIn("allowed-tools:", frontmatter)
+
+    def test_sanitized_skill_copy_rejects_symlinks(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = root / "source"
+            (source / "evals").mkdir(parents=True)
+            (source / "references").mkdir()
+            (source / "SKILL.md").write_text("# Skill\n", encoding="utf-8")
+            (source / "evals" / "answer.md").write_text("secret\n", encoding="utf-8")
+            (source / "references" / "answer.md").symlink_to(
+                source / "evals" / "answer.md"
+            )
+
+            destination = root / "installed"
+            with self.assertRaisesRegex(EvalError, "may not contain symlinks"):
+                sanitized_skill_copy(source, destination)
+
+            self.assertFalse(destination.exists())
 
     def test_markdown_recipe_withholds_expected_section(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -326,6 +351,7 @@ class EvalCoreTests(unittest.TestCase):
             run = {
                 "events_path": str(events_path),
                 "workspace": str(workspace),
+                "runtime_home": "/tmp/private",
                 "final_response": "Created a commit.",
                 "status": "completed",
                 "artifact_delta": {"created": [], "modified": [], "deleted": []},
@@ -377,6 +403,7 @@ class EvalCoreTests(unittest.TestCase):
             run = {
                 "events_path": str(events_path),
                 "workspace": str(workspace),
+                "runtime_home": "/tmp/private",
                 "final_response": "Done.",
                 "status": "completed",
                 "artifact_delta": {"created": [], "modified": [], "deleted": []},
@@ -393,6 +420,78 @@ class EvalCoreTests(unittest.TestCase):
                 "<REDACTED: command output included skill instructions>",
             )
             self.assertNotIn("private skill instructions", json.dumps(bundle))
+
+    def test_workspace_skill_fixture_output_is_not_redacted(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            workspace = root / "run" / "workspace"
+            workspace.mkdir(parents=True)
+            events_path = root / "events.jsonl"
+            events_path.write_text(
+                json.dumps(
+                    {
+                        "type": "item.completed",
+                        "item": {
+                            "type": "command_execution",
+                            "command": "cat skills/pdf-processing/SKILL.md",
+                            "exit_code": 0,
+                            "status": "completed",
+                            "aggregated_output": "name: pdf-processing\nportable: true\n",
+                        },
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            runner = object.__new__(CodexRunner)
+            runner.runtime_skill_names = {"skill-architect"}
+            runner.skill_dir = Path("/skills/skill-architect")
+            run = {
+                "events_path": str(events_path),
+                "workspace": str(workspace),
+                "runtime_home": "/tmp/private",
+                "final_response": "Audit complete.",
+                "status": "completed",
+                "artifact_delta": {"created": [], "modified": [], "deleted": []},
+                "git": {"available": True},
+                "duration_seconds": 1.0,
+                "usage": {},
+                "tool_calls": 1,
+            }
+
+            bundle = runner._evidence_bundle(run)
+
+            self.assertEqual(
+                bundle["commands"][0]["output"],
+                "name: pdf-processing\nportable: true\n",
+            )
+
+    def test_git_observations_include_head_commit_files(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            subprocess.run(["git", "init", "-q"], cwd=workspace, check=True)
+            subprocess.run(
+                ["git", "config", "user.email", "eval@example.invalid"],
+                cwd=workspace,
+                check=True,
+            )
+            subprocess.run(
+                ["git", "config", "user.name", "Skill Eval"],
+                cwd=workspace,
+                check=True,
+            )
+            (workspace / "baseline.txt").write_text("baseline\n", encoding="utf-8")
+            subprocess.run(["git", "add", "baseline.txt"], cwd=workspace, check=True)
+            subprocess.run(["git", "commit", "-q", "-m", "baseline"], cwd=workspace, check=True)
+            (workspace / "README.md").write_text("result\n", encoding="utf-8")
+            subprocess.run(["git", "add", "README.md"], cwd=workspace, check=True)
+            subprocess.run(["git", "commit", "-q", "-m", "result"], cwd=workspace, check=True)
+
+            observations = git_observations(workspace)
+
+            self.assertEqual(observations["head_commit_exit_code"], 0)
+            self.assertIn("README.md", observations["head_commit"])
+            self.assertNotIn("baseline.txt", observations["head_commit"])
 
     def test_large_text_artifact_has_bounded_head_and_tail_preview(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

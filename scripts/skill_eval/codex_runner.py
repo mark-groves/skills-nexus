@@ -122,7 +122,10 @@ def _redact_skill_paths(value: str, markers: set[str]) -> str:
 
 
 def _may_expose_skill_instructions(
-    command: str, output: str, activation_markers: set[str]
+    command: str,
+    output: str,
+    activation_markers: set[str],
+    runtime_home: str,
 ) -> bool:
     """Detect direct and shell-expanded reads from an installed skill tree."""
     normalized_command = command.replace("\\", "/")
@@ -131,20 +134,19 @@ def _may_expose_skill_instructions(
     if any(marker in combined for marker in activation_markers):
         return True
 
-    lowered_command = normalized_command.lower()
-    if "skill.md" in lowered_command:
-        return True
+    if not runtime_home or runtime_home not in combined:
+        return False
 
-    skill_tree = re.search(r"(?:^|/)skills(?:/|\s|$|[\"'`])", lowered_command)
-    content_command = re.search(
-        r"\b(?:awk|cat|find|grep|head|less|more|perl|python\d*|rg|ruby|sed|tail|xargs)\b",
-        lowered_command,
-    )
-    if skill_tree and content_command:
+    lowered_command = normalized_command.lower()
+    normalized_home = runtime_home.replace("\\", "/")
+    if "skill.md" in lowered_command or f"{normalized_home}/skills" in combined:
         return True
 
     return bool(
-        re.search(r"(?:^|/)skills/[^\s/]+/skill\.md(?:\s|$)", normalized_output.lower())
+        re.search(
+            r"\b(?:awk|cat|find|grep|head|less|more|perl|python\d*|rg|ruby|sed|tail|xargs)\b",
+            lowered_command,
+        )
     )
 
 
@@ -312,6 +314,7 @@ class CodexRunner:
             "stderr_path": str(stderr_path),
             "prompt_path": str(prompt_path),
             "command": command,
+            "runtime_home": str(home),
         }
 
     def run_task(
@@ -361,10 +364,15 @@ class CodexRunner:
         events, _errors = _load_events(events_text)
         workspace = str(Path(run["workspace"]).resolve())
         run_root = str(Path(run["workspace"]).parent.resolve())
+        runtime_home = str(run.get("runtime_home", "")).replace("\\", "/")
         replacements = {workspace: "<WORKSPACE>", run_root: "<RUN_ROOT>"}
+        if runtime_home:
+            replacements[runtime_home] = "<CODEX_HOME>"
         commands: list[dict[str, Any]] = []
         activation_markers = {
-            f"skills/{name}/SKILL.md" for name in self.runtime_skill_names
+            f"{runtime_home}/skills/{name}/SKILL.md"
+            for name in self.runtime_skill_names
+            if runtime_home
         }
         for event in events:
             if event.get("type") != "item.completed" or not isinstance(event.get("item"), dict):
@@ -376,7 +384,7 @@ class CodexRunner:
             scrubbed_command = _redact_skill_paths(command, activation_markers)
             raw_output = str(item.get("aggregated_output", ""))[-5000:]
             read_skill = _may_expose_skill_instructions(
-                command, raw_output, activation_markers
+                command, raw_output, activation_markers, runtime_home
             )
             commands.append(
                 {

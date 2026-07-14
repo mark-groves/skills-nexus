@@ -120,6 +120,11 @@ def _select_cases(
 ) -> tuple[T, ...]:
     by_id = {str(getattr(case, "id")): case for case in cases}
     if requested:
+        duplicates = sorted(
+            case_id for case_id in set(requested) if requested.count(case_id) > 1
+        )
+        if duplicates:
+            raise EvalError(f"Duplicate {kind} case id(s): {', '.join(duplicates)}")
         unknown = [case_id for case_id in requested if case_id not in by_id]
         if unknown:
             raise EvalError(f"Unknown {kind} case id(s): {', '.join(unknown)}")

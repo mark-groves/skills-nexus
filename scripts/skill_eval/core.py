@@ -210,6 +210,13 @@ def sanitized_skill_copy(skill_dir: Path, destination: Path) -> None:
     """Install Codex runtime content while withholding eval ground truth."""
     ignored = {"evals", "working", "__pycache__", ".git"}
 
+    symlinks = sorted(
+        path.relative_to(skill_dir) for path in skill_dir.rglob("*") if path.is_symlink()
+    )
+    if symlinks:
+        display = ", ".join(path.as_posix() for path in symlinks)
+        raise EvalError(f"Skill runtime content may not contain symlinks: {display}")
+
     def ignore(_directory: str, names: list[str]) -> set[str]:
         return ignored.intersection(names)
 
@@ -532,6 +539,15 @@ def git_observations(workspace: Path) -> dict[str, Any]:
     commands = {
         "status": ["git", "status", "--short", "--branch"],
         "log": ["git", "log", "--oneline", "--decorate", "-10"],
+        "head_commit": [
+            "git",
+            "show",
+            "--stat",
+            "--name-status",
+            "--format=fuller",
+            "--no-renames",
+            "HEAD",
+        ],
         "diff_stat": ["git", "diff", "--stat", "HEAD"],
         "staged_diff_stat": ["git", "diff", "--cached", "--stat", "HEAD"],
     }

@@ -470,6 +470,46 @@ class ValidateRepoEvalTests(unittest.TestCase):
                     validate_repo.ERRORS,
                 )
 
+    def test_fixture_paths_must_match_evaluator_safety_rules(self) -> None:
+        with tempfile.TemporaryDirectory(dir=REPO_DIR) as temp_dir:
+            skill_dir = Path(temp_dir) / "fixture-path-skill"
+            evals_dir = skill_dir / "evals"
+            evals_dir.mkdir(parents=True)
+            (evals_dir / "evals.json").write_text(
+                json.dumps(
+                    {
+                        "skill_name": skill_dir.name,
+                        "trigger_evals": [
+                            {"id": 1, "query": "one", "should_trigger": True},
+                            {"id": 2, "query": "two", "should_trigger": True},
+                            {"id": 3, "query": "three", "should_trigger": False},
+                            {"id": 4, "query": "four", "should_trigger": False},
+                        ],
+                        "behavior_evals": [
+                            {
+                                "id": 1,
+                                "prompt": "demo",
+                                "expected_behavior": "works",
+                                "fixtures": ["../state", "/tmp/state"],
+                                "checks": ["result exists"],
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            validate_repo.validate_evals(skill_dir)
+
+        path_errors = [
+            error for error in validate_repo.ERRORS if "must be skill-relative" in error
+        ]
+        self.assertEqual(
+            len(path_errors),
+            2,
+            validate_repo.ERRORS,
+        )
+
 
 class ValidateRepoSkillLayoutTests(unittest.TestCase):
     def setUp(self) -> None:
