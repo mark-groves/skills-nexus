@@ -702,6 +702,7 @@ def validate_evals(skill_dir: Path) -> None:
             if set(item) != required_keys:
                 fail(f"Invalid trigger eval shape in {rel}: {item!r}")
                 continue
+            valid_item = True
             eval_id = item["id"]
             if (
                 isinstance(eval_id, bool)
@@ -709,17 +710,21 @@ def validate_evals(skill_dir: Path) -> None:
                 or not str(eval_id).strip()
             ):
                 fail(f"Trigger eval id must be a non-empty string or integer in {rel}")
+                valid_item = False
             elif str(eval_id) in trigger_ids:
                 fail(f"Duplicate trigger eval id {eval_id!r} in {rel}")
+                valid_item = False
             else:
                 trigger_ids.add(str(eval_id))
             if not isinstance(item["query"], str) or not item["query"].strip():
                 fail(f"Trigger eval query must be a non-empty string in {rel}")
+                valid_item = False
             if not isinstance(item["should_trigger"], bool):
                 fail(f"Trigger eval should_trigger must be boolean in {rel}")
-                continue
-            positives += int(item["should_trigger"])
-            negatives += int(not item["should_trigger"])
+                valid_item = False
+            if valid_item:
+                positives += int(item["should_trigger"])
+                negatives += int(not item["should_trigger"])
         if positives < 2:
             fail(f"Need at least 2 positive trigger evals in {rel}")
         if negatives < 2:

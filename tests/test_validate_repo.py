@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import tempfile
 import textwrap
 import unittest
@@ -384,6 +385,89 @@ class ValidateRepoFrontmatterTests(unittest.TestCase):
 
         self.assertEqual(len(validate_repo.ERRORS), 1)
         self.assertIn("Invalid skill name", validate_repo.ERRORS[0])
+
+
+class ValidateRepoEvalTests(unittest.TestCase):
+    def setUp(self) -> None:
+        validate_repo.ERRORS.clear()
+
+    def tearDown(self) -> None:
+        validate_repo.ERRORS.clear()
+
+    def test_invalid_trigger_ids_do_not_satisfy_minimum_counts(self) -> None:
+        scenarios = (
+            ("empty", "", "must be a non-empty string or integer"),
+            ("boolean", True, "must be a non-empty string or integer"),
+            ("duplicate", "positive-1", "Duplicate trigger eval id"),
+        )
+
+        for label, invalid_id, expected_error in scenarios:
+            with self.subTest(label=label):
+                validate_repo.ERRORS.clear()
+                with tempfile.TemporaryDirectory(dir=REPO_DIR) as temp_dir:
+                    skill_dir = Path(temp_dir) / "trigger-count-skill"
+                    evals_dir = skill_dir / "evals"
+                    evals_dir.mkdir(parents=True)
+                    (evals_dir / "evals.json").write_text(
+                        json.dumps(
+                            {
+                                "skill_name": skill_dir.name,
+                                "trigger_evals": [
+                                    {
+                                        "id": "positive-1",
+                                        "query": "use the skill",
+                                        "should_trigger": True,
+                                    },
+                                    {
+                                        "id": invalid_id,
+                                        "query": "use the skill again",
+                                        "should_trigger": True,
+                                    },
+                                    {
+                                        "id": "negative-1",
+                                        "query": "translate this",
+                                        "should_trigger": False,
+                                    },
+                                    {
+                                        "id": "negative-2",
+                                        "query": "check the weather",
+                                        "should_trigger": False,
+                                    },
+                                ],
+                                "behavior_evals": [
+                                    {
+                                        "id": "basic",
+                                        "prompt": "use the skill",
+                                        "expected_behavior": "Uses the skill.",
+                                        "fixtures": [],
+                                        "checks": ["Uses the skill workflow"],
+                                    }
+                                ],
+                            }
+                        ),
+                        encoding="utf-8",
+                    )
+
+                    validate_repo.validate_evals(skill_dir)
+
+                self.assertTrue(
+                    any(expected_error in error for error in validate_repo.ERRORS),
+                    validate_repo.ERRORS,
+                )
+                self.assertTrue(
+                    any(
+                        "Need at least 2 positive trigger evals" in error
+                        for error in validate_repo.ERRORS
+                    ),
+                    validate_repo.ERRORS,
+                )
+                self.assertFalse(
+                    any(
+                        "Need at least 2 negative trigger evals" in error
+                        for error in validate_repo.ERRORS
+                    ),
+                    validate_repo.ERRORS,
+                )
 
 
 class ValidateRepoSkillLayoutTests(unittest.TestCase):

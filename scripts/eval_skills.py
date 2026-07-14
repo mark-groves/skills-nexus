@@ -615,7 +615,7 @@ def run_evaluation(args: argparse.Namespace) -> tuple[dict[str, Any], Path]:
             "evals_withheld": True,
             "fresh_contexts": True,
             "blind_paired_grading": True,
-            "peer_skill_parity": True,
+            "peer_skill_parity": args.skill_universe == "repository",
             "warnings": warnings,
         },
         "trigger": {"runs": trigger_runs, "summary": trigger_summary}

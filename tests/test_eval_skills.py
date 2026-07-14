@@ -313,6 +313,7 @@ class EvalCliIntegrationTests(unittest.TestCase):
             self.assertEqual(len(result_paths), 1)
             result = json.loads(result_paths[0].read_text(encoding="utf-8"))
             self.assertTrue(result["integrity"]["evals_withheld"])
+            self.assertTrue(result["integrity"]["peer_skill_parity"])
             self.assertEqual(result["runtime"]["codex_version"], "fake-codex 1.0")
             self.assertEqual(len(result["trigger"]["runs"]), 2)
             self.assertEqual(len(result["behavior"]["results"]), 1)
@@ -323,6 +324,36 @@ class EvalCliIntegrationTests(unittest.TestCase):
             self.assertTrue((result_paths[0].parent / "report.md").is_file())
             self.assertTrue((result_paths[0].parent / "report.html").is_file())
             self.assertEqual(list(result_paths[0].parent.glob("**/codex-home")), [])
+
+            isolated_output_root = root / "isolated-outputs"
+            with mock.patch.dict(os.environ, {"CODEX_HOME": str(codex_home)}):
+                with contextlib.redirect_stdout(io.StringIO()):
+                    isolated_status = eval_skills.main(
+                        [
+                            "--repo-root",
+                            str(repo),
+                            "--skill",
+                            "demo",
+                            "--suite",
+                            "trigger",
+                            "--skill-universe",
+                            "isolated",
+                            "--codex-binary",
+                            str(fake_codex),
+                            "--output-root",
+                            str(isolated_output_root),
+                        ]
+                    )
+
+            self.assertEqual(isolated_status, 0)
+            isolated_result_path = next(isolated_output_root.glob("demo/*/results.json"))
+            isolated_result = json.loads(isolated_result_path.read_text(encoding="utf-8"))
+            self.assertFalse(isolated_result["integrity"]["peer_skill_parity"])
+            self.assertEqual(isolated_result["runtime"]["peer_skills"], [])
+            self.assertIn(
+                "Repository peer skills were held constant across conditions: `False`",
+                (isolated_result_path.parent / "report.md").read_text(encoding="utf-8"),
+            )
 
 
 if __name__ == "__main__":
