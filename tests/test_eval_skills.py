@@ -25,17 +25,73 @@ SPEC.loader.exec_module(eval_skills)
 
 from skill_eval.codex_runner import CodexRunner, _event_summary, _scrub  # noqa: E402
 from skill_eval.core import (  # noqa: E402
+    EvalError,
     TriggerCase,
     discover_repository_skills,
+    load_eval_spec,
     materialize_fixtures,
     initialize_fixture_repository,
     run_fixture_setups,
     sanitized_skill_copy,
+    snapshot_workspace,
     summarize_trigger_results,
 )
 
 
 class EvalCoreTests(unittest.TestCase):
+    def test_eval_ids_must_be_safe_path_segments(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            skill_dir = Path(temp_dir) / "demo"
+            eval_path = skill_dir / "evals" / "evals.json"
+            eval_path.parent.mkdir(parents=True)
+            for unsafe_id in ("../escape", "/tmp/escape", r"..\escape", ".", ".."):
+                with self.subTest(unsafe_id=unsafe_id):
+                    eval_path.write_text(
+                        json.dumps(
+                            {
+                                "skill_name": "demo",
+                                "trigger_evals": [
+                                    {
+                                        "id": unsafe_id,
+                                        "query": "demo",
+                                        "should_trigger": True,
+                                    }
+                                ],
+                                "behavior_evals": [],
+                            }
+                        ),
+                        encoding="utf-8",
+                    )
+                    with self.assertRaisesRegex(EvalError, "safe path segment"):
+                        load_eval_spec(skill_dir)
+
+    def test_empty_fixture_reference_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            skill_dir = Path(temp_dir) / "demo"
+            eval_path = skill_dir / "evals" / "evals.json"
+            eval_path.parent.mkdir(parents=True)
+            eval_path.write_text(
+                json.dumps(
+                    {
+                        "skill_name": "demo",
+                        "trigger_evals": [],
+                        "behavior_evals": [
+                            {
+                                "id": 1,
+                                "prompt": "demo",
+                                "expected_behavior": "works",
+                                "fixtures": ["   "],
+                                "checks": ["result exists"],
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(EvalError, "non-empty strings"):
+                load_eval_spec(skill_dir)
+
     def test_peer_skill_call_does_not_count_as_target_activation(self) -> None:
         events = [
             {
@@ -290,6 +346,68 @@ class EvalCoreTests(unittest.TestCase):
                 "<REDACTED: command output included skill instructions>",
             )
             self.assertEqual(bundle["final_response"], "Created a commit.")
+
+    def test_shell_expanded_skill_read_redacts_command_output(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            workspace = root / "run" / "workspace"
+            workspace.mkdir(parents=True)
+            events_path = root / "events.jsonl"
+            events_path.write_text(
+                json.dumps(
+                    {
+                        "type": "item.completed",
+                        "item": {
+                            "type": "command_execution",
+                            "command": (
+                                "cat $(find /tmp/private/skills -name SKILL.md)"
+                            ),
+                            "exit_code": 0,
+                            "status": "completed",
+                            "aggregated_output": "private skill instructions\n",
+                        },
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            runner = object.__new__(CodexRunner)
+            runner.runtime_skill_names = {"commit"}
+            runner.skill_dir = Path("/skills/commit")
+            run = {
+                "events_path": str(events_path),
+                "workspace": str(workspace),
+                "final_response": "Done.",
+                "status": "completed",
+                "artifact_delta": {"created": [], "modified": [], "deleted": []},
+                "git": {"available": True},
+                "duration_seconds": 1.0,
+                "usage": {},
+                "tool_calls": 1,
+            }
+
+            bundle = runner._evidence_bundle(run)
+
+            self.assertEqual(
+                bundle["commands"][0]["output"],
+                "<REDACTED: command output included skill instructions>",
+            )
+            self.assertNotIn("private skill instructions", json.dumps(bundle))
+
+    def test_large_text_artifact_has_bounded_head_and_tail_preview(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            content = "BEGIN\n" + ("middle\n" * 3_000) + "END\n"
+            (workspace / "catalog.drawio").write_text(content, encoding="utf-8")
+
+            snapshot = snapshot_workspace(workspace, preview_bytes=1_000)
+            record = snapshot["files"]["catalog.drawio"]
+
+            self.assertTrue(record["text_truncated"])
+            self.assertIn("BEGIN", record["text"])
+            self.assertIn("END", record["text"])
+            self.assertIn("bytes omitted", record["text"])
+            self.assertLess(len(record["text"].encode("utf-8")), 1_100)
 
     def test_executable_fixture_runs_after_clean_git_baseline(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

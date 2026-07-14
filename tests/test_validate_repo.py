@@ -398,6 +398,7 @@ class ValidateRepoEvalTests(unittest.TestCase):
         scenarios = (
             ("empty", "", "must be a non-empty string or integer"),
             ("boolean", True, "must be a non-empty string or integer"),
+            ("path-like", "../positive-2", "must be a safe path segment"),
             ("duplicate", "positive-1", "Duplicate trigger eval id"),
         )
 

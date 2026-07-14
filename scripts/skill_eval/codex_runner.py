@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -118,6 +119,33 @@ def _redact_skill_paths(value: str, markers: set[str]) -> str:
             marker_end = marker_start + len(marker)
             result = result[:token_start] + "<SKILL_INSTRUCTIONS>" + result[marker_end:]
     return result
+
+
+def _may_expose_skill_instructions(
+    command: str, output: str, activation_markers: set[str]
+) -> bool:
+    """Detect direct and shell-expanded reads from an installed skill tree."""
+    normalized_command = command.replace("\\", "/")
+    normalized_output = output.replace("\\", "/")
+    combined = f"{normalized_command}\n{normalized_output}"
+    if any(marker in combined for marker in activation_markers):
+        return True
+
+    lowered_command = normalized_command.lower()
+    if "skill.md" in lowered_command:
+        return True
+
+    skill_tree = re.search(r"(?:^|/)skills(?:/|\s|$|[\"'`])", lowered_command)
+    content_command = re.search(
+        r"\b(?:awk|cat|find|grep|head|less|more|perl|python\d*|rg|ruby|sed|tail|xargs)\b",
+        lowered_command,
+    )
+    if skill_tree and content_command:
+        return True
+
+    return bool(
+        re.search(r"(?:^|/)skills/[^\s/]+/skill\.md(?:\s|$)", normalized_output.lower())
+    )
 
 
 class CodexRunner:
@@ -345,10 +373,11 @@ class CodexRunner:
             if item.get("type") != "command_execution":
                 continue
             command = str(item.get("command", ""))
-            normalized_command = command.replace("\\", "/")
-            read_skill = any(marker in normalized_command for marker in activation_markers)
             scrubbed_command = _redact_skill_paths(command, activation_markers)
             raw_output = str(item.get("aggregated_output", ""))[-5000:]
+            read_skill = _may_expose_skill_instructions(
+                command, raw_output, activation_markers
+            )
             commands.append(
                 {
                     "command": _scrub(scrubbed_command, replacements),

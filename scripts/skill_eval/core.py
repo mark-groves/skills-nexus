@@ -49,6 +49,8 @@ def _case_id(value: object, *, location: str) -> str:
     result = str(value).strip()
     if not result:
         raise EvalError(f"{location} id must not be empty")
+    if result in {".", ".."} or "/" in result or "\\" in result or "\0" in result:
+        raise EvalError(f"{location} id must be a safe path segment")
     return result
 
 
@@ -154,8 +156,12 @@ def load_eval_spec(skill_dir: Path) -> EvalSpec:
             raise EvalError(
                 f"behavior_evals[{index}].expected_behavior must be a non-empty string"
             )
-        if not isinstance(fixtures, list) or not all(isinstance(x, str) for x in fixtures):
-            raise EvalError(f"behavior_evals[{index}].fixtures must be a list of strings")
+        if not isinstance(fixtures, list) or not all(
+            isinstance(x, str) and x.strip() for x in fixtures
+        ):
+            raise EvalError(
+                f"behavior_evals[{index}].fixtures must be a list of non-empty strings"
+            )
         if (
             not isinstance(checks, list)
             or not checks
@@ -482,11 +488,22 @@ def snapshot_workspace(workspace: Path, *, preview_bytes: int = 12_000) -> dict[
             "sha256": hashlib.sha256(data).hexdigest(),
             "size_bytes": len(data),
         }
-        if len(data) <= preview_bytes:
-            try:
-                record["text"] = data.decode("utf-8")
-            except UnicodeDecodeError:
-                pass
+        try:
+            text = data.decode("utf-8")
+            if len(data) <= preview_bytes:
+                record["text"] = text
+            else:
+                prefix_bytes = preview_bytes // 2
+                suffix_bytes = preview_bytes - prefix_bytes
+                prefix = data[:prefix_bytes].decode("utf-8", errors="ignore")
+                suffix = data[-suffix_bytes:].decode("utf-8", errors="ignore")
+                omitted = len(data) - prefix_bytes - suffix_bytes
+                record["text"] = (
+                    f"{prefix}\n... <{omitted} bytes omitted> ...\n{suffix}"
+                )
+                record["text_truncated"] = True
+        except UnicodeDecodeError:
+            pass
         files[relative] = record
     return {"files": files}
 

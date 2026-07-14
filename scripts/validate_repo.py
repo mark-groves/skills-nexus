@@ -711,11 +711,19 @@ def validate_evals(skill_dir: Path) -> None:
             ):
                 fail(f"Trigger eval id must be a non-empty string or integer in {rel}")
                 valid_item = False
-            elif str(eval_id) in trigger_ids:
+            elif (
+                (normalized_id := str(eval_id).strip()) in {".", ".."}
+                or "/" in normalized_id
+                or "\\" in normalized_id
+                or "\0" in normalized_id
+            ):
+                fail(f"Trigger eval id must be a safe path segment in {rel}")
+                valid_item = False
+            elif normalized_id in trigger_ids:
                 fail(f"Duplicate trigger eval id {eval_id!r} in {rel}")
                 valid_item = False
             else:
-                trigger_ids.add(str(eval_id))
+                trigger_ids.add(normalized_id)
             if not isinstance(item["query"], str) or not item["query"].strip():
                 fail(f"Trigger eval query must be a non-empty string in {rel}")
                 valid_item = False
@@ -750,10 +758,17 @@ def validate_evals(skill_dir: Path) -> None:
                 or not str(eval_id).strip()
             ):
                 fail(f"Behavior eval id must be a non-empty string or integer in {rel}")
-            elif str(eval_id) in behavior_ids:
+            elif (
+                (normalized_id := str(eval_id).strip()) in {".", ".."}
+                or "/" in normalized_id
+                or "\\" in normalized_id
+                or "\0" in normalized_id
+            ):
+                fail(f"Behavior eval id must be a safe path segment in {rel}")
+            elif normalized_id in behavior_ids:
                 fail(f"Duplicate behavior eval id {eval_id!r} in {rel}")
             else:
-                behavior_ids.add(str(eval_id))
+                behavior_ids.add(normalized_id)
             if not isinstance(item["prompt"], str) or not item["prompt"].strip():
                 fail(f"Behavior eval prompt must be a non-empty string in {rel}")
             if (
