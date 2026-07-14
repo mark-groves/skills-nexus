@@ -866,9 +866,7 @@ def validate_skills_root() -> list[str]:
             valid_skills.append(skill_id_value)
             validate_skill_contract(skill_dir)
 
-    if not HARNESS_SKILLS_DIR.is_dir():
-        fail("Missing harness-specific skill category: skills/harness")
-    else:
+    if HARNESS_SKILLS_DIR.is_dir():
         for harness_dir in sorted(HARNESS_SKILLS_DIR.iterdir(), key=lambda path: path.name):
             if not harness_dir.is_dir():
                 fail(f"Unexpected file directly under skills/harness: {repo_relative(harness_dir)}")

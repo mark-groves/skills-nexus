@@ -30,12 +30,6 @@ Deploy multiple portable skills using unambiguous short names:
 bash scripts/deploy-skills.sh --harness agents --skill commit --skill pr --scope user
 ```
 
-Deploy a Codex-specific skill:
-
-```bash
-bash scripts/deploy-skills.sh --harness codex --skill harness/codex/codex-pr-review-loop --scope user
-```
-
 Deploy every portable skill plus every skill for the selected harness:
 
 ```bash
@@ -86,8 +80,8 @@ Supported harness manifests:
   reusable harness-specific skill.
 - Deployed skills are installed by their package folder name, not by
   their repository category path. For example, `portable/pr` installs as
-  `pr`, and `harness/codex/codex-pr-review-loop` installs as
-  `codex-pr-review-loop`.
+  `pr`, and a future `harness/codex/example` skill would install as
+  `example`.
 - Canonical `SKILL.md` frontmatter follows the open Agent Skills
   standard:
   - `name` is required, must match the folder name, and uses 1-64
@@ -115,8 +109,8 @@ Supported harness manifests:
 ## Deployment Notes
 
 `--skill` is the primary deployment path. It accepts a full skill id such
-as `portable/pr` or `harness/codex/codex-pr-review-loop`; a bare skill
-name such as `pr` is accepted only when it is unambiguous.
+as `portable/pr` or `harness/<harness>/<name>`; a bare skill name such as
+`pr` is accepted only when it is unambiguous.
 
 `--all` installs every portable skill plus every skill under
 `skills/harness/<selected-harness>/`. Use `--all-portable` for portable
