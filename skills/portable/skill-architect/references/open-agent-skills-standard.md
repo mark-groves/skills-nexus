@@ -36,6 +36,11 @@ Optional fields:
   varies by client, so treat it as an optimization rather than the only
   safety boundary.
 
+Use only `name` and `description` by default. Optional fields remain part
+of the standard, but include them only when they carry real information.
+Quote or use a block scalar for YAML values whose punctuation could make
+the frontmatter ambiguous.
+
 ## Body Content
 
 There is no required Markdown structure. Write the body as operating
@@ -86,12 +91,20 @@ reference chains shallow: `SKILL.md` should directly mention the support
 files an agent might need.
 
 Do not rely on absolute install roots, sibling skills, or client-native
-locations unless the target environment requires them and the skill is
-explicitly not intended to be portable.
+locations. Installation and harness integration belong outside a
+portable skill package.
+
+## Format Compliance And Portability
+
+The specification defines the skill directory and progressive disclosure
+model. It does not make client discovery paths, activation syntax, tools,
+permissions, runtimes, or optional field enforcement identical. Validate
+both the package format and the absence of harness-specific assumptions.
 
 ## Validation
 
-When a local validator exists, run it. If not, manually check:
+When a local validator exists, run it. Use `skills-ref validate` when the
+official reference validator is available. Otherwise manually check:
 
 - `SKILL.md` exists and starts with valid YAML frontmatter;
 - required fields are present and within limits;

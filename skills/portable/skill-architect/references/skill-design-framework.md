@@ -102,11 +102,14 @@ logic deserves tests. Scripts should:
 - avoid prompts and other interactive behavior;
 - provide concise `--help` with examples;
 - print actionable error messages;
+- reject ambiguous or invalid input rather than guessing;
 - put parseable output on stdout and diagnostics on stderr;
 - use structured output such as JSON, CSV, or TSV when another tool or
   agent will consume it;
+- behave idempotently when an agent may retry the command;
 - support dry runs for destructive or stateful operations;
 - use safe defaults and explicit confirmation flags for risky actions;
+- use meaningful, documented exit codes for distinct failure types;
 - limit output size or provide pagination/output-file options.
 
 ## Iterate From Evidence

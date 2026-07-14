@@ -1,0 +1,16 @@
+{
+  "skill_name": "release-notes",
+  "trigger_evals": [
+    {
+      "id": 1,
+      "query": "Write release notes.",
+      "should_trigger": true
+    },
+    {
+      "id": 2,
+      "query": "Fix the release build.",
+      "should_trigger": false
+    }
+  ],
+  "behavior_evals": []
+}

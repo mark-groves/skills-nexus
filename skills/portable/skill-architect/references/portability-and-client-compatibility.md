@@ -17,6 +17,12 @@ Keep the skill itself independent of where it is installed. Use
 skill-root-relative references for bundled files and inspect the target
 environment when client-specific behavior matters.
 
+The specification standardizes the package, not every client behavior.
+Clients can differ in discovery paths, activation, resource access,
+permissions, supported runtimes, and optional frontmatter handling. A
+conforming package is therefore necessary but not sufficient for
+cross-client portability.
+
 ## Discovery Scopes
 
 Compatible clients commonly support more than one scope:
@@ -27,9 +33,9 @@ Compatible clients commonly support more than one scope:
 - client-native directories;
 - a cross-client dot-agents skills convention.
 
-Do not hard-code these paths into skill instructions unless the user is
-building for one explicit client. Instead, discover the local convention
-from repository files, client docs, or user-provided context.
+Do not hard-code these paths into portable skill instructions. Discover
+the local convention only when installing or testing the skill, and keep
+installation guidance outside the portable package.
 
 ## Activation Models
 
@@ -41,7 +47,8 @@ Clients may activate skills through:
 
 Write descriptions for model-driven selection even when the target client
 also supports explicit activation. The description remains the common
-metadata surface across clients.
+metadata surface across clients. Do not require a slash command, mention
+syntax, picker, or dedicated loading tool for the workflow to make sense.
 
 ## Resource Loading
 
@@ -64,12 +71,33 @@ If the skill needs risky commands, state the risk, require dry runs or
 approval when appropriate, and design scripts with explicit confirmation
 flags.
 
-## Client-Specific Tradeoffs
+## Frontmatter And Runtime Requirements
 
-When local client conventions conflict with portability, prefer the
-user's target. Document the tradeoff in the skill or final response:
+Use `name` and `description` as the portable minimum. The open standard
+also permits `license`, `compatibility`, `metadata`, and experimental
+`allowed-tools`, but clients may interpret optional fields differently.
+Add them only for real information and do not make core behavior depend
+on them being enforced.
 
-- portable open-standard skill;
-- client-optimized skill with known non-portable assumptions;
-- dual-mode skill that discovers local conventions and falls back to the
-  open format.
+Express requirements as capabilities or dependencies rather than branded
+tool names. Declare required executables, packages, network access, and
+permissions. Prefer scripts with broadly available runtimes or document a
+fallback when the intended client environments differ.
+
+## Cross-Harness Boundary
+
+Keep harness-only behavior outside the portable artifact. Examples
+include proprietary hooks, native configuration, branded tool names,
+client-specific activation syntax, and fixed install roots.
+
+If a task combines portable and harness-specific concerns:
+
+- create or improve the portable skill as one self-contained package;
+- identify the harness adapter separately without placing it in the
+  portable skill directory;
+- report which compatibility claims were tested and which remain a static
+  assessment;
+- hand off work whose value depends entirely on one harness.
+
+Do not call a client-optimized or dual-mode artifact portable merely
+because its frontmatter conforms to the open specification.
