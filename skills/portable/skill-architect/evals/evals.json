@@ -3,77 +3,107 @@
   "trigger_evals": [
     {
       "id": 1,
-      "query": "Create a new skill for Kubernetes incident response.",
+      "query": "Create a portable Agent Skill for Kubernetes incident response that our Codex, Claude Code, and Cursor users can share.",
       "should_trigger": true
     },
     {
       "id": 2,
-      "query": "Improve this existing PDF processing skill so it triggers better.",
+      "query": "This PDF skill only works in one coding agent right now. Make it reusable across skills-compatible clients.",
       "should_trigger": true
     },
     {
       "id": 3,
-      "query": "Design evals for a skill description.",
+      "query": "Design train and validation trigger evals for this portable skill description.",
       "should_trigger": true
     },
     {
       "id": 4,
-      "query": "Turn this runbook into an Agent Skill.",
+      "query": "Turn this runbook into an open Agent Skill we can reuse in multiple harnesses.",
       "should_trigger": true
     },
     {
       "id": 5,
+      "query": "Remove the harness-specific tool names and install assumptions from this Agent Skill.",
+      "should_trigger": true
+    },
+    {
+      "id": 6,
       "query": "Implement the Kubernetes incident response automation.",
       "should_trigger": false
     },
     {
-      "id": 6,
+      "id": 7,
       "query": "Rewrite this README.",
       "should_trigger": false
     },
     {
-      "id": 7,
+      "id": 8,
       "query": "Review this PR.",
       "should_trigger": false
     },
     {
-      "id": 8,
+      "id": 9,
       "query": "Install my existing skills into Codex.",
+      "should_trigger": false
+    },
+    {
+      "id": 10,
+      "query": "Create a Codex-only skill that depends on plan mode and the apply_patch tool.",
+      "should_trigger": false
+    },
+    {
+      "id": 11,
+      "query": "Write a Claude Code hook and slash command for this workflow.",
+      "should_trigger": false
+    },
+    {
+      "id": 12,
+      "query": "Implement Agent Skills discovery and activation in my custom agent harness.",
       "should_trigger": false
     }
   ],
   "behavior_evals": [
     {
       "id": 1,
-      "prompt": "Create a portable Agent Skill for Kubernetes incident response from the runbook in docs/incidents.md.",
+      "prompt": "Create a portable Agent Skill for Kubernetes incident response from docs/incidents.md and save it under skills/portable/kubernetes-incident-response/.",
       "expected_behavior": "Inspects the target environment and source runbook, then designs or creates a complete portable skill package with frontmatter, workflow, resources, and validation steps.",
-      "fixtures": [],
+      "fixtures": [
+        "evals/fixtures/kubernetes-runbook/docs/incidents.md"
+      ],
       "checks": [
         "Inspects existing skill directories, validators, docs, and local conventions before asking questions",
         "Captures goal, audience, trigger examples, non-triggers, outputs, risks, and portability targets",
         "Produces or proposes SKILL.md plus any needed references, scripts, assets, or evals",
         "Uses skill-root-relative paths for bundled resources",
-        "Does not hard-code client install roots unless a specific target client requires them"
+        "Does not hard-code client install roots, proprietary hooks, branded runtime tools, or client-specific activation syntax",
+        "Reports which cross-client compatibility claims were tested and which remain unverified"
       ]
     },
     {
       "id": 2,
-      "prompt": "Audit this existing PDF skill for open Agent Skills compatibility and triggering quality.",
-      "expected_behavior": "Reviews the skill against the standard, progressive disclosure, portability, resource references, and description quality, then recommends focused fixes.",
-      "fixtures": [],
+      "prompt": "Audit skills/pdf-processing/ for open Agent Skills compatibility, cross-harness portability, and triggering quality.",
+      "expected_behavior": "Reviews the fixture skill against the standard, progressive disclosure, portability, resource references, and description quality, then recommends focused fixes.",
+      "fixtures": [
+        "evals/fixtures/pdf-skill/skills/pdf-processing/SKILL.md",
+        "evals/fixtures/pdf-skill/skills/pdf-processing/references/forms.md"
+      ],
       "checks": [
         "Checks required frontmatter and standard optional fields",
         "Checks that the skill name matches the directory and uses valid naming rules",
         "Checks whether SKILL.md is concise enough or should move details into references",
         "Checks relative references to scripts, references, and assets",
-        "Identifies near-miss negative trigger cases, not just obvious positives"
+        "Identifies near-miss negative trigger cases, not just obvious positives",
+        "Finds dependencies on proprietary runtime tools or activation behavior even when the package format is valid"
       ]
     },
     {
       "id": 3,
-      "prompt": "Improve this skill description and design trigger evals for it.",
+      "prompt": "Improve the description and trigger evals for skills/release-notes/ while preserving portable behavior.",
       "expected_behavior": "Produces a concise, intent-focused description and realistic positive and negative trigger evals without overfitting to one failed prompt.",
-      "fixtures": [],
+      "fixtures": [
+        "evals/fixtures/release-notes-skill/skills/release-notes/SKILL.md",
+        "evals/fixtures/release-notes-skill/skills/release-notes/evals/evals.json"
+      ],
       "checks": [
         "States what the skill does and when to use it in the description",
         "Includes varied positive trigger examples",
@@ -97,15 +127,33 @@
     },
     {
       "id": 5,
-      "prompt": "Create a skill in this repo, but follow whatever validation and eval conventions the repo already has.",
-      "expected_behavior": "Adapts to discovered local repo contracts while keeping the skill itself portable where possible.",
-      "fixtures": [],
+      "prompt": "Create a portable release-coordination skill from docs/release-runbook.md in this repository, following its validation and eval conventions.",
+      "expected_behavior": "Adapts to discovered local repo contracts while keeping the generated skill portable across compatible clients.",
+      "fixtures": [
+        "evals/fixtures/repo-contract/README.md",
+        "evals/fixtures/repo-contract/docs/release-runbook.md",
+        "evals/fixtures/repo-contract/skills/portable/example/SKILL.md",
+        "evals/fixtures/repo-contract/skills/portable/example/evals/evals.json"
+      ],
       "checks": [
         "Discovers local validators and eval schemas before writing files",
         "Uses the repository's existing eval shape when one exists",
         "Runs or recommends the local validator after changes",
-        "Keeps repository-specific requirements out of the portable skill body unless they are the target",
+        "Keeps repository validation and eval conventions without adding harness-only behavior to the portable package",
         "Does not assume this repository's conventions apply to unrelated targets"
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "Use skill-architect to create a Codex-only skill that requires plan mode and apply_patch.",
+      "expected_behavior": "Recognizes that the request depends on one harness and does not author or label it as a portable Agent Skill; it may identify a separable portable core and clearly hand off the harness adapter.",
+      "fixtures": [],
+      "checks": [
+        "States that a single-harness proprietary skill is outside this portable skill's scope",
+        "Does not create a portable skill package containing Codex-only requirements",
+        "Does not describe format compliance alone as cross-harness portability",
+        "Separates any genuinely portable workflow core from the proposed harness adapter",
+        "Reports the unimplemented harness-specific work clearly"
       ]
     }
   ]

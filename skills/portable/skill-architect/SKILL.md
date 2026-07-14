@@ -1,7 +1,6 @@
 ---
 name: skill-architect
-description: Design, create, audit, evaluate, and improve Agent Skills for Codex, Claude Code, VS Code Copilot, Cursor, Kiro, .agents-compatible clients, and other open Agent Skills environments. Use when the user asks to build a skill, turn a workflow or runbook into a skill, improve triggering, add skill evals, or make a skill portable.
-compatibility: Portable Agent Skills authoring guidance. Adapts to local client and repository conventions after inspection.
+description: Design, create, audit, evaluate, and improve portable, cross-harness Agent Skills that work across multiple open Agent Skills-compatible clients. Use when the user asks to build a reusable skill, turn a workflow or runbook into a portable skill, improve portable skill triggering, add skill evals, or remove client-specific assumptions. Do not use for skills intentionally coupled to one harness, proprietary harness features, or client-specific configuration.
 ---
 
 # Instructions
@@ -10,9 +9,21 @@ You are a skill architect. Your job is to design, create, review, and
 iterate Agent Skills that are portable, useful, and grounded in real
 task knowledge.
 
+Treat the open Agent Skills documentation at `https://agentskills.io/`
+as the normative source for package structure and authoring principles.
+Use client documentation only to detect compatibility risks or verify a
+portable skill; do not let one client's extensions redefine the skill.
+
 Use this skill for skill work only. Do not implement the domain workflow
 itself when the user is asking for a skill that would teach that
 workflow.
+
+Default unspecified skill-authoring requests to a portable open-standard
+skill. If the user explicitly requires one harness, proprietary hooks,
+client-native configuration, or branded runtime features, state that the
+request is outside this skill's scope. When useful, separate a portable
+core from the proposed harness adapter, but keep the adapter outside the
+portable skill package.
 
 ## Step 1 - Ground in the target environment
 
@@ -25,14 +36,16 @@ Determine whether the target is:
 - a standalone skill package;
 - a repo-hosted skill collection;
 - a project-level skill for one workspace;
-- a user-level skill intended for reuse across projects;
-- a client-specific skill that still needs to preserve open-standard
-  portability where practical.
+- a user-level skill intended for reuse across projects.
 
 Use discovered conventions when they exist. If the target repo has a
 validator, eval schema, generator, or naming policy, follow that local
 contract after confirming it does not contradict the user's portability
-goal.
+goal. Do not copy harness-only conventions into the portable artifact.
+
+Read `references/portability-and-client-compatibility.md` before creating
+or auditing a skill. Use it to distinguish the portable package from
+client-specific discovery, activation, installation, and tool behavior.
 
 ## Step 2 - Clarify intent
 
@@ -63,6 +76,12 @@ skill.
 Design a coherent skill unit: broad enough that one task does not need
 several skills loaded, narrow enough that triggering remains precise.
 
+Use the minimal standard frontmatter by default. Add optional standard
+fields only when they carry real information, and never make correct or
+safe execution depend on an optional field that target clients may
+ignore. In particular, treat `allowed-tools` as experimental rather than
+as the only safety boundary.
+
 Choose bundled resources deliberately:
 
 - Use `SKILL.md` for essential workflow, non-obvious defaults, gotchas,
@@ -85,8 +104,14 @@ conditional detail.
 
 Use skill-root-relative paths for bundled files. Do not assume absolute
 install roots, sibling skills, client-native directories, or runtime
-tool names unless the user selected a target client and those paths or
-tools were discovered locally.
+tool names. Keep installation instructions and harness adapters outside
+the portable skill package.
+
+Describe required capabilities in client-neutral terms. If a workflow
+requires a runtime, executable, package, network service, or permission,
+declare that requirement and provide a portable fallback when practical.
+Do not require proprietary activation syntax such as a particular slash
+command or skill-loading tool.
 
 Write instructions as procedures:
 
@@ -128,13 +153,27 @@ Only add scripts when they reduce repeated work or make fragile steps
 more reliable. Scripts should be non-interactive, self-contained or
 explicit about dependencies, have concise `--help`, emit helpful errors,
 separate diagnostics from parseable output, and use safe defaults for
-stateful or destructive operations.
+stateful or destructive operations. Make retryable operations idempotent,
+reject ambiguous inputs, use meaningful exit codes, and bound or paginate
+large output.
 
 ## Step 7 - Validate and iterate
 
 Run discovered local validators and tests. If no validator exists, check
 the open standard manually: frontmatter, directory shape, path
 references, progressive disclosure, and portability.
+
+Before reporting a portable skill complete, verify that:
+
+- every bundled path is skill-root-relative and resolves;
+- the workflow does not depend on client-native paths, hooks, tools,
+  invocation syntax, sibling skills, or proprietary configuration;
+- optional frontmatter is valid but not required for core behavior;
+- runtime and network requirements are explicit;
+- scripts are safe to retry and usable in the intended environments;
+- the artifact has been checked against at least two intended clients
+  when those clients are available, otherwise unverified compatibility is
+  reported clearly.
 
 Review execution traces, not just final outputs. Revise from evidence:
 false triggers, missed triggers, wasted steps, ignored instructions,

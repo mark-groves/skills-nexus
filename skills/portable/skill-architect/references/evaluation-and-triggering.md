@@ -14,8 +14,10 @@ it.
 A strong description:
 
 - names the capability in user-facing terms;
+- uses direct, imperative activation guidance such as "Use when...";
 - includes likely task contexts and artifacts;
 - covers implicit intent, not just slash commands or exact names;
+- focuses on user intent rather than the skill's implementation;
 - distinguishes the skill from neighboring skills;
 - stays concise enough that the trigger signal remains clear.
 
@@ -47,12 +49,19 @@ Negative examples should be near misses:
 
 For important skills, keep some examples as validation data. Tune the
 description on one set, then check the held-back set to avoid overfitting
-to exact wording.
+to exact wording. Run important trigger cases more than once when the
+client and runner make activation nondeterministic.
 
 ## Behavior Evals
 
 A behavior eval should describe a realistic prompt, inputs or fixtures,
 expected behavior, and observable checks.
+
+Provide every file or repository state named by a prompt as a fixture.
+Specify an output location when the task creates artifacts so the result
+can be inspected independently of the transcript. Start with a few varied
+cases, including at least one boundary or malformed-input case, then grow
+the suite from observed failures.
 
 Good checks are concrete:
 
@@ -71,6 +80,8 @@ script cannot inspect the outcome, the check is too vague.
 When feasible, compare runs with and without the skill, or compare the
 new version against the previous one. Isolate each run in a fresh
 context so success comes from the skill, not leaked development notes.
+Repeat variable cases and track timing or token outliers when the runner
+exposes those metrics.
 
 Review transcripts as well as final outputs. Useful symptoms include:
 
