@@ -54,6 +54,21 @@ Validate the repository:
 bash scripts/check-skills.sh
 ```
 
+Evaluate one skill without spending agent turns yet:
+
+```bash
+python3 scripts/eval_skills.py --skill skill-architect --plan
+```
+
+Run a focused efficacy comparison:
+
+```bash
+python3 scripts/eval_skills.py \
+  --skill skill-architect \
+  --trigger-case 3 \
+  --behavior-case 4
+```
+
 ## Repository Layout
 
 ```text
@@ -125,3 +140,45 @@ For project-scoped installs, pass `--scope project --project-root /path/to/proje
 ## Validation
 
 `scripts/check-skills.sh` runs the repository validator in offline, deterministic mode. It checks the skill directory contract, supported frontmatter, Codex harness frontmatter constraints, portability rules, thin harness manifests, deployment behavior, and repository-specific generated-content workflows.
+
+## Skill Evals
+
+`scripts/eval_skills.py` turns each skill's `evals/evals.json` into an
+executable experiment. Trigger cases measure whether Codex reads the selected
+skill in a clean context. Behavior cases run twice from identical fixtures:
+once with a sanitized copy of the skill and once without it. A third,
+label-blinded judge turn grades both candidates against the same observable
+checks.
+
+By default, sanitized copies of the repository's other skills are available in
+both conditions. The behavior baseline removes only the selected skill, and
+trigger tests can select among the same peers they encounter after deployment.
+Use `--skill-universe isolated` when measuring the selected skill alone.
+
+The evaluator deliberately removes `evals/` from the installed task copy so
+expected answers cannot leak into the run. It records activation, commands,
+final responses, workspace deltas, Git state, timing, tokens, tool calls,
+check-level evidence, baseline lift, and confidence limitations. Each run
+writes:
+
+- `results.json` for automation and longitudinal analysis;
+- `report.md` for review in Git or a terminal;
+- `report.html` for a self-contained visual review;
+- `runs/` with prompts, JSONL event traces, task workspaces, and grader output.
+
+Reports default to `.skill-evals/`, which is ignored by Git. Use `--plan` to
+estimate the number of agent turns, `--jobs` to control concurrency,
+`--trigger-repeats` and `--behavior-repeats` to measure variance, and
+`--fail-under` to add an efficacy gate in CI. `codex login` must already have
+created an auth file; the evaluator links it into a temporary isolated Codex
+home and deletes that home after every turn.
+
+Fixture references are resolved relative to the selected skill. Files under
+`evals/fixtures/<scenario>/` are copied into the workspace with the scenario
+prefix removed. An optional `setup.sh` in that directory can build staged Git
+state or other deterministic inputs; it receives `EVAL_WORKSPACE` and
+`EVAL_SKILL_DIR` in a minimal environment without inherited credentials. Legacy
+Markdown fixture recipes are supported, but expected
+behavior sections are withheld and the report marks their fidelity as
+`description-only`. Missing or failed fixtures are never hallucinated: those
+checks are reported as unknown.
