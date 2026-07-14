@@ -490,7 +490,7 @@ class ValidateRepoEvalTests(unittest.TestCase):
                                 "id": 1,
                                 "prompt": "demo",
                                 "expected_behavior": "works",
-                                "fixtures": ["../state", "/tmp/state"],
+                                "fixtures": ["../state", "/tmp/state", ".", "evals"],
                                 "checks": ["result exists"],
                             }
                         ],
@@ -506,7 +506,7 @@ class ValidateRepoEvalTests(unittest.TestCase):
         ]
         self.assertEqual(
             len(path_errors),
-            2,
+            4,
             validate_repo.ERRORS,
         )
 

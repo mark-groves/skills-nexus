@@ -99,6 +99,22 @@ class EvalCoreTests(unittest.TestCase):
             with self.assertRaisesRegex(EvalError, "non-empty strings"):
                 load_eval_spec(skill_dir)
 
+    def test_broad_fixture_references_cannot_select_eval_ground_truth(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            skill = root / "skill"
+            workspace = root / "workspace"
+            (skill / "evals").mkdir(parents=True)
+            (skill / "evals" / "evals.json").write_text("{}", encoding="utf-8")
+            workspace.mkdir()
+
+            for fixture in (".", "evals"):
+                with self.subTest(fixture=fixture):
+                    with self.assertRaisesRegex(EvalError, "eval ground truth"):
+                        materialize_fixtures(
+                            skill, (fixture,), workspace, allow_setup_scripts=False
+                        )
+
     def test_peer_skill_call_does_not_count_as_target_activation(self) -> None:
         events = [
             {
@@ -193,6 +209,21 @@ class EvalCoreTests(unittest.TestCase):
                 sanitized_skill_copy(source, destination)
 
             self.assertFalse(destination.exists())
+
+    def test_sanitized_skill_copy_ignores_eval_fixture_symlinks(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = root / "source"
+            fixture = source / "evals" / "fixtures" / "scenario"
+            fixture.mkdir(parents=True)
+            (source / "SKILL.md").write_text("# Skill\n", encoding="utf-8")
+            (fixture / "external").symlink_to(root / "outside")
+
+            destination = root / "installed"
+            sanitized_skill_copy(source, destination)
+
+            self.assertTrue((destination / "SKILL.md").is_file())
+            self.assertFalse((destination / "evals").exists())
 
     def test_markdown_recipe_withholds_expected_section(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -298,7 +329,7 @@ class EvalCoreTests(unittest.TestCase):
 
         self.assertEqual(scrubbed, "git commit -m 'fix' in <RUN_ROOT>/workspace")
 
-    def test_codex_home_is_created_outside_the_run_tree(self) -> None:
+    def test_codex_home_is_created_without_persistent_auth_material(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             run_dir = root / "run"
@@ -316,7 +347,7 @@ class EvalCoreTests(unittest.TestCase):
             try:
                 self.assertNotIn(run_dir, home.parents)
                 self.assertNotIn(root, home.parents)
-                self.assertEqual((home / "auth.json").resolve(), auth.resolve())
+                self.assertFalse((home / "auth.json").exists())
             finally:
                 shutil.rmtree(home, ignore_errors=True)
 
@@ -466,6 +497,50 @@ class EvalCoreTests(unittest.TestCase):
                 "name: pdf-processing\nportable: true\n",
             )
 
+    def test_artifact_skill_instruction_copy_is_redacted(self) -> None:
+        runner = object.__new__(CodexRunner)
+        runner.runtime_skill_names = {"commit"}
+        runner.runtime_instruction_texts = (
+            "# Commit workflow\nAlways inspect the repository before creating a commit.\n",
+        )
+        runner.skill_dir = Path("/skills/commit")
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            events_path = root / "events.jsonl"
+            events_path.write_text("", encoding="utf-8")
+            run = {
+                "events_path": str(events_path),
+                "workspace": str(workspace),
+                "runtime_home": "/tmp/private",
+                "final_response": "Done.",
+                "status": "completed",
+                "artifact_delta": {
+                    "created": [
+                        {
+                            "path": "copied.md",
+                            "text": (
+                                "# Commit workflow\n"
+                                "Always inspect the repository before creating a commit.\n"
+                            ),
+                        }
+                    ],
+                    "modified": [],
+                    "deleted": [],
+                },
+                "git": {"available": False},
+                "duration_seconds": 1.0,
+                "usage": {},
+                "tool_calls": 1,
+            }
+
+            bundle = runner._evidence_bundle(run)
+
+        artifact = bundle["artifact_delta"]["created"][0]
+        self.assertTrue(artifact["text_redacted"])
+        self.assertNotIn("Always inspect", json.dumps(bundle))
+
     def test_git_observations_include_head_commit_files(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             workspace = Path(temp_dir)
@@ -572,6 +647,7 @@ class EvalCliIntegrationTests(unittest.TestCase):
                 #!/usr/bin/env python3
                 import json
                 import os
+                import stat
                 import subprocess
                 import sys
                 from pathlib import Path
@@ -581,6 +657,10 @@ class EvalCliIntegrationTests(unittest.TestCase):
                     print("fake-codex 1.0")
                     raise SystemExit(0)
 
+                home = Path(os.environ["CODEX_HOME"])
+                auth_path = home / "auth.json"
+                auth_is_fifo = stat.S_ISFIFO(auth_path.stat().st_mode)
+                json.loads(auth_path.read_text())
                 prompt = sys.stdin.read()
                 output_path = Path(args[args.index("--output-last-message") + 1])
                 if "--output-schema" in args:
@@ -616,12 +696,12 @@ class EvalCliIntegrationTests(unittest.TestCase):
                         }
                     )
                 else:
-                    home = Path(os.environ["CODEX_HOME"])
                     skill_file = home / "skills" / "demo" / "SKILL.md"
                     peer_file = home / "skills" / "peer" / "SKILL.md"
                     final = "skill-assisted result" if skill_file.is_file() else "baseline result"
                     final += f" peer={peer_file.is_file()}"
                     final += f" home_in_run={str(home).startswith(str(Path.cwd().parent))}"
+                    final += f" auth_fifo={auth_is_fifo}"
                     git_probe = subprocess.run(
                         ["git", "rev-parse", "--show-toplevel"],
                         capture_output=True,
@@ -740,7 +820,11 @@ class EvalCliIntegrationTests(unittest.TestCase):
             self.assertIn("peer=True", behavior["skill_run"]["final_response"])
             self.assertIn("peer=True", behavior["baseline_run"]["final_response"])
             self.assertIn("home_in_run=False", behavior["skill_run"]["final_response"])
+            self.assertIn("auth_fifo=True", behavior["skill_run"]["final_response"])
             self.assertIn("parent_git=False", behavior["skill_run"]["final_response"])
+            self.assertFalse(
+                Path(behavior["skill_run"]["workspace"]).is_relative_to(repo)
+            )
             self.assertTrue((result_paths[0].parent / "report.md").is_file())
             self.assertTrue((result_paths[0].parent / "report.html").is_file())
             self.assertEqual(list(result_paths[0].parent.glob("**/codex-home")), [])

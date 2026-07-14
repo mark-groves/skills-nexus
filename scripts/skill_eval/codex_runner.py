@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import copy
+import errno
 import hashlib
 import json
 import os
@@ -9,6 +11,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -19,6 +22,7 @@ from .core import (
     git_observations,
     json_dump,
     sanitized_skill_copy,
+    sanitized_skill_instructions,
     snapshot_workspace,
     workspace_delta,
 )
@@ -150,6 +154,31 @@ def _may_expose_skill_instructions(
     )
 
 
+def _contains_instruction_excerpt(text: str, instructions: tuple[str, ...]) -> bool:
+    for instruction_text in instructions:
+        if instruction_text in text or (len(text) >= 80 and text in instruction_text):
+            return True
+        if any(
+            len(line.strip()) >= 40 and line.strip() in text
+            for line in instruction_text.splitlines()
+        ):
+            return True
+    return False
+
+
+def _redact_artifact_instructions(
+    artifact_delta: dict[str, Any], instructions: tuple[str, ...]
+) -> dict[str, Any]:
+    redacted = copy.deepcopy(artifact_delta)
+    for change_type in ("created", "modified", "deleted"):
+        for record in redacted.get(change_type, []):
+            text = record.get("text")
+            if isinstance(text, str) and _contains_instruction_excerpt(text, instructions):
+                record["text"] = "<REDACTED: artifact included skill instructions>"
+                record["text_redacted"] = True
+    return redacted
+
+
 class CodexRunner:
     """Run task and judge turns with a clean Codex home per invocation."""
 
@@ -175,6 +204,10 @@ class CodexRunner:
         self.sandbox = sandbox
         self.peer_skills = tuple(path.resolve() for path in peer_skills)
         self.runtime_skill_names = {self.skill_dir.name, *(path.name for path in self.peer_skills)}
+        runtime_skills = (self.skill_dir, *self.peer_skills)
+        self.runtime_instruction_texts = tuple(
+            sanitized_skill_instructions(path) for path in runtime_skills
+        )
         configured_home = Path(os.environ.get("CODEX_HOME", Path.home() / ".codex"))
         self.auth_source = configured_home / "auth.json"
         if not self.auth_source.is_file():
@@ -182,6 +215,18 @@ class CodexRunner:
                 f"Codex authentication was not found at {self.auth_source}. "
                 "Run `codex login` before evaluating."
             )
+        try:
+            auth_payload = json.loads(self.auth_source.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise EvalError(f"Codex authentication could not be read: {exc}") from exc
+        if not isinstance(auth_payload, dict):
+            raise EvalError("Codex authentication must be a JSON object")
+        if auth_payload.get("auth_mode") == "chatgpt":
+            auth_payload["auth_mode"] = "chatgptAuthTokens"
+            tokens = auth_payload.get("tokens")
+            if isinstance(tokens, dict):
+                tokens["refresh_token"] = ""
+        self.auth_payload = json.dumps(auth_payload)
         version = subprocess.run(
             [self.codex_binary, "--version"],
             capture_output=True,
@@ -193,7 +238,6 @@ class CodexRunner:
     def _prepare_home(self, *, with_skill: bool, include_peers: bool) -> Path:
         home = Path(tempfile.mkdtemp(prefix="skill-eval-codex-home-"))
         try:
-            (home / "auth.json").symlink_to(self.auth_source)
             skills_to_install = list(self.peer_skills) if include_peers else []
             if with_skill:
                 skills_to_install.append(self.skill_dir)
@@ -206,6 +250,37 @@ class CodexRunner:
             shutil.rmtree(home, ignore_errors=True)
             raise
         return home
+
+    def _feed_auth_fifo(
+        self,
+        auth_fifo: Path,
+        process: subprocess.Popen[str],
+        errors: list[BaseException],
+    ) -> None:
+        deadline = time.monotonic() + min(10.0, self.timeout_seconds)
+        descriptor: int | None = None
+        try:
+            while descriptor is None:
+                try:
+                    descriptor = os.open(auth_fifo, os.O_WRONLY | os.O_NONBLOCK)
+                except OSError as exc:
+                    if exc.errno != errno.ENXIO:
+                        raise
+                    if process.poll() is not None:
+                        raise EvalError("Codex exited before reading ephemeral authentication")
+                    if time.monotonic() >= deadline:
+                        raise EvalError("Codex did not read ephemeral authentication in time")
+                    time.sleep(0.01)
+            with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+                descriptor = None
+                stream.write(self.auth_payload)
+                stream.flush()
+        except BaseException as exc:
+            errors.append(exc)
+        finally:
+            if descriptor is not None:
+                os.close(descriptor)
+            auth_fifo.unlink(missing_ok=True)
 
     def _execute(
         self,
@@ -223,6 +298,15 @@ class CodexRunner:
         prompt_path = run_dir / "prompt.txt"
         prompt_path.write_text(prompt, encoding="utf-8")
         home = self._prepare_home(with_skill=with_skill, include_peers=include_peers)
+        auth_fifo = home / "auth.json"
+        if not hasattr(os, "mkfifo"):
+            shutil.rmtree(home, ignore_errors=True)
+            raise EvalError("Secure ephemeral Codex authentication requires FIFO support")
+        try:
+            os.mkfifo(auth_fifo, mode=0o600)
+        except Exception:
+            shutil.rmtree(home, ignore_errors=True)
+            raise
         output_message = run_dir / "final.txt"
         git_ceiling = str(workspace.parent.resolve())
         command = [
@@ -258,27 +342,52 @@ class CodexRunner:
         env["GIT_CEILING_DIRECTORIES"] = git_ceiling
         started = time.monotonic()
         timed_out = False
+        process: subprocess.Popen[str] | None = None
+        auth_thread: threading.Thread | None = None
         try:
             try:
-                completed = subprocess.run(
+                process = subprocess.Popen(
                     command,
-                    input=prompt,
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
                     cwd=workspace,
                     env=env,
-                    capture_output=True,
                     text=True,
-                    timeout=self.timeout_seconds,
-                    check=False,
                 )
-                stdout = completed.stdout
-                stderr = completed.stderr
-                exit_code: int | None = completed.returncode
-            except subprocess.TimeoutExpired as exc:
+                auth_errors: list[BaseException] = []
+                auth_thread = threading.Thread(
+                    target=self._feed_auth_fifo,
+                    args=(auth_fifo, process, auth_errors),
+                    daemon=True,
+                )
+                auth_thread.start()
+                stdout, stderr = process.communicate(
+                    input=prompt, timeout=self.timeout_seconds
+                )
+                auth_thread.join(timeout=1)
+                if auth_errors:
+                    raise EvalError(str(auth_errors[0]))
+                if auth_thread.is_alive():
+                    raise EvalError("Ephemeral authentication writer did not finish")
+                exit_code: int | None = process.returncode
+            except subprocess.TimeoutExpired:
                 timed_out = True
-                stdout = exc.stdout.decode() if isinstance(exc.stdout, bytes) else exc.stdout or ""
-                stderr = exc.stderr.decode() if isinstance(exc.stderr, bytes) else exc.stderr or ""
+                if process is not None:
+                    process.kill()
+                    stdout, stderr = process.communicate()
+                else:
+                    stdout, stderr = "", ""
                 exit_code = None
+            except BaseException:
+                if process is not None and process.poll() is None:
+                    process.kill()
+                    process.communicate()
+                raise
         finally:
+            auth_fifo.unlink(missing_ok=True)
+            if auth_thread is not None and auth_thread.is_alive():
+                auth_thread.join(timeout=1)
             shutil.rmtree(home, ignore_errors=True)
         duration = time.monotonic() - started
 
@@ -328,22 +437,28 @@ class CodexRunner:
         repeat: int,
         condition: str,
     ) -> dict[str, Any]:
-        workspace = run_dir / "workspace"
-        if workspace_template is None:
-            workspace.mkdir(parents=True)
-        else:
-            shutil.copytree(workspace_template, workspace, symlinks=False)
-        before = snapshot_workspace(workspace)
-        with_skill = condition == "skill"
-        executed = self._execute(
-            run_dir=run_dir,
-            workspace=workspace,
-            prompt=prompt,
-            with_skill=with_skill,
-            sandbox="read-only" if case_type == "trigger" else self.sandbox,
-            model=self.model,
-        )
-        after = snapshot_workspace(workspace)
+        workspace_root = Path(tempfile.mkdtemp(prefix="skill-eval-task-workspace-"))
+        workspace = workspace_root / "workspace"
+        try:
+            if workspace_template is None:
+                workspace.mkdir()
+            else:
+                shutil.copytree(workspace_template, workspace, symlinks=False)
+            before = snapshot_workspace(workspace)
+            with_skill = condition == "skill"
+            executed = self._execute(
+                run_dir=run_dir,
+                workspace=workspace,
+                prompt=prompt,
+                with_skill=with_skill,
+                sandbox="read-only" if case_type == "trigger" else self.sandbox,
+                model=self.model,
+            )
+            after = snapshot_workspace(workspace)
+            artifacts = workspace_delta(before, after)
+            git = git_observations(workspace)
+        finally:
+            shutil.rmtree(workspace_root, ignore_errors=True)
         executed.update(
             {
                 "case_type": case_type,
@@ -351,8 +466,8 @@ class CodexRunner:
                 "repeat": repeat,
                 "condition": condition,
                 "workspace": str(workspace),
-                "artifact_delta": workspace_delta(before, after),
-                "git": git_observations(workspace),
+                "artifact_delta": artifacts,
+                "git": git,
                 "prompt_sha256": hashlib.sha256(prompt.encode()).hexdigest(),
             }
         )
@@ -383,12 +498,21 @@ class CodexRunner:
             command = str(item.get("command", ""))
             scrubbed_command = _redact_skill_paths(command, activation_markers)
             raw_output = str(item.get("aggregated_output", ""))[-5000:]
+            command_includes_instructions = _contains_instruction_excerpt(
+                command, getattr(self, "runtime_instruction_texts", ())
+            )
             read_skill = _may_expose_skill_instructions(
                 command, raw_output, activation_markers, runtime_home
+            ) or _contains_instruction_excerpt(
+                raw_output, getattr(self, "runtime_instruction_texts", ())
             )
             commands.append(
                 {
-                    "command": _scrub(scrubbed_command, replacements),
+                    "command": (
+                        "<REDACTED: command included skill instructions>"
+                        if command_includes_instructions
+                        else _scrub(scrubbed_command, replacements)
+                    ),
                     "exit_code": item.get("exit_code"),
                     "status": item.get("status"),
                     "output": (
@@ -399,11 +523,18 @@ class CodexRunner:
                 }
             )
         final = _scrub(run.get("final_response", ""), replacements)
+        if _contains_instruction_excerpt(
+            final, getattr(self, "runtime_instruction_texts", ())
+        ):
+            final = "<REDACTED: final response included skill instructions>"
         return {
             "status": run["status"],
             "final_response": final[-20_000:],
             "commands": commands[-40:],
-            "artifact_delta": run["artifact_delta"],
+            "artifact_delta": _redact_artifact_instructions(
+                run["artifact_delta"],
+                getattr(self, "runtime_instruction_texts", ()),
+            ),
             "git": run["git"],
             "duration_seconds": run["duration_seconds"],
             "usage": run["usage"],
@@ -475,7 +606,8 @@ class CodexRunner:
         baseline_run: dict[str, Any],
     ) -> dict[str, Any]:
         grade_dir.mkdir(parents=True, exist_ok=True)
-        workspace = grade_dir / "workspace"
+        workspace_root = Path(tempfile.mkdtemp(prefix="skill-eval-judge-workspace-"))
+        workspace = workspace_root / "workspace"
         workspace.mkdir()
         flip = int(
             hashlib.sha256(f"{behavior_case.id}:{repeat}".encode()).hexdigest(), 16
@@ -509,26 +641,29 @@ class CodexRunner:
         }
         evidence_path = workspace / "evidence.json"
         schema_path = workspace / "schema.json"
-        json_dump(evidence_path, evidence)
-        json_dump(schema_path, self._judge_schema())
-        prompt = (
-            "Act as an evidence-bound, condition-blind evaluator. Read evidence.json. "
-            "Grade candidates A and B independently against every numbered check, using the "
-            "same standard. Do not reward verbosity, claims of skill use, or plausible intent. "
-            "A check passes only when the supplied transcript, Git state, or artifact evidence "
-            "proves it. Use unknown when evidence is insufficient. Then compare material task "
-            "quality. Return only the required structured result."
-        )
-        executed = self._execute(
-            run_dir=grade_dir,
-            workspace=workspace,
-            prompt=prompt,
-            with_skill=False,
-            sandbox="read-only",
-            model=self.judge_model,
-            output_schema=schema_path,
-            include_peers=False,
-        )
+        try:
+            json_dump(evidence_path, evidence)
+            json_dump(schema_path, self._judge_schema())
+            prompt = (
+                "Act as an evidence-bound, condition-blind evaluator. Read evidence.json. "
+                "Grade candidates A and B independently against every numbered check, using the "
+                "same standard. Do not reward verbosity, claims of skill use, or plausible intent. "
+                "A check passes only when the supplied transcript, Git state, or artifact evidence "
+                "proves it. Use unknown when evidence is insufficient. Then compare material task "
+                "quality. Return only the required structured result."
+            )
+            executed = self._execute(
+                run_dir=grade_dir,
+                workspace=workspace,
+                prompt=prompt,
+                with_skill=False,
+                sandbox="read-only",
+                model=self.judge_model,
+                output_schema=schema_path,
+                include_peers=False,
+            )
+        finally:
+            shutil.rmtree(workspace_root, ignore_errors=True)
         judgment: dict[str, Any] | None = None
         parse_error: str | None = None
         if executed["status"] == "completed":

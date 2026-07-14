@@ -210,9 +210,14 @@ def sanitized_skill_copy(skill_dir: Path, destination: Path) -> None:
     """Install Codex runtime content while withholding eval ground truth."""
     ignored = {"evals", "working", "__pycache__", ".git"}
 
-    symlinks = sorted(
-        path.relative_to(skill_dir) for path in skill_dir.rglob("*") if path.is_symlink()
-    )
+    symlinks: list[Path] = []
+    for path in skill_dir.rglob("*"):
+        relative = path.relative_to(skill_dir)
+        if any(part in ignored for part in relative.parts):
+            continue
+        if path.is_symlink():
+            symlinks.append(relative)
+    symlinks.sort()
     if symlinks:
         display = ", ".join(path.as_posix() for path in symlinks)
         raise EvalError(f"Skill runtime content may not contain symlinks: {display}")
@@ -223,10 +228,7 @@ def sanitized_skill_copy(skill_dir: Path, destination: Path) -> None:
     shutil.copytree(skill_dir, destination, ignore=ignore)
     skill_md = destination / "SKILL.md"
     if skill_md.is_file():
-        skill_md.write_text(
-            _sanitize_codex_frontmatter(skill_md.read_text(encoding="utf-8")),
-            encoding="utf-8",
-        )
+        skill_md.write_text(sanitized_skill_instructions(skill_dir), encoding="utf-8")
 
 
 _CODEX_FRONTMATTER_KEYS = {"name", "description", "metadata"}
@@ -261,6 +263,14 @@ def _sanitize_codex_frontmatter(text: str) -> str:
     return "---\n" + "\n".join(kept).rstrip() + "\n" + text[end:]
 
 
+def sanitized_skill_instructions(skill_dir: Path) -> str:
+    """Return exactly the instruction text installed into an evaluator Codex home."""
+    skill_md = skill_dir / "SKILL.md"
+    if skill_md.is_symlink():
+        raise EvalError(f"Skill runtime content may not contain symlinks: {skill_md.name}")
+    return _sanitize_codex_frontmatter(skill_md.read_text(encoding="utf-8"))
+
+
 _EXPECTED_SECTION = re.compile(
     r"^(?:"
     r"#{1,6}\s+(?:expected(?:\s+behavior)?|checks?|grading|assertions?)\b"
@@ -281,8 +291,15 @@ def _sanitized_recipe(text: str) -> str:
 
 def _safe_ref(ref: str) -> Path:
     candidate = Path(ref)
-    if candidate.is_absolute() or ".." in candidate.parts:
-        raise EvalError(f"Fixture path must be skill-relative and may not traverse parents: {ref}")
+    parts = candidate.parts
+    exposes_eval_ground_truth = not parts or (
+        parts[0] == "evals" and (len(parts) < 3 or parts[1] != "fixtures")
+    )
+    if candidate.is_absolute() or ".." in parts or exposes_eval_ground_truth:
+        raise EvalError(
+            "Fixture path must be skill-relative, may not traverse parents, and may not "
+            f"select eval ground truth: {ref}"
+        )
     return candidate
 
 
@@ -296,6 +313,8 @@ def _fixture_target(relative: Path) -> Path:
 
 
 def _copy_fixture_file(source: Path, target: Path) -> None:
+    if source.is_symlink():
+        raise EvalError(f"Fixture sources may not be symlinks: {source}")
     target.parent.mkdir(parents=True, exist_ok=True)
     if target.exists() and target.read_bytes() != source.read_bytes():
         raise EvalError(f"Fixture collision at workspace path: {target}")

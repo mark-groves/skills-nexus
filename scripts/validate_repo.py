@@ -782,10 +782,22 @@ def validate_evals(skill_dir: Path) -> None:
                 for fixture in item["fixtures"]:
                     if not isinstance(fixture, str) or not fixture.strip():
                         fail(f"Behavior eval fixtures must contain non-empty strings in {rel}")
-                    elif Path(fixture).is_absolute() or ".." in Path(fixture).parts:
+                    elif (
+                        (fixture_path := Path(fixture)).is_absolute()
+                        or ".." in fixture_path.parts
+                        or not fixture_path.parts
+                        or (
+                            fixture_path.parts[0] == "evals"
+                            and (
+                                len(fixture_path.parts) < 3
+                                or fixture_path.parts[1] != "fixtures"
+                            )
+                        )
+                    ):
                         fail(
-                            "Behavior eval fixture paths must be skill-relative and may not "
-                            f"traverse parents in {rel}: {fixture}"
+                            "Behavior eval fixture paths must be skill-relative, may not "
+                            "traverse parents, and may not select eval ground truth in "
+                            f"{rel}: {fixture}"
                         )
             if not isinstance(item["checks"], list) or not item["checks"]:
                 fail(f"Behavior eval checks must be a non-empty list in {rel}")
