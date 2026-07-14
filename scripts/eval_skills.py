@@ -12,7 +12,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, TypeVar
 
@@ -328,7 +328,7 @@ def run_evaluation(args: argparse.Namespace) -> tuple[dict[str, Any], Path]:
 
     runtime_digest = stable_digest(skill_dir, exclude={"evals", "working", "__pycache__"})
     spec_digest = stable_digest(spec.path)
-    timestamp = datetime.now(UTC)
+    timestamp = datetime.now(timezone.utc)
     run_id = f"{timestamp.strftime('%Y%m%dT%H%M%SZ')}-{runtime_digest[:8]}"
     output_dir = args.output_root.resolve() / spec.skill_name / run_id
     suffix = 1

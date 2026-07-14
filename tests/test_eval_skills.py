@@ -4,6 +4,7 @@ import io
 import json
 import os
 import shlex
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -22,7 +23,7 @@ eval_skills = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None
 SPEC.loader.exec_module(eval_skills)
 
-from skill_eval.codex_runner import _event_summary, _scrub  # noqa: E402
+from skill_eval.codex_runner import CodexRunner, _event_summary, _scrub  # noqa: E402
 from skill_eval.core import (  # noqa: E402
     TriggerCase,
     discover_repository_skills,
@@ -216,6 +217,80 @@ class EvalCoreTests(unittest.TestCase):
 
         self.assertEqual(scrubbed, "git commit -m 'fix' in <RUN_ROOT>/workspace")
 
+    def test_codex_home_is_created_outside_the_run_tree(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            run_dir = root / "run"
+            skill = root / "skill"
+            run_dir.mkdir()
+            skill.mkdir()
+            auth = root / "auth.json"
+            auth.write_text("{}", encoding="utf-8")
+            runner = object.__new__(CodexRunner)
+            runner.auth_source = auth
+            runner.peer_skills = ()
+            runner.skill_dir = skill
+
+            home = runner._prepare_home(with_skill=False, include_peers=False)
+            try:
+                self.assertNotIn(run_dir, home.parents)
+                self.assertNotIn(root, home.parents)
+                self.assertEqual((home / "auth.json").resolve(), auth.resolve())
+            finally:
+                shutil.rmtree(home, ignore_errors=True)
+
+    def test_combined_skill_read_keeps_non_skill_command_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            workspace = root / "run" / "workspace"
+            workspace.mkdir(parents=True)
+            events_path = root / "events.jsonl"
+            events_path.write_text(
+                json.dumps(
+                    {
+                        "type": "item.completed",
+                        "item": {
+                            "type": "command_execution",
+                            "command": (
+                                "cat /tmp/private/skills/commit/SKILL.md "
+                                "&& git status && pytest"
+                            ),
+                            "exit_code": 0,
+                            "status": "completed",
+                            "aggregated_output": "private instructions\nchecks passed\n",
+                        },
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            runner = object.__new__(CodexRunner)
+            runner.runtime_skill_names = {"commit"}
+            runner.skill_dir = Path("/skills/commit")
+            run = {
+                "events_path": str(events_path),
+                "workspace": str(workspace),
+                "final_response": "Created a commit.",
+                "status": "completed",
+                "artifact_delta": {"created": [], "modified": [], "deleted": []},
+                "git": {"available": True},
+                "duration_seconds": 1.0,
+                "usage": {},
+                "tool_calls": 1,
+            }
+
+            bundle = runner._evidence_bundle(run)
+
+            self.assertEqual(len(bundle["commands"]), 1)
+            command = bundle["commands"][0]
+            self.assertIn("git status && pytest", command["command"])
+            self.assertNotIn("skills/commit/SKILL.md", command["command"])
+            self.assertEqual(
+                command["output"],
+                "<REDACTED: command output included skill instructions>",
+            )
+            self.assertEqual(bundle["final_response"], "Created a commit.")
+
     def test_executable_fixture_runs_after_clean_git_baseline(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -280,6 +355,7 @@ class EvalCliIntegrationTests(unittest.TestCase):
                 #!/usr/bin/env python3
                 import json
                 import os
+                import subprocess
                 import sys
                 from pathlib import Path
 
@@ -328,6 +404,18 @@ class EvalCliIntegrationTests(unittest.TestCase):
                     peer_file = home / "skills" / "peer" / "SKILL.md"
                     final = "skill-assisted result" if skill_file.is_file() else "baseline result"
                     final += f" peer={peer_file.is_file()}"
+                    final += f" home_in_run={str(home).startswith(str(Path.cwd().parent))}"
+                    git_probe = subprocess.run(
+                        ["git", "rev-parse", "--show-toplevel"],
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                    )
+                    parent_git = (
+                        git_probe.returncode == 0
+                        and Path(git_probe.stdout.strip()).resolve() != Path.cwd().resolve()
+                    )
+                    final += f" parent_git={parent_git}"
                     if skill_file.is_file():
                         print(
                             json.dumps(
@@ -397,11 +485,12 @@ class EvalCliIntegrationTests(unittest.TestCase):
                 "---\nname: peer\ndescription: Use for peer tasks.\n---\n\n# Peer\n",
                 encoding="utf-8",
             )
+            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
             codex_home = root / "user-codex"
             codex_home.mkdir()
             (codex_home / "auth.json").write_text("{}", encoding="utf-8")
             fake_codex = self._write_fake_codex(root)
-            output_root = root / "outputs"
+            output_root = repo / ".skill-evals-test"
 
             with mock.patch.dict(os.environ, {"CODEX_HOME": str(codex_home)}):
                 with contextlib.redirect_stdout(io.StringIO()):
@@ -433,11 +522,13 @@ class EvalCliIntegrationTests(unittest.TestCase):
             behavior = result["behavior"]["results"][0]
             self.assertIn("peer=True", behavior["skill_run"]["final_response"])
             self.assertIn("peer=True", behavior["baseline_run"]["final_response"])
+            self.assertIn("home_in_run=False", behavior["skill_run"]["final_response"])
+            self.assertIn("parent_git=False", behavior["skill_run"]["final_response"])
             self.assertTrue((result_paths[0].parent / "report.md").is_file())
             self.assertTrue((result_paths[0].parent / "report.html").is_file())
             self.assertEqual(list(result_paths[0].parent.glob("**/codex-home")), [])
 
-            isolated_output_root = root / "isolated-outputs"
+            isolated_output_root = repo / ".skill-evals-isolated"
             with mock.patch.dict(os.environ, {"CODEX_HOME": str(codex_home)}):
                 with contextlib.redirect_stdout(io.StringIO()):
                     isolated_status = eval_skills.main(
@@ -477,6 +568,9 @@ class EvalCliIntegrationTests(unittest.TestCase):
             isolated_result = json.loads(isolated_result_path.read_text(encoding="utf-8"))
             self.assertFalse(isolated_result["integrity"]["peer_skill_parity"])
             self.assertEqual(isolated_result["runtime"]["peer_skills"], [])
+            for run in isolated_result["trigger"]["runs"]:
+                self.assertIn("home_in_run=False", run["final_response"])
+                self.assertIn("parent_git=False", run["final_response"])
             self.assertIn(
                 "Repository peer skills were held constant across conditions: `False`",
                 (isolated_result_path.parent / "report.md").read_text(encoding="utf-8"),

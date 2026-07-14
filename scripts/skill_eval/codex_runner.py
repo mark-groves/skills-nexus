@@ -7,6 +7,7 @@ import json
 import os
 import shutil
 import subprocess
+import tempfile
 import time
 from pathlib import Path
 from typing import Any
@@ -104,6 +105,21 @@ def _scrub(value: str, replacements: dict[str, str]) -> str:
     return result
 
 
+def _redact_skill_paths(value: str, markers: set[str]) -> str:
+    """Replace full path tokens that identify installed skill instructions."""
+    result = value.replace("\\", "/")
+    delimiters = set(" \t\r\n\"'`=;|&()<>")
+    for marker in sorted(markers, key=len, reverse=True):
+        while marker in result:
+            marker_start = result.index(marker)
+            token_start = marker_start
+            while token_start and result[token_start - 1] not in delimiters:
+                token_start -= 1
+            marker_end = marker_start + len(marker)
+            result = result[:token_start] + "<SKILL_INSTRUCTIONS>" + result[marker_end:]
+    return result
+
+
 class CodexRunner:
     """Run task and judge turns with a clean Codex home per invocation."""
 
@@ -144,11 +160,8 @@ class CodexRunner:
         )
         self.version = (version.stdout or version.stderr).strip()
 
-    def _prepare_home(
-        self, run_dir: Path, *, with_skill: bool, include_peers: bool
-    ) -> Path:
-        home = run_dir / "codex-home"
-        home.mkdir(parents=True, exist_ok=False)
+    def _prepare_home(self, *, with_skill: bool, include_peers: bool) -> Path:
+        home = Path(tempfile.mkdtemp(prefix="skill-eval-codex-home-"))
         try:
             (home / "auth.json").symlink_to(self.auth_source)
             skills_to_install = list(self.peer_skills) if include_peers else []
@@ -179,10 +192,9 @@ class CodexRunner:
         run_dir.mkdir(parents=True, exist_ok=True)
         prompt_path = run_dir / "prompt.txt"
         prompt_path.write_text(prompt, encoding="utf-8")
-        home = self._prepare_home(
-            run_dir, with_skill=with_skill, include_peers=include_peers
-        )
+        home = self._prepare_home(with_skill=with_skill, include_peers=include_peers)
         output_message = run_dir / "final.txt"
+        git_ceiling = str(workspace.parent.resolve())
         command = [
             self.codex_binary,
             "exec",
@@ -195,7 +207,9 @@ class CodexRunner:
             "--config",
             'shell_environment_policy.exclude=["CODEX_HOME"]',
             "--config",
-            f"shell_environment_policy.set={{ HOME = {json.dumps(str(workspace))} }}",
+            "shell_environment_policy.set={ "
+            f"HOME = {json.dumps(str(workspace))}, "
+            f"GIT_CEILING_DIRECTORIES = {json.dumps(git_ceiling)} }}",
             "--skip-git-repo-check",
             "--sandbox",
             sandbox,
@@ -211,6 +225,7 @@ class CodexRunner:
 
         env = os.environ.copy()
         env["CODEX_HOME"] = str(home)
+        env["GIT_CEILING_DIRECTORIES"] = git_ceiling
         started = time.monotonic()
         timed_out = False
         try:
@@ -331,16 +346,18 @@ class CodexRunner:
                 continue
             command = str(item.get("command", ""))
             normalized_command = command.replace("\\", "/")
-            if any(marker in normalized_command for marker in activation_markers):
-                continue
+            read_skill = any(marker in normalized_command for marker in activation_markers)
+            scrubbed_command = _redact_skill_paths(command, activation_markers)
+            raw_output = str(item.get("aggregated_output", ""))[-5000:]
             commands.append(
                 {
-                    "command": _scrub(command, replacements),
+                    "command": _scrub(scrubbed_command, replacements),
                     "exit_code": item.get("exit_code"),
                     "status": item.get("status"),
-                    "output": _scrub(
-                        str(item.get("aggregated_output", ""))[-5000:],
-                        replacements,
+                    "output": (
+                        "<REDACTED: command output included skill instructions>"
+                        if read_skill
+                        else _scrub(raw_output, replacements)
                     ),
                 }
             )

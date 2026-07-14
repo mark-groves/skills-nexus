@@ -112,11 +112,12 @@ def render_markdown(result: dict[str, Any]) -> str:
             for index, check in enumerate(case["checks"]):
                 skill_grade = skill_grades[index] if index < len(skill_grades) else {}
                 base_grade = baseline_grades[index] if index < len(baseline_grades) else {}
+                escaped_check = check.replace("|", "\\|")
                 evidence = str(skill_grade.get("evidence", "")).replace("|", "\\|").replace(
                     "\n", " "
                 )
                 lines.append(
-                    f"| {check.replace('|', '\\|')} | {_mark(skill_grade.get('passed'))} | "
+                    f"| {escaped_check} | {_mark(skill_grade.get('passed'))} | "
                     f"{_mark(base_grade.get('passed'))} | {evidence} |"
                 )
             lines.append("")
