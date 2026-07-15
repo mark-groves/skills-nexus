@@ -32,7 +32,7 @@ from skill_eval.core import (  # noqa: E402
     load_eval_spec,
     materialize_fixtures,
     run_fixture_setups,
-    sanitized_skill_copy,
+    runtime_skill_copy,
     snapshot_workspace,
     summarize_trigger_results,
 )
@@ -48,7 +48,8 @@ class EvalCoreTests(unittest.TestCase):
     def test_eval_ids_must_be_safe_path_segments(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             skill_dir = Path(temp_dir) / "demo"
-            eval_path = skill_dir / "evals" / "evals.json"
+            evals_root = Path(temp_dir) / "evals"
+            eval_path = evals_root / "demo" / "evals.json"
             eval_path.parent.mkdir(parents=True)
             for unsafe_id in ("../escape", "/tmp/escape", r"..\escape", ".", ".."):
                 with self.subTest(unsafe_id=unsafe_id):
@@ -69,12 +70,13 @@ class EvalCoreTests(unittest.TestCase):
                         encoding="utf-8",
                     )
                     with self.assertRaisesRegex(EvalError, "safe path segment"):
-                        load_eval_spec(skill_dir)
+                        load_eval_spec(skill_dir, evals_root)
 
     def test_empty_fixture_reference_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             skill_dir = Path(temp_dir) / "demo"
-            eval_path = skill_dir / "evals" / "evals.json"
+            evals_root = Path(temp_dir) / "evals"
+            eval_path = evals_root / "demo" / "evals.json"
             eval_path.parent.mkdir(parents=True)
             eval_path.write_text(
                 json.dumps(
@@ -96,22 +98,22 @@ class EvalCoreTests(unittest.TestCase):
             )
 
             with self.assertRaisesRegex(EvalError, "non-empty strings"):
-                load_eval_spec(skill_dir)
+                load_eval_spec(skill_dir, evals_root)
 
     def test_broad_fixture_references_cannot_select_eval_ground_truth(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
-            skill = root / "skill"
+            eval_dir = root / "evals" / "skill"
             workspace = root / "workspace"
-            (skill / "evals").mkdir(parents=True)
-            (skill / "evals" / "evals.json").write_text("{}", encoding="utf-8")
+            eval_dir.mkdir(parents=True)
+            (eval_dir / "evals.json").write_text("{}", encoding="utf-8")
             workspace.mkdir()
 
-            for fixture in (".", "evals"):
+            for fixture in (".", "evals.json"):
                 with self.subTest(fixture=fixture):
                     with self.assertRaisesRegex(EvalError, "eval ground truth"):
                         materialize_fixtures(
-                            skill, (fixture,), workspace, allow_setup_scripts=False
+                            eval_dir, (fixture,), workspace, allow_setup_scripts=False
                         )
 
     def test_peer_skill_call_does_not_count_as_target_activation(self) -> None:
@@ -133,106 +135,79 @@ class EvalCoreTests(unittest.TestCase):
     def test_repository_discovery_excludes_skills_inside_eval_fixtures(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             repo = Path(temp_dir)
-            canonical = repo / "skills" / "portable" / "canonical"
-            embedded = canonical / "evals" / "fixtures" / "embedded"
-            codex_peer = repo / "skills" / "harness" / "codex" / "codex-peer"
-            other_peer = repo / "skills" / "harness" / "other" / "other-peer"
+            canonical = repo / "skills" / "canonical"
+            peer = repo / "skills" / "peer"
+            embedded = repo / "evals" / "canonical" / "fixtures" / "embedded"
+            nested = repo / "skills" / "category" / "nested"
+            canonical.mkdir(parents=True)
             embedded.mkdir(parents=True)
-            codex_peer.mkdir(parents=True)
-            other_peer.mkdir(parents=True)
+            peer.mkdir(parents=True)
+            nested.mkdir(parents=True)
             (canonical / "SKILL.md").write_text("canonical", encoding="utf-8")
             (embedded / "SKILL.md").write_text("embedded", encoding="utf-8")
-            (codex_peer / "SKILL.md").write_text("codex", encoding="utf-8")
-            (other_peer / "SKILL.md").write_text("other", encoding="utf-8")
+            (peer / "SKILL.md").write_text("peer", encoding="utf-8")
+            (nested / "SKILL.md").write_text("nested", encoding="utf-8")
 
             discovered = discover_repository_skills(repo)
 
-            self.assertEqual(set(discovered), {canonical.resolve(), codex_peer.resolve()})
+            self.assertEqual(set(discovered), {canonical.resolve(), peer.resolve()})
             self.assertNotIn(embedded.resolve(), discovered)
-            self.assertNotIn(other_peer.resolve(), discovered)
+            self.assertNotIn(nested.resolve(), discovered)
 
-    def test_sanitized_skill_copy_withholds_eval_ground_truth(self) -> None:
+    def test_runtime_skill_copy_preserves_canonical_runtime_content(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             source = root / "source"
-            (source / "evals").mkdir(parents=True)
-            (source / "references").mkdir()
+            (source / "references").mkdir(parents=True)
+            (source / "working").mkdir()
             (source / "SKILL.md").write_text(
-                "---\n"
-                "name: source\n"
-                "description: Example skill\n"
-                "license: Apache-2.0\n"
-                "compatibility: Requires git\n"
-                "metadata:\n"
-                "  short-description: Example\n"
-                "allowed-tools: Read Bash\n"
-                "---\n\n"
-                "# Skill\n",
+                "---\nname: source\ndescription: Example skill\n---\n\n# Skill\n",
                 encoding="utf-8",
             )
-            (source / "evals" / "evals.json").write_text("{}", encoding="utf-8")
             (source / "references" / "guide.md").write_text("guide", encoding="utf-8")
+            (source / "working" / "scratch.txt").write_text("scratch", encoding="utf-8")
 
             destination = root / "installed"
-            sanitized_skill_copy(source, destination)
+            runtime_skill_copy(source, destination)
 
             self.assertTrue((destination / "SKILL.md").is_file())
             self.assertTrue((destination / "references" / "guide.md").is_file())
-            self.assertFalse((destination / "evals").exists())
-            installed = (destination / "SKILL.md").read_text(encoding="utf-8")
-            frontmatter = installed.split("---", 2)[1]
-            self.assertIn("name: source", frontmatter)
-            self.assertIn("description: Example skill", frontmatter)
-            self.assertIn("metadata:\n  short-description: Example", frontmatter)
-            self.assertNotIn("license:", frontmatter)
-            self.assertNotIn("compatibility:", frontmatter)
-            self.assertNotIn("allowed-tools:", frontmatter)
+            self.assertFalse((destination / "working").exists())
+            self.assertEqual(
+                (destination / "SKILL.md").read_text(encoding="utf-8"),
+                (source / "SKILL.md").read_text(encoding="utf-8"),
+            )
 
-    def test_sanitized_skill_copy_rejects_symlinks(self) -> None:
+    def test_runtime_skill_copy_rejects_symlinks(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             source = root / "source"
-            (source / "evals").mkdir(parents=True)
-            (source / "references").mkdir()
+            (source / "references").mkdir(parents=True)
             (source / "SKILL.md").write_text("# Skill\n", encoding="utf-8")
-            (source / "evals" / "answer.md").write_text("secret\n", encoding="utf-8")
-            (source / "references" / "answer.md").symlink_to(source / "evals" / "answer.md")
+            outside = root / "answer.md"
+            outside.write_text("external\n", encoding="utf-8")
+            (source / "references" / "answer.md").symlink_to(outside)
 
             destination = root / "installed"
             with self.assertRaisesRegex(EvalError, "may not contain symlinks"):
-                sanitized_skill_copy(source, destination)
+                runtime_skill_copy(source, destination)
 
             self.assertFalse(destination.exists())
-
-    def test_sanitized_skill_copy_ignores_eval_fixture_symlinks(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
-            source = root / "source"
-            fixture = source / "evals" / "fixtures" / "scenario"
-            fixture.mkdir(parents=True)
-            (source / "SKILL.md").write_text("# Skill\n", encoding="utf-8")
-            (fixture / "external").symlink_to(root / "outside")
-
-            destination = root / "installed"
-            sanitized_skill_copy(source, destination)
-
-            self.assertTrue((destination / "SKILL.md").is_file())
-            self.assertFalse((destination / "evals").exists())
 
     def test_markdown_recipe_withholds_expected_section(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
-            skill = root / "skill"
+            eval_dir = root / "evals" / "skill"
             workspace = root / "workspace"
-            (skill / "evals").mkdir(parents=True)
+            eval_dir.mkdir(parents=True)
             workspace.mkdir()
-            (skill / "evals" / "state.md").write_text(
+            (eval_dir / "state.md").write_text(
                 "# State\n\nRepository has a dirty file.\n\n## Expected behavior\nCommit it.\n",
                 encoding="utf-8",
             )
 
             records, scripts = materialize_fixtures(
-                skill, ("state",), workspace, allow_setup_scripts=True
+                eval_dir, ("state",), workspace, allow_setup_scripts=True
             )
 
             copied = (workspace / ".eval" / "fixtures" / "state.md").read_text(encoding="utf-8")
@@ -244,31 +219,31 @@ class EvalCoreTests(unittest.TestCase):
     def test_markdown_recipe_rejects_symlink_source(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
-            skill = root / "skill"
+            eval_dir = root / "evals" / "skill"
             workspace = root / "workspace"
             outside = root / "outside.md"
-            (skill / "evals").mkdir(parents=True)
+            eval_dir.mkdir(parents=True)
             workspace.mkdir()
             outside.write_text("host-local content\n", encoding="utf-8")
-            (skill / "evals" / "state.md").symlink_to(outside)
+            (eval_dir / "state.md").symlink_to(outside)
 
             with self.assertRaisesRegex(EvalError, "may not be symlinks"):
-                materialize_fixtures(skill, ("state",), workspace, allow_setup_scripts=False)
+                materialize_fixtures(eval_dir, ("state",), workspace, allow_setup_scripts=False)
 
     def test_markdown_recipe_withholds_plain_expected_behavior_label(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
-            skill = root / "skill"
+            eval_dir = root / "evals" / "skill"
             workspace = root / "workspace"
-            (skill / "evals").mkdir(parents=True)
+            eval_dir.mkdir(parents=True)
             workspace.mkdir()
-            (skill / "evals" / "state.md").write_text(
+            (eval_dir / "state.md").write_text(
                 "# State\n\nRepository has a dirty file.\n\n"
                 "Expected behavior:\nCommit it with the expected subject.\n",
                 encoding="utf-8",
             )
 
-            materialize_fixtures(skill, ("state",), workspace, allow_setup_scripts=True)
+            materialize_fixtures(eval_dir, ("state",), workspace, allow_setup_scripts=True)
 
             copied = (workspace / ".eval" / "fixtures" / "state.md").read_text(encoding="utf-8")
             self.assertIn("dirty file", copied)
@@ -278,8 +253,8 @@ class EvalCoreTests(unittest.TestCase):
     def test_only_fixture_root_setup_script_is_deferred(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
-            skill = root / "skill"
-            fixture = skill / "evals" / "fixtures" / "repository"
+            eval_dir = root / "evals" / "skill"
+            fixture = eval_dir / "fixtures" / "repository"
             (fixture / "scripts").mkdir(parents=True)
             (fixture / "setup.sh").write_text("true\n", encoding="utf-8")
             (fixture / "scripts" / "setup.sh").write_text("repository content\n", encoding="utf-8")
@@ -287,7 +262,7 @@ class EvalCoreTests(unittest.TestCase):
             enabled_workspace = root / "enabled"
             enabled_workspace.mkdir()
             enabled_records, enabled_scripts = materialize_fixtures(
-                skill, ("repository",), enabled_workspace, allow_setup_scripts=True
+                eval_dir, ("repository",), enabled_workspace, allow_setup_scripts=True
             )
             self.assertEqual(enabled_scripts, [fixture / "setup.sh"])
             self.assertTrue((enabled_workspace / "scripts" / "setup.sh").is_file())
@@ -296,7 +271,7 @@ class EvalCoreTests(unittest.TestCase):
             disabled_workspace = root / "disabled"
             disabled_workspace.mkdir()
             disabled_records, disabled_scripts = materialize_fixtures(
-                skill, ("repository",), disabled_workspace, allow_setup_scripts=False
+                eval_dir, ("repository",), disabled_workspace, allow_setup_scripts=False
             )
             self.assertEqual(disabled_scripts, [])
             self.assertEqual(disabled_records[0]["status"], "degraded")
@@ -634,7 +609,8 @@ class EvalCoreTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             skill = root / "skill"
-            fixture = skill / "evals" / "fixtures" / "staged-state"
+            eval_dir = root / "evals" / "skill"
+            fixture = eval_dir / "fixtures" / "staged-state"
             workspace = root / "workspace"
             fixture.mkdir(parents=True)
             workspace.mkdir()
@@ -646,7 +622,7 @@ class EvalCoreTests(unittest.TestCase):
             )
 
             records, scripts = materialize_fixtures(
-                skill, ("staged-state",), workspace, allow_setup_scripts=True
+                eval_dir, ("staged-state",), workspace, allow_setup_scripts=True
             )
             repository = initialize_fixture_repository(workspace)
             setups = run_fixture_setups(scripts, workspace, skill)
@@ -809,13 +785,15 @@ class EvalCliIntegrationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             repo = root / "repo"
-            skill = repo / "skills" / "portable" / "demo"
-            (skill / "evals").mkdir(parents=True)
+            skill = repo / "skills" / "demo"
+            eval_dir = repo / "evals" / "demo"
+            skill.mkdir(parents=True)
+            eval_dir.mkdir(parents=True)
             (skill / "SKILL.md").write_text(
                 "---\nname: demo\ndescription: Use for demo tasks.\n---\n\n# Demo\n",
                 encoding="utf-8",
             )
-            (skill / "evals" / "evals.json").write_text(
+            (eval_dir / "evals.json").write_text(
                 json.dumps(
                     {
                         "skill_name": "demo",
@@ -836,7 +814,7 @@ class EvalCliIntegrationTests(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
-            peer = repo / "skills" / "portable" / "peer"
+            peer = repo / "skills" / "peer"
             peer.mkdir(parents=True)
             (peer / "SKILL.md").write_text(
                 "---\nname: peer\ndescription: Use for peer tasks.\n---\n\n# Peer\n",

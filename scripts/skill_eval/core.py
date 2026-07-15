@@ -56,16 +56,16 @@ def _case_id(value: object, *, location: str) -> str:
 
 
 def discover_repository_skills(repo_root: Path) -> tuple[Path, ...]:
-    """Return skill packages deployable to Codex without entering eval fixtures."""
+    """Return publishable skill packages from the repository skill root."""
     skills_root = repo_root.resolve() / "skills"
-    discovered: list[Path] = []
-    portable = skills_root / "portable"
-    if portable.is_dir():
-        discovered.extend(path.parent.resolve() for path in portable.glob("*/SKILL.md"))
-    codex_harness = skills_root / "harness" / "codex"
-    if codex_harness.is_dir():
-        discovered.extend(path.parent.resolve() for path in codex_harness.glob("*/SKILL.md"))
-    return tuple(sorted(set(discovered), key=lambda path: str(path)))
+    if not skills_root.is_dir():
+        return ()
+    return tuple(
+        sorted(
+            (path.parent.resolve() for path in skills_root.glob("*/SKILL.md")),
+            key=lambda path: str(path),
+        )
+    )
 
 
 def resolve_skill(repo_root: Path, selector: str) -> Path:
@@ -90,7 +90,7 @@ def resolve_skill(repo_root: Path, selector: str) -> Path:
     if not matches:
         raise EvalError(
             f"No skill matches {selector!r}. Use a short name such as 'commit', "
-            "a full id such as 'portable/commit', or a skill directory path."
+            "a repository path such as 'skills/commit', or a skill directory path."
         )
     if len(matches) > 1:
         display = ", ".join(str(path.relative_to(repo_root)) for path in matches)
@@ -98,8 +98,8 @@ def resolve_skill(repo_root: Path, selector: str) -> Path:
     return matches[0]
 
 
-def load_eval_spec(skill_dir: Path) -> EvalSpec:
-    eval_path = skill_dir / "evals" / "evals.json"
+def load_eval_spec(skill_dir: Path, evals_root: Path) -> EvalSpec:
+    eval_path = evals_root.resolve() / skill_dir.name / "evals.json"
     try:
         payload = json.loads(eval_path.read_text(encoding="utf-8"))
     except FileNotFoundError as exc:
@@ -195,9 +195,9 @@ def stable_digest(path: Path, *, exclude: Iterable[str] = ()) -> str:
     return digest.hexdigest()
 
 
-def sanitized_skill_copy(skill_dir: Path, destination: Path) -> None:
-    """Install Codex runtime content while withholding eval ground truth."""
-    ignored = {"evals", "working", "__pycache__", ".git"}
+def runtime_skill_copy(skill_dir: Path, destination: Path) -> None:
+    """Copy publishable runtime content without repository-generated files."""
+    ignored = {"working", "__pycache__", ".git"}
 
     symlinks: list[Path] = []
     for path in skill_dir.rglob("*"):
@@ -215,49 +215,14 @@ def sanitized_skill_copy(skill_dir: Path, destination: Path) -> None:
         return ignored.intersection(names)
 
     shutil.copytree(skill_dir, destination, ignore=ignore)
-    skill_md = destination / "SKILL.md"
-    if skill_md.is_file():
-        skill_md.write_text(sanitized_skill_instructions(skill_dir), encoding="utf-8")
 
 
-_CODEX_FRONTMATTER_KEYS = {"name", "description", "metadata"}
-
-
-def _sanitize_codex_frontmatter(text: str) -> str:
-    """Match the frontmatter filtering used by Codex copy deployments."""
-    if not text.startswith("---\n"):
-        return text
-    end = text.find("\n---", 4)
-    if end == -1:
-        return text
-
-    kept: list[str] = []
-    keeping = False
-    for line in text[4:end].splitlines():
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
-            if keeping:
-                kept.append(line)
-            continue
-        if line[0].isspace():
-            if keeping:
-                kept.append(line)
-            continue
-
-        key = line.split(":", 1)[0].strip()
-        keeping = key in _CODEX_FRONTMATTER_KEYS
-        if keeping:
-            kept.append(line)
-
-    return "---\n" + "\n".join(kept).rstrip() + "\n" + text[end:]
-
-
-def sanitized_skill_instructions(skill_dir: Path) -> str:
-    """Return exactly the instruction text installed into an evaluator Codex home."""
+def skill_instructions(skill_dir: Path) -> str:
+    """Return the canonical instructions installed into an evaluator runtime."""
     skill_md = skill_dir / "SKILL.md"
     if skill_md.is_symlink():
         raise EvalError(f"Skill runtime content may not contain symlinks: {skill_md.name}")
-    return _sanitize_codex_frontmatter(skill_md.read_text(encoding="utf-8"))
+    return skill_md.read_text(encoding="utf-8")
 
 
 _EXPECTED_SECTION = re.compile(
@@ -281,12 +246,10 @@ def _sanitized_recipe(text: str) -> str:
 def _safe_ref(ref: str) -> Path:
     candidate = Path(ref)
     parts = candidate.parts
-    exposes_eval_ground_truth = not parts or (
-        parts[0] == "evals" and (len(parts) < 3 or parts[1] != "fixtures")
-    )
+    exposes_eval_ground_truth = not parts or parts[0] == "evals.json"
     if candidate.is_absolute() or ".." in parts or exposes_eval_ground_truth:
         raise EvalError(
-            "Fixture path must be skill-relative, may not traverse parents, and may not "
+            "Fixture path must be eval-relative, may not traverse parents, and may not "
             f"select eval ground truth: {ref}"
         )
     return candidate
@@ -294,10 +257,8 @@ def _safe_ref(ref: str) -> Path:
 
 def _fixture_target(relative: Path) -> Path:
     parts = relative.parts
-    if len(parts) >= 4 and parts[:2] == ("evals", "fixtures"):
-        return Path(*parts[3:])
-    if len(parts) >= 3 and parts[:2] == ("evals", "fixtures"):
-        return Path(parts[-1])
+    if len(parts) >= 3 and parts[0] == "fixtures":
+        return Path(*parts[2:])
     return relative
 
 
@@ -311,7 +272,7 @@ def _copy_fixture_file(source: Path, target: Path) -> None:
 
 
 def materialize_fixtures(
-    skill_dir: Path,
+    eval_dir: Path,
     fixture_refs: tuple[str, ...],
     workspace: Path,
     *,
@@ -324,13 +285,12 @@ def materialize_fixtures(
 
     for ref in fixture_refs:
         safe = _safe_ref(ref)
-        candidates = [skill_dir / safe]
+        candidates = [eval_dir / safe]
         if len(safe.parts) == 1:
             candidates.extend(
                 [
-                    skill_dir / "evals" / "fixtures" / safe,
-                    skill_dir / "evals" / safe,
-                    skill_dir / "evals" / f"{safe}.md",
+                    eval_dir / "fixtures" / safe,
+                    eval_dir / f"{safe}.md",
                 ]
             )
         source = next((candidate for candidate in candidates if candidate.exists()), None)
@@ -347,11 +307,7 @@ def materialize_fixtures(
         if source.is_symlink():
             raise EvalError(f"Fixture sources may not be symlinks: {source}")
 
-        if (
-            source.is_file()
-            and source.suffix.lower() == ".md"
-            and source.parent == skill_dir / "evals"
-        ):
+        if source.is_file() and source.suffix.lower() == ".md" and source.parent == eval_dir:
             scenario_dir.mkdir(parents=True, exist_ok=True)
             destination = scenario_dir / source.name
             destination.write_text(
@@ -384,8 +340,8 @@ def materialize_fixtures(
                 _copy_fixture_file(item, destination)
                 copied.append(str(relative))
         else:
-            relative_to_skill = source.relative_to(skill_dir)
-            destination_rel = _fixture_target(relative_to_skill)
+            relative_to_eval = source.relative_to(eval_dir)
+            destination_rel = _fixture_target(relative_to_eval)
             destination = workspace / destination_rel
             _copy_fixture_file(source, destination)
             copied.append(str(destination_rel))

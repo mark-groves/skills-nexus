@@ -119,7 +119,7 @@ class ValidateRepoFrontmatterTests(unittest.TestCase):
         self.assertEqual(len(validate_repo.ERRORS), 1)
         self.assertIn("must quote values containing ': '", validate_repo.ERRORS[0])
 
-    def test_validate_frontmatter_accepts_structured_metadata(self) -> None:
+    def test_validate_frontmatter_rejects_structured_metadata(self) -> None:
         with tempfile.TemporaryDirectory(dir=REPO_DIR) as temp_dir:
             temp_root = Path(temp_dir)
             skill_dir = temp_root / "metadata-frontmatter-test"
@@ -143,7 +143,9 @@ class ValidateRepoFrontmatterTests(unittest.TestCase):
 
             validate_repo.validate_frontmatter(skill_dir, skill_md)
 
-        self.assertEqual(validate_repo.ERRORS, [])
+        self.assertEqual(len(validate_repo.ERRORS), 1)
+        self.assertIn("Unsupported canonical frontmatter keys", validate_repo.ERRORS[0])
+        self.assertIn("metadata", validate_repo.ERRORS[0])
 
     def test_validate_frontmatter_accepts_inline_comments(self) -> None:
         with tempfile.TemporaryDirectory(dir=REPO_DIR) as temp_dir:
@@ -168,7 +170,7 @@ class ValidateRepoFrontmatterTests(unittest.TestCase):
 
         self.assertEqual(validate_repo.ERRORS, [])
 
-    def test_validate_frontmatter_accepts_allowed_tools(self) -> None:
+    def test_validate_frontmatter_rejects_allowed_tools(self) -> None:
         with tempfile.TemporaryDirectory(dir=REPO_DIR) as temp_dir:
             temp_root = Path(temp_dir)
             skill_dir = self.write_skill_with_frontmatter(
@@ -183,9 +185,10 @@ class ValidateRepoFrontmatterTests(unittest.TestCase):
 
             validate_repo.validate_frontmatter(skill_dir, skill_dir / "SKILL.md")
 
-        self.assertEqual(validate_repo.ERRORS, [])
+        self.assertEqual(len(validate_repo.ERRORS), 1)
+        self.assertIn("allowed-tools", validate_repo.ERRORS[0])
 
-    def test_validate_frontmatter_rejects_empty_allowed_tools(self) -> None:
+    def test_validate_frontmatter_rejects_empty_optional_fields(self) -> None:
         with tempfile.TemporaryDirectory(dir=REPO_DIR) as temp_dir:
             temp_root = Path(temp_dir)
             skill_dir = self.write_skill_with_frontmatter(
@@ -240,7 +243,7 @@ class ValidateRepoFrontmatterTests(unittest.TestCase):
         self.assertEqual(len(validate_repo.ERRORS), 1)
         self.assertIn("Description is too long", validate_repo.ERRORS[0])
 
-    def test_validate_frontmatter_enforces_compatibility_limit(self) -> None:
+    def test_validate_frontmatter_rejects_compatibility(self) -> None:
         with tempfile.TemporaryDirectory(dir=REPO_DIR) as temp_dir:
             temp_root = Path(temp_dir)
             skill_dir = self.write_skill_with_frontmatter(
@@ -255,100 +258,8 @@ class ValidateRepoFrontmatterTests(unittest.TestCase):
 
             validate_repo.validate_frontmatter(skill_dir, skill_dir / "SKILL.md")
 
-        self.assertEqual(validate_repo.ERRORS, [])
-
-        validate_repo.ERRORS.clear()
-
-        with tempfile.TemporaryDirectory(dir=REPO_DIR) as temp_dir:
-            temp_root = Path(temp_dir)
-            skill_dir = self.write_skill_with_frontmatter(
-                temp_root,
-                "compatibility-too-long-skill",
-                f"""\
-                name: compatibility-too-long-skill
-                description: Example skill
-                compatibility: {"a" * 501}
-                """,
-            )
-
-            validate_repo.validate_frontmatter(skill_dir, skill_dir / "SKILL.md")
-
         self.assertEqual(len(validate_repo.ERRORS), 1)
-        self.assertIn("Compatibility is too long", validate_repo.ERRORS[0])
-
-    def test_validate_codex_harness_frontmatter_rejects_compatibility(self) -> None:
-        with tempfile.TemporaryDirectory(dir=REPO_DIR) as temp_dir:
-            harness_skills_dir = Path(temp_dir) / "skills" / "harness"
-            codex_root = harness_skills_dir / "codex"
-            codex_root.mkdir(parents=True)
-            with mock.patch.object(validate_repo, "HARNESS_SKILLS_DIR", harness_skills_dir):
-                skill_dir = self.write_skill_with_frontmatter(
-                    codex_root,
-                    "codex-frontmatter-skill",
-                    """\
-                    name: codex-frontmatter-skill
-                    description: Example skill
-                    compatibility: Codex only
-                    """,
-                )
-
-                validate_repo.validate_skill_contract(skill_dir)
-
-        self.assertTrue(
-            any(
-                "Codex harness skills must keep runtime frontmatter" in error
-                for error in validate_repo.ERRORS
-            ),
-            validate_repo.ERRORS,
-        )
-
-    def test_validate_codex_harness_frontmatter_accepts_metadata(self) -> None:
-        with tempfile.TemporaryDirectory(dir=REPO_DIR) as temp_dir:
-            harness_skills_dir = Path(temp_dir) / "skills" / "harness"
-            codex_root = harness_skills_dir / "codex"
-            codex_root.mkdir(parents=True)
-            with mock.patch.object(validate_repo, "HARNESS_SKILLS_DIR", harness_skills_dir):
-                skill_dir = self.write_skill_with_frontmatter(
-                    codex_root,
-                    "codex-metadata-skill",
-                    """\
-                    name: codex-metadata-skill
-                    description: Example skill
-                    metadata:
-                      short-description: Example
-                    """,
-                )
-                evals_dir = skill_dir / "evals"
-                evals_dir.mkdir()
-                (evals_dir / "evals.json").write_text(
-                    textwrap.dedent(
-                        """\
-                        {
-                          "skill_name": "codex-metadata-skill",
-                          "trigger_evals": [
-                            {"id": "positive-1", "query": "use codex metadata skill", "should_trigger": true},
-                            {"id": "positive-2", "query": "run codex metadata workflow", "should_trigger": true},
-                            {"id": "negative-1", "query": "translate this sentence", "should_trigger": false},
-                            {"id": "negative-2", "query": "what time is it", "should_trigger": false}
-                          ],
-                          "behavior_evals": [
-                            {
-                              "id": "basic",
-                              "prompt": "use codex metadata skill",
-                              "expected_behavior": "Uses the skill workflow.",
-                              "fixtures": [],
-                              "checks": ["Mentions the workflow"]
-                            }
-                          ]
-                        }
-                        """
-                    ),
-                    encoding="utf-8",
-                )
-
-                validate_repo.validate_skill_contract(skill_dir)
-
-        self.assertEqual(validate_repo.ERRORS, [])
+        self.assertIn("compatibility", validate_repo.ERRORS[0])
 
     def test_validate_frontmatter_rejects_trailing_hyphen_names(self) -> None:
         with tempfile.TemporaryDirectory(dir=REPO_DIR) as temp_dir:
@@ -405,8 +316,8 @@ class ValidateRepoEvalTests(unittest.TestCase):
                 validate_repo.ERRORS.clear()
                 with tempfile.TemporaryDirectory(dir=REPO_DIR) as temp_dir:
                     skill_dir = Path(temp_dir) / "trigger-count-skill"
-                    evals_dir = skill_dir / "evals"
-                    evals_dir.mkdir(parents=True)
+                    evals_dir = Path(temp_dir) / "eval-suite"
+                    evals_dir.mkdir()
                     (evals_dir / "evals.json").write_text(
                         json.dumps(
                             {
@@ -447,7 +358,7 @@ class ValidateRepoEvalTests(unittest.TestCase):
                         encoding="utf-8",
                     )
 
-                    validate_repo.validate_evals(skill_dir)
+                    validate_repo.validate_evals(skill_dir, evals_dir)
 
                 self.assertTrue(
                     any(expected_error in error for error in validate_repo.ERRORS),
@@ -471,8 +382,8 @@ class ValidateRepoEvalTests(unittest.TestCase):
     def test_fixture_paths_must_match_evaluator_safety_rules(self) -> None:
         with tempfile.TemporaryDirectory(dir=REPO_DIR) as temp_dir:
             skill_dir = Path(temp_dir) / "fixture-path-skill"
-            evals_dir = skill_dir / "evals"
-            evals_dir.mkdir(parents=True)
+            evals_dir = Path(temp_dir) / "eval-suite"
+            evals_dir.mkdir()
             (evals_dir / "evals.json").write_text(
                 json.dumps(
                     {
@@ -488,7 +399,7 @@ class ValidateRepoEvalTests(unittest.TestCase):
                                 "id": 1,
                                 "prompt": "demo",
                                 "expected_behavior": "works",
-                                "fixtures": ["../state", "/tmp/state", ".", "evals"],
+                                "fixtures": ["../state", "/tmp/state", ".", "evals.json"],
                                 "checks": ["result exists"],
                             }
                         ],
@@ -497,12 +408,48 @@ class ValidateRepoEvalTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            validate_repo.validate_evals(skill_dir)
+            validate_repo.validate_evals(skill_dir, evals_dir)
 
-        path_errors = [error for error in validate_repo.ERRORS if "must be skill-relative" in error]
+        path_errors = [error for error in validate_repo.ERRORS if "must be eval-relative" in error]
         self.assertEqual(
             len(path_errors),
             4,
+            validate_repo.ERRORS,
+        )
+
+    def test_fixture_references_must_resolve(self) -> None:
+        with tempfile.TemporaryDirectory(dir=REPO_DIR) as temp_dir:
+            skill_dir = Path(temp_dir) / "fixture-resolution-skill"
+            evals_dir = Path(temp_dir) / "eval-suite"
+            evals_dir.mkdir()
+            (evals_dir / "evals.json").write_text(
+                json.dumps(
+                    {
+                        "skill_name": skill_dir.name,
+                        "trigger_evals": [
+                            {"id": 1, "query": "one", "should_trigger": True},
+                            {"id": 2, "query": "two", "should_trigger": True},
+                            {"id": 3, "query": "three", "should_trigger": False},
+                            {"id": 4, "query": "four", "should_trigger": False},
+                        ],
+                        "behavior_evals": [
+                            {
+                                "id": 1,
+                                "prompt": "demo",
+                                "expected_behavior": "works",
+                                "fixtures": ["missing-scenario"],
+                                "checks": ["result exists"],
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            validate_repo.validate_evals(skill_dir, evals_dir)
+
+        self.assertTrue(
+            any("fixture is unresolved" in error for error in validate_repo.ERRORS),
             validate_repo.ERRORS,
         )
 
@@ -514,27 +461,27 @@ class ValidateRepoSkillLayoutTests(unittest.TestCase):
     def tearDown(self) -> None:
         validate_repo.ERRORS.clear()
 
-    def test_validate_skills_root_allows_no_harness_skills(self) -> None:
+    def test_validate_skills_root_accepts_flat_skills_with_external_evals(self) -> None:
         with tempfile.TemporaryDirectory(dir=REPO_DIR) as temp_dir:
             skills_dir = Path(temp_dir) / "skills"
-            portable_skills_dir = skills_dir / "portable"
-            portable_skill_dir = portable_skills_dir / "example-skill"
-            portable_skill_dir.mkdir(parents=True)
-            (portable_skill_dir / "SKILL.md").write_text(
+            skill_dir = skills_dir / "example-skill"
+            skill_dir.mkdir(parents=True)
+            (skill_dir / "SKILL.md").write_text(
                 "---\nname: example-skill\ndescription: Example skill\n---\n",
                 encoding="utf-8",
             )
-            harness_skills_dir = skills_dir / "harness"
+            evals_dir = Path(temp_dir) / "evals"
+            (evals_dir / "example-skill").mkdir(parents=True)
 
             with (
                 mock.patch.object(validate_repo, "SKILLS_DIR", skills_dir),
-                mock.patch.object(validate_repo, "PORTABLE_SKILLS_DIR", portable_skills_dir),
-                mock.patch.object(validate_repo, "HARNESS_SKILLS_DIR", harness_skills_dir),
+                mock.patch.object(validate_repo, "EVALS_DIR", evals_dir),
                 mock.patch.object(validate_repo, "validate_skill_contract"),
+                mock.patch.object(validate_repo, "validate_evals"),
             ):
                 valid_skills = validate_repo.validate_skills_root()
 
-        self.assertEqual(valid_skills, ["portable/example-skill"])
+        self.assertEqual(valid_skills, ["example-skill"])
         self.assertEqual(validate_repo.ERRORS, [])
 
 

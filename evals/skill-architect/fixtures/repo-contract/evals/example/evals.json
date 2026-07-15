@@ -1,0 +1,26 @@
+{
+  "skill_name": "example",
+  "trigger_evals": [
+    {
+      "id": 1,
+      "query": "Demonstrate the shared runtime example.",
+      "should_trigger": true
+    },
+    {
+      "id": 2,
+      "query": "Implement an unrelated feature.",
+      "should_trigger": false
+    }
+  ],
+  "behavior_evals": [
+    {
+      "id": 1,
+      "prompt": "Demonstrate the example.",
+      "expected_behavior": "Follows the request and reports the result.",
+      "fixtures": [],
+      "checks": [
+        "Reports a result"
+      ]
+    }
+  ]
+}
