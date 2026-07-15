@@ -209,15 +209,23 @@ class CodexRunner:
         )
         configured_home = Path(os.environ.get("CODEX_HOME", Path.home() / ".codex"))
         self.auth_source = configured_home / "auth.json"
-        if not self.auth_source.is_file():
+        api_key = os.environ.get("CODEX_API_KEY")
+        if api_key:
+            auth_payload = {
+                "auth_mode": "apikey",
+                "OPENAI_API_KEY": api_key,
+            }
+        elif self.auth_source.is_file():
+            try:
+                auth_payload = json.loads(self.auth_source.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as exc:
+                raise EvalError(f"Codex authentication could not be read: {exc}") from exc
+        else:
             raise EvalError(
-                f"Codex authentication was not found at {self.auth_source}. "
-                "Run `codex login` before evaluating."
+                f"Codex authentication was not found at {self.auth_source}, and "
+                "CODEX_API_KEY is not set. Run `codex login` or provide a key before "
+                "evaluating."
             )
-        try:
-            auth_payload = json.loads(self.auth_source.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as exc:
-            raise EvalError(f"Codex authentication could not be read: {exc}") from exc
         if not isinstance(auth_payload, dict):
             raise EvalError("Codex authentication must be a JSON object")
         tokens = auth_payload.get("tokens")
@@ -307,6 +315,8 @@ class CodexRunner:
         git_ceiling = str(workspace.parent.resolve())
         command = [
             self.codex_binary,
+            "--ask-for-approval",
+            "never",
             "exec",
             "--json",
             "--ephemeral",
@@ -334,6 +344,7 @@ class CodexRunner:
             command.extend(["--output-schema", str(output_schema)])
 
         env = os.environ.copy()
+        env.pop("CODEX_API_KEY", None)
         env["CODEX_HOME"] = str(home)
         env["HOME"] = str(home)
         env["GIT_CEILING_DIRECTORIES"] = git_ceiling

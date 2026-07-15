@@ -367,6 +367,33 @@ class EvalCoreTests(unittest.TestCase):
             finally:
                 shutil.rmtree(home, ignore_errors=True)
 
+    def test_codex_api_key_is_wrapped_as_ephemeral_auth(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            skill = root / "skill"
+            codex_home = root / "empty-codex-home"
+            skill.mkdir()
+            codex_home.mkdir()
+            (skill / "SKILL.md").write_text("# Skill\n", encoding="utf-8")
+
+            with mock.patch.dict(
+                os.environ,
+                {"CODEX_HOME": str(codex_home), "CODEX_API_KEY": "ci-test-key"},
+            ):
+                runner = CodexRunner(
+                    skill_dir=skill,
+                    codex_binary="/bin/true",
+                    model=None,
+                    judge_model=None,
+                    timeout_seconds=30,
+                    sandbox="read-only",
+                )
+
+            self.assertEqual(
+                json.loads(runner.auth_payload),
+                {"auth_mode": "apikey", "OPENAI_API_KEY": "ci-test-key"},
+            )
+
     def test_combined_skill_read_keeps_non_skill_command_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -763,6 +790,7 @@ class EvalCliIntegrationTests(unittest.TestCase):
                     final += f" auth_ephemeral={auth_is_regular and auth_removed}"
                     final += f" safe_external_auth={safe_external_auth}"
                     final += f" isolated_home={Path(os.environ['HOME']) == home}"
+                    final += f" api_key_env={'CODEX_API_KEY' in os.environ}"
                     git_probe = subprocess.run(
                         ["git", "rev-parse", "--show-toplevel"],
                         capture_output=True,
@@ -895,7 +923,12 @@ class EvalCliIntegrationTests(unittest.TestCase):
             self.assertIn("auth_ephemeral=True", behavior["skill_run"]["final_response"])
             self.assertIn("safe_external_auth=True", behavior["skill_run"]["final_response"])
             self.assertIn("isolated_home=True", behavior["skill_run"]["final_response"])
+            self.assertIn("api_key_env=False", behavior["skill_run"]["final_response"])
             self.assertIn("parent_git=False", behavior["skill_run"]["final_response"])
+            self.assertEqual(
+                behavior["skill_run"]["command"][1:4],
+                ["--ask-for-approval", "never", "exec"],
+            )
             self.assertFalse(
                 Path(behavior["skill_run"]["execution_workspace"]).is_relative_to(repo)
             )
