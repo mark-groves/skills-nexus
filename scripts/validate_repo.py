@@ -715,10 +715,12 @@ def validate_evals(skill_dir: Path, eval_dir: Path) -> None:
                         or ".." in fixture_path.parts
                         or not fixture_path.parts
                         or fixture_path.parts[0] == "evals.json"
+                        or fixture_path.parts == ("fixtures",)
                     ):
                         fail(
                             "Behavior eval fixture paths must be eval-relative, may not "
-                            "traverse parents, and may not select eval ground truth in "
+                            "traverse parents, and may not select eval ground truth or the "
+                            "broad fixture root in "
                             f"{rel}: {fixture}"
                         )
                     else:

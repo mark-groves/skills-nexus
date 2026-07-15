@@ -264,8 +264,8 @@ def _safe_ref(ref: str) -> Path:
 
 def _fixture_target(relative: Path) -> Path:
     parts = relative.parts
-    if len(parts) >= 3 and parts[0] == "fixtures":
-        return Path(*parts[2:])
+    if parts and parts[0] == "fixtures":
+        return Path(*parts[2:] if len(parts) >= 3 else parts[1:])
     return relative
 
 

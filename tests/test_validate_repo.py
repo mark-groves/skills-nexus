@@ -384,6 +384,7 @@ class ValidateRepoEvalTests(unittest.TestCase):
             skill_dir = Path(temp_dir) / "fixture-path-skill"
             evals_dir = Path(temp_dir) / "eval-suite"
             evals_dir.mkdir()
+            (evals_dir / "fixtures").mkdir()
             (evals_dir / "evals.json").write_text(
                 json.dumps(
                     {
@@ -399,7 +400,13 @@ class ValidateRepoEvalTests(unittest.TestCase):
                                 "id": 1,
                                 "prompt": "demo",
                                 "expected_behavior": "works",
-                                "fixtures": ["../state", "/tmp/state", ".", "evals.json"],
+                                "fixtures": [
+                                    "../state",
+                                    "/tmp/state",
+                                    ".",
+                                    "evals.json",
+                                    "fixtures",
+                                ],
                                 "checks": ["result exists"],
                             }
                         ],
@@ -413,7 +420,7 @@ class ValidateRepoEvalTests(unittest.TestCase):
         path_errors = [error for error in validate_repo.ERRORS if "must be eval-relative" in error]
         self.assertEqual(
             len(path_errors),
-            4,
+            5,
             validate_repo.ERRORS,
         )
 

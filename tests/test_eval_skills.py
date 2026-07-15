@@ -234,6 +234,24 @@ class EvalCoreTests(unittest.TestCase):
             with self.assertRaisesRegex(EvalError, "may not be symlinks"):
                 materialize_fixtures(eval_dir, ("state",), workspace, allow_setup_scripts=False)
 
+    def test_top_level_fixture_file_is_copied_to_workspace_root(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            eval_dir = root / "evals" / "skill"
+            workspace = root / "workspace"
+            (eval_dir / "fixtures").mkdir(parents=True)
+            workspace.mkdir()
+            (eval_dir / "fixtures" / "input.txt").write_text("input\n", encoding="utf-8")
+
+            records, scripts = materialize_fixtures(
+                eval_dir, ("input.txt",), workspace, allow_setup_scripts=False
+            )
+
+            self.assertEqual((workspace / "input.txt").read_text(encoding="utf-8"), "input\n")
+            self.assertFalse((workspace / "fixtures").exists())
+            self.assertEqual(records[0]["copied"], ["input.txt"])
+            self.assertEqual(scripts, [])
+
     def test_markdown_recipe_withholds_plain_expected_behavior_label(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
