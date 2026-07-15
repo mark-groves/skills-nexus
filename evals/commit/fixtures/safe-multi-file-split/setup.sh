@@ -10,4 +10,5 @@ git commit -q -m 'feat: add basic export support'
 
 git switch -q -c feat/export-csv
 printf 'import csv\n\ndef export_rows(rows, output):\n    writer = csv.writer(output)\n    writer.writerows(rows)\n' > src/export.py
+# shellcheck disable=SC2016 # Literal backticks are Markdown code spans.
 printf '# Export guide\n\nUse `export --format csv` to save comma-separated rows.\n' > docs/export.md
