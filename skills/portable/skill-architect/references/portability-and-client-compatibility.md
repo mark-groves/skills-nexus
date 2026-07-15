@@ -19,7 +19,7 @@ environment when client-specific behavior matters.
 
 The specification standardizes the package, not every client behavior.
 Clients can differ in discovery paths, activation, resource access,
-permissions, supported runtimes, and optional frontmatter handling. A
+permissions, supported runtimes, and frontmatter handling. A
 conforming package is therefore necessary but not sufficient for
 cross-client portability.
 
@@ -63,9 +63,8 @@ skills easier to use:
 
 ## Permissions
 
-Some clients honor tool allowlists, some ask the user at runtime, and
-some sandbox tool access. Treat frontmatter tool hints as one layer of
-safety, not as a replacement for safe instructions.
+Clients can ask the user at runtime or sandbox tool access. State safety
+constraints in the instructions so they remain available across clients.
 
 If the skill needs risky commands, state the risk, require dry runs or
 approval when appropriate, and design scripts with explicit confirmation
@@ -73,11 +72,9 @@ flags.
 
 ## Frontmatter And Runtime Requirements
 
-Use `name` and `description` as the portable minimum. The open standard
-also permits `license`, `compatibility`, `metadata`, and experimental
-`allowed-tools`, but clients may interpret optional fields differently.
-Add them only for real information and do not make core behavior depend
-on them being enforced.
+Use only `name` and `description` in frontmatter for consistent discovery
+across clients. Put runtime requirements and operating constraints in the
+Markdown body.
 
 Express requirements as capabilities or dependencies rather than branded
 tool names. Declare required executables, packages, network access, and

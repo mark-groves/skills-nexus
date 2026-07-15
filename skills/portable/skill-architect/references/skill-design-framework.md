@@ -93,7 +93,7 @@ logic repeatedly or when deterministic behavior matters.
 
 Prefer an existing one-off package command when it is short, stable, and
 easy to invoke. Pin versions where reproducibility matters. State runtime
-requirements in the skill or compatibility field.
+requirements in the skill instructions.
 
 Bundle a script when command lines become hard to reproduce or when the
 logic deserves tests. Scripts should:
