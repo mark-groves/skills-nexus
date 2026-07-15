@@ -1,0 +1,780 @@
+"""Isolated Codex execution and paired behavior grading."""
+
+from __future__ import annotations
+
+import copy
+import hashlib
+import json
+import os
+import re
+import shutil
+import subprocess
+import tempfile
+import threading
+import time
+from pathlib import Path
+from typing import Any, TextIO
+
+from .core import (
+    BehaviorCase,
+    EvalError,
+    git_observations,
+    json_dump,
+    sanitized_skill_copy,
+    sanitized_skill_instructions,
+    snapshot_workspace,
+    workspace_delta,
+)
+
+
+def _all_strings(value: object):
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, dict):
+        for nested in value.values():
+            yield from _all_strings(nested)
+    elif isinstance(value, list):
+        for nested in value:
+            yield from _all_strings(nested)
+
+
+def _load_events(text: str) -> tuple[list[dict[str, Any]], list[str]]:
+    events: list[dict[str, Any]] = []
+    errors: list[str] = []
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        if not line.strip():
+            continue
+        try:
+            value = json.loads(line)
+        except json.JSONDecodeError as exc:
+            errors.append(f"line {line_number}: {exc}")
+            continue
+        if isinstance(value, dict):
+            events.append(value)
+    return events, errors
+
+
+def _event_summary(
+    events: list[dict[str, Any]],
+    *,
+    activation_marker: str | None,
+    activation_name: str | None,
+) -> dict[str, Any]:
+    final_messages: list[str] = []
+    tool_calls = 0
+    usage: dict[str, int] = {}
+    activated = False
+    marker_suffix = activation_marker.replace("\\", "/") if activation_marker else None
+
+    for event in events:
+        item = event.get("item")
+        if isinstance(item, dict):
+            item_type = str(item.get("type", ""))
+            if item_type == "agent_message" and isinstance(item.get("text"), str):
+                final_messages.append(item["text"])
+            if event.get("type") == "item.completed" and item_type not in {
+                "agent_message",
+                "reasoning",
+            }:
+                tool_calls += 1
+            if item_type in {"skill_call", "skill"} and activation_name:
+                activated = activated or any(
+                    value == activation_name or value.endswith(f"/{activation_name}")
+                    for value in _all_strings(item)
+                )
+            if marker_suffix and item_type not in {"agent_message", "reasoning"}:
+                activated = activated or any(
+                    marker_suffix in value.replace("\\", "/") for value in _all_strings(item)
+                )
+        if event.get("type") == "turn.completed" and isinstance(event.get("usage"), dict):
+            usage = {
+                key: int(value)
+                for key, value in event["usage"].items()
+                if isinstance(value, (int, float)) and not isinstance(value, bool)
+            }
+    return {
+        "final_response": final_messages[-1] if final_messages else "",
+        "tool_calls": tool_calls,
+        "usage": usage,
+        "activated": activated,
+    }
+
+
+def _scrub(value: str, replacements: dict[str, str]) -> str:
+    result = value
+    for original, replacement in sorted(
+        replacements.items(), key=lambda item: len(item[0]), reverse=True
+    ):
+        result = result.replace(original, replacement)
+    return result
+
+
+def _redact_skill_paths(value: str, markers: set[str]) -> str:
+    """Replace full path tokens that identify installed skill instructions."""
+    result = value.replace("\\", "/")
+    delimiters = set(" \t\r\n\"'`=;|&()<>")
+    for marker in sorted(markers, key=len, reverse=True):
+        while marker in result:
+            marker_start = result.index(marker)
+            token_start = marker_start
+            while token_start and result[token_start - 1] not in delimiters:
+                token_start -= 1
+            marker_end = marker_start + len(marker)
+            result = result[:token_start] + "<SKILL_INSTRUCTIONS>" + result[marker_end:]
+    return result
+
+
+def _may_expose_skill_instructions(
+    command: str,
+    output: str,
+    activation_markers: set[str],
+    runtime_home: str,
+) -> bool:
+    """Detect direct and shell-expanded reads from an installed skill tree."""
+    normalized_command = command.replace("\\", "/")
+    normalized_output = output.replace("\\", "/")
+    combined = f"{normalized_command}\n{normalized_output}"
+    if any(marker in combined for marker in activation_markers):
+        return True
+
+    if not runtime_home or runtime_home not in combined:
+        return False
+
+    lowered_command = normalized_command.lower()
+    normalized_home = runtime_home.replace("\\", "/")
+    if "skill.md" in lowered_command or f"{normalized_home}/.agents/skills" in combined:
+        return True
+
+    return bool(
+        re.search(
+            r"\b(?:awk|cat|find|grep|head|less|more|perl|python\d*|rg|ruby|sed|tail|xargs)\b",
+            lowered_command,
+        )
+    )
+
+
+def _contains_instruction_excerpt(text: str, instructions: tuple[str, ...]) -> bool:
+    for instruction_text in instructions:
+        if instruction_text in text or (len(text) >= 80 and text in instruction_text):
+            return True
+        if any(
+            len(line.strip()) >= 40 and line.strip() in text
+            for line in instruction_text.splitlines()
+        ):
+            return True
+    return False
+
+
+def _redact_artifact_instructions(
+    artifact_delta: dict[str, Any], instructions: tuple[str, ...]
+) -> dict[str, Any]:
+    redacted = copy.deepcopy(artifact_delta)
+    for change_type in ("created", "modified", "deleted"):
+        for record in redacted.get(change_type, []):
+            text = record.get("text")
+            if isinstance(text, str) and _contains_instruction_excerpt(text, instructions):
+                record["text"] = "<REDACTED: artifact included skill instructions>"
+                record["text_redacted"] = True
+    return redacted
+
+
+class CodexRunner:
+    """Run task and judge turns with a clean Codex home per invocation."""
+
+    def __init__(
+        self,
+        *,
+        skill_dir: Path,
+        codex_binary: str,
+        model: str | None,
+        judge_model: str | None,
+        timeout_seconds: int,
+        sandbox: str,
+        peer_skills: tuple[Path, ...] = (),
+    ) -> None:
+        resolved_binary = shutil.which(codex_binary)
+        if resolved_binary is None:
+            raise EvalError(f"Codex executable not found: {codex_binary}")
+        self.skill_dir = skill_dir.resolve()
+        self.codex_binary = resolved_binary
+        self.model = model
+        self.judge_model = judge_model or model
+        self.timeout_seconds = timeout_seconds
+        self.sandbox = sandbox
+        self.peer_skills = tuple(path.resolve() for path in peer_skills)
+        self.runtime_skill_names = {self.skill_dir.name, *(path.name for path in self.peer_skills)}
+        runtime_skills = (self.skill_dir, *self.peer_skills)
+        self.runtime_instruction_texts = tuple(
+            sanitized_skill_instructions(path) for path in runtime_skills
+        )
+        configured_home = Path(os.environ.get("CODEX_HOME", Path.home() / ".codex"))
+        self.auth_source = configured_home / "auth.json"
+        api_key = os.environ.get("CODEX_API_KEY")
+        if api_key:
+            auth_payload = {
+                "auth_mode": "apikey",
+                "OPENAI_API_KEY": api_key,
+            }
+        elif self.auth_source.is_file():
+            try:
+                auth_payload = json.loads(self.auth_source.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as exc:
+                raise EvalError(f"Codex authentication could not be read: {exc}") from exc
+        else:
+            raise EvalError(
+                f"Codex authentication was not found at {self.auth_source}, and "
+                "CODEX_API_KEY is not set. Run `codex login` or provide a key before "
+                "evaluating."
+            )
+        if not isinstance(auth_payload, dict):
+            raise EvalError("Codex authentication must be a JSON object")
+        tokens = auth_payload.get("tokens")
+        if (
+            auth_payload.get("auth_mode") in {None, "chatgpt", "chatgptAuthTokens"}
+            and isinstance(tokens, dict)
+        ):
+            # External-token mode prevents this isolated copy from rotating the user's
+            # refresh token while still supporting authenticated evaluator turns.
+            auth_payload["auth_mode"] = "chatgptAuthTokens"
+            tokens["refresh_token"] = ""
+        self.auth_payload = json.dumps(auth_payload)
+        version = subprocess.run(
+            [self.codex_binary, "--version"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.version = (version.stdout or version.stderr).strip()
+
+    def _prepare_home(self, *, with_skill: bool, include_peers: bool) -> Path:
+        home = Path(tempfile.mkdtemp(prefix="skill-eval-codex-home-"))
+        try:
+            skills_to_install = list(self.peer_skills) if include_peers else []
+            if with_skill:
+                skills_to_install.append(self.skill_dir)
+            if skills_to_install:
+                skills_dir = home / ".agents" / "skills"
+                skills_dir.mkdir(parents=True)
+                for skill in skills_to_install:
+                    sanitized_skill_copy(skill, skills_dir / skill.name)
+        except Exception:
+            shutil.rmtree(home, ignore_errors=True)
+            raise
+        return home
+
+    @staticmethod
+    def _capture_process_output(
+        stream: TextIO,
+        chunks: list[str],
+        auth_path: Path | None = None,
+    ) -> None:
+        """Capture a process stream and remove startup auth before agent commands run."""
+        try:
+            for line in stream:
+                chunks.append(line)
+                if auth_path is None:
+                    continue
+                try:
+                    event = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(event, dict) and event.get("type") == "turn.started":
+                    auth_path.unlink(missing_ok=True)
+        finally:
+            stream.close()
+
+    def _execute(
+        self,
+        *,
+        run_dir: Path,
+        workspace: Path,
+        prompt: str,
+        with_skill: bool,
+        sandbox: str,
+        model: str | None,
+        output_schema: Path | None = None,
+        include_peers: bool = True,
+    ) -> dict[str, Any]:
+        run_dir.mkdir(parents=True, exist_ok=True)
+        prompt_path = run_dir / "prompt.txt"
+        prompt_path.write_text(prompt, encoding="utf-8")
+        home = self._prepare_home(with_skill=with_skill, include_peers=include_peers)
+        auth_path = home / "auth.json"
+        try:
+            descriptor = os.open(
+                auth_path,
+                os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+                0o600,
+            )
+            with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+                stream.write(self.auth_payload)
+        except Exception:
+            shutil.rmtree(home, ignore_errors=True)
+            raise
+        output_message = run_dir / "final.txt"
+        git_ceiling = str(workspace.parent.resolve())
+        command = [
+            self.codex_binary,
+            "--ask-for-approval",
+            "never",
+            "exec",
+            "--json",
+            "--ephemeral",
+            "--ignore-user-config",
+            "--ignore-rules",
+            "--config",
+            'shell_environment_policy.inherit="core"',
+            "--config",
+            'shell_environment_policy.exclude=["CODEX_HOME"]',
+            "--config",
+            "shell_environment_policy.set={ "
+            f"HOME = {json.dumps(str(workspace))}, "
+            f"GIT_CEILING_DIRECTORIES = {json.dumps(git_ceiling)} }}",
+            "--skip-git-repo-check",
+            "--sandbox",
+            sandbox,
+            "--cd",
+            str(workspace),
+            "--output-last-message",
+            str(output_message),
+        ]
+        if model:
+            command.extend(["--model", model])
+        if output_schema is not None:
+            command.extend(["--output-schema", str(output_schema)])
+
+        env = os.environ.copy()
+        env.pop("CODEX_API_KEY", None)
+        env["CODEX_HOME"] = str(home)
+        env["HOME"] = str(home)
+        env["GIT_CEILING_DIRECTORIES"] = git_ceiling
+        started = time.monotonic()
+        timed_out = False
+        process: subprocess.Popen[str] | None = None
+        stdout_thread: threading.Thread | None = None
+        stderr_thread: threading.Thread | None = None
+        stdout_chunks: list[str] = []
+        stderr_chunks: list[str] = []
+        try:
+            try:
+                process = subprocess.Popen(
+                    command,
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    cwd=workspace,
+                    env=env,
+                    text=True,
+                )
+                if process.stdin is None or process.stdout is None or process.stderr is None:
+                    raise EvalError("Codex process pipes were not available")
+                stdout_thread = threading.Thread(
+                    target=self._capture_process_output,
+                    args=(process.stdout, stdout_chunks, auth_path),
+                    daemon=True,
+                )
+                stderr_thread = threading.Thread(
+                    target=self._capture_process_output,
+                    args=(process.stderr, stderr_chunks),
+                    daemon=True,
+                )
+                stdout_thread.start()
+                stderr_thread.start()
+                try:
+                    process.stdin.write(prompt)
+                    process.stdin.flush()
+                except BrokenPipeError:
+                    pass
+                finally:
+                    process.stdin.close()
+                process.wait(timeout=self.timeout_seconds)
+                exit_code: int | None = process.returncode
+            except subprocess.TimeoutExpired:
+                timed_out = True
+                if process is not None:
+                    process.kill()
+                    process.wait()
+                exit_code = None
+            except BaseException:
+                if process is not None and process.poll() is None:
+                    process.kill()
+                    process.wait()
+                raise
+        finally:
+            auth_path.unlink(missing_ok=True)
+            if stdout_thread is not None:
+                stdout_thread.join()
+            if stderr_thread is not None:
+                stderr_thread.join()
+            shutil.rmtree(home, ignore_errors=True)
+        duration = time.monotonic() - started
+        stdout = "".join(stdout_chunks)
+        stderr = "".join(stderr_chunks)
+
+        events_path = run_dir / "events.jsonl"
+        stderr_path = run_dir / "stderr.log"
+        events_path.write_text(stdout, encoding="utf-8")
+        stderr_path.write_text(stderr, encoding="utf-8")
+        events, parse_errors = _load_events(stdout)
+        activation_marker = (
+            f"skills/{self.skill_dir.name}/SKILL.md" if with_skill else None
+        )
+        summary = _event_summary(
+            events,
+            activation_marker=activation_marker,
+            activation_name=self.skill_dir.name if with_skill else None,
+        )
+        if output_message.is_file():
+            summary["final_response"] = output_message.read_text(
+                encoding="utf-8", errors="replace"
+            )
+
+        status = "timeout" if timed_out else "completed" if exit_code == 0 else "failed"
+        return {
+            "status": status,
+            "exit_code": exit_code,
+            "duration_seconds": round(duration, 3),
+            "usage": summary["usage"],
+            "tool_calls": summary["tool_calls"],
+            "activated": summary["activated"],
+            "final_response": summary["final_response"],
+            "event_parse_errors": parse_errors,
+            "events_path": str(events_path),
+            "stderr_path": str(stderr_path),
+            "prompt_path": str(prompt_path),
+            "command": command,
+            "runtime_home": str(home),
+        }
+
+    def run_task(
+        self,
+        *,
+        run_dir: Path,
+        workspace_template: Path | None,
+        prompt: str,
+        case_type: str,
+        case_id: str,
+        repeat: int,
+        condition: str,
+    ) -> dict[str, Any]:
+        run_dir.mkdir(parents=True, exist_ok=True)
+        workspace_root = Path(tempfile.mkdtemp(prefix="skill-eval-task-workspace-"))
+        workspace = workspace_root / "workspace"
+        preserved_workspace = run_dir / "workspace"
+        if preserved_workspace.exists():
+            shutil.rmtree(workspace_root, ignore_errors=True)
+            raise EvalError(f"Run workspace already exists: {preserved_workspace}")
+        try:
+            if workspace_template is None:
+                workspace.mkdir()
+            else:
+                shutil.copytree(workspace_template, workspace, symlinks=False)
+            before = snapshot_workspace(workspace)
+            with_skill = condition == "skill"
+            executed = self._execute(
+                run_dir=run_dir,
+                workspace=workspace,
+                prompt=prompt,
+                with_skill=with_skill,
+                sandbox="read-only" if case_type == "trigger" else self.sandbox,
+                model=self.model,
+            )
+            after = snapshot_workspace(workspace)
+            artifacts = workspace_delta(before, after)
+            git = git_observations(workspace)
+        finally:
+            if workspace.exists():
+                shutil.move(str(workspace), preserved_workspace)
+            shutil.rmtree(workspace_root, ignore_errors=True)
+        executed.update(
+            {
+                "case_type": case_type,
+                "case_id": case_id,
+                "repeat": repeat,
+                "condition": condition,
+                "workspace": str(preserved_workspace),
+                "execution_workspace": str(workspace),
+                "artifact_delta": artifacts,
+                "git": git,
+                "prompt_sha256": hashlib.sha256(prompt.encode()).hexdigest(),
+            }
+        )
+        json_dump(run_dir / "run.json", executed)
+        return executed
+
+    def _evidence_bundle(self, run: dict[str, Any]) -> dict[str, Any]:
+        events_text = Path(run["events_path"]).read_text(encoding="utf-8", errors="replace")
+        events, _errors = _load_events(events_text)
+        workspace = str(Path(run["workspace"]).resolve())
+        execution_workspace = str(
+            Path(run.get("execution_workspace", run["workspace"])).resolve()
+        )
+        run_root = str(Path(execution_workspace).parent.resolve())
+        runtime_home = str(run.get("runtime_home", "")).replace("\\", "/")
+        replacements = {
+            workspace: "<WORKSPACE>",
+            execution_workspace: "<WORKSPACE>",
+            run_root: "<RUN_ROOT>",
+        }
+        if runtime_home:
+            replacements[runtime_home] = "<CODEX_HOME>"
+        commands: list[dict[str, Any]] = []
+        activation_markers = {
+            f"{runtime_home}/.agents/skills/{name}/SKILL.md"
+            for name in self.runtime_skill_names
+            if runtime_home
+        }
+        for event in events:
+            if event.get("type") != "item.completed" or not isinstance(event.get("item"), dict):
+                continue
+            item = event["item"]
+            if item.get("type") != "command_execution":
+                continue
+            command = str(item.get("command", ""))
+            scrubbed_command = _redact_skill_paths(command, activation_markers)
+            raw_output = str(item.get("aggregated_output", ""))[-5000:]
+            command_includes_instructions = _contains_instruction_excerpt(
+                command, getattr(self, "runtime_instruction_texts", ())
+            )
+            read_skill = _may_expose_skill_instructions(
+                command, raw_output, activation_markers, runtime_home
+            ) or _contains_instruction_excerpt(
+                raw_output, getattr(self, "runtime_instruction_texts", ())
+            )
+            commands.append(
+                {
+                    "command": (
+                        "<REDACTED: command included skill instructions>"
+                        if command_includes_instructions
+                        else _scrub(scrubbed_command, replacements)
+                    ),
+                    "exit_code": item.get("exit_code"),
+                    "status": item.get("status"),
+                    "output": (
+                        "<REDACTED: command output included skill instructions>"
+                        if read_skill
+                        else _scrub(raw_output, replacements)
+                    ),
+                }
+            )
+        final = _scrub(run.get("final_response", ""), replacements)
+        if _contains_instruction_excerpt(
+            final, getattr(self, "runtime_instruction_texts", ())
+        ):
+            final = "<REDACTED: final response included skill instructions>"
+        return {
+            "status": run["status"],
+            "final_response": final[-20_000:],
+            "commands": commands[-40:],
+            "artifact_delta": _redact_artifact_instructions(
+                run["artifact_delta"],
+                getattr(self, "runtime_instruction_texts", ()),
+            ),
+            "git": run["git"],
+            "duration_seconds": run["duration_seconds"],
+            "usage": run["usage"],
+            "tool_calls": run["tool_calls"],
+        }
+
+    @staticmethod
+    def _judge_schema() -> dict[str, Any]:
+        check = {
+            "type": "object",
+            "properties": {
+                "index": {"type": "integer", "minimum": 0},
+                "result": {"type": "string", "enum": ["pass", "fail", "unknown"]},
+                "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+                "evidence": {"type": "string"},
+            },
+            "required": ["index", "result", "confidence", "evidence"],
+            "additionalProperties": False,
+        }
+        candidate = {
+            "type": "object",
+            "properties": {
+                "label": {"type": "string", "enum": ["A", "B"]},
+                "checks": {"type": "array", "items": check},
+                "summary": {"type": "string"},
+                "strengths": {"type": "array", "items": {"type": "string"}},
+                "weaknesses": {"type": "array", "items": {"type": "string"}},
+            },
+            "required": ["label", "checks", "summary", "strengths", "weaknesses"],
+            "additionalProperties": False,
+        }
+        return {
+            "type": "object",
+            "properties": {
+                "candidates": {
+                    "type": "array",
+                    "items": candidate,
+                    "minItems": 2,
+                    "maxItems": 2,
+                },
+                "comparison": {
+                    "type": "object",
+                    "properties": {
+                        "verdict": {
+                            "type": "string",
+                            "enum": ["A_better", "B_better", "tie", "insufficient"],
+                        },
+                        "rationale": {"type": "string"},
+                        "material_differences": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                        },
+                    },
+                    "required": ["verdict", "rationale", "material_differences"],
+                    "additionalProperties": False,
+                },
+            },
+            "required": ["candidates", "comparison"],
+            "additionalProperties": False,
+        }
+
+    def grade_pair(
+        self,
+        *,
+        grade_dir: Path,
+        behavior_case: BehaviorCase,
+        repeat: int,
+        skill_run: dict[str, Any],
+        baseline_run: dict[str, Any],
+    ) -> dict[str, Any]:
+        grade_dir.mkdir(parents=True, exist_ok=True)
+        workspace_root = Path(tempfile.mkdtemp(prefix="skill-eval-judge-workspace-"))
+        workspace = workspace_root / "workspace"
+        workspace.mkdir()
+        flip = int(
+            hashlib.sha256(f"{behavior_case.id}:{repeat}".encode()).hexdigest(), 16
+        ) % 2
+        if flip:
+            candidates = {
+                "A": self._evidence_bundle(baseline_run),
+                "B": self._evidence_bundle(skill_run),
+            }
+            blind_map = {"A": "baseline", "B": "skill"}
+        else:
+            candidates = {
+                "A": self._evidence_bundle(skill_run),
+                "B": self._evidence_bundle(baseline_run),
+            }
+            blind_map = {"A": "skill", "B": "baseline"}
+
+        evidence = {
+            "task": behavior_case.prompt,
+            "expected_behavior": behavior_case.expected_behavior,
+            "checks": [
+                {"index": index, "text": check}
+                for index, check in enumerate(behavior_case.checks)
+            ],
+            "candidates": candidates,
+            "grading_policy": {
+                "pass": "Concrete transcript or artifact evidence proves the check",
+                "fail": "Evidence contradicts the check or proves it was not satisfied",
+                "unknown": "Available evidence is insufficient; never assume success",
+            },
+        }
+        evidence_path = workspace / "evidence.json"
+        schema_path = workspace / "schema.json"
+        try:
+            json_dump(evidence_path, evidence)
+            json_dump(schema_path, self._judge_schema())
+            prompt = (
+                "Act as an evidence-bound, condition-blind evaluator. Read evidence.json. "
+                "Grade candidates A and B independently against every numbered check, using the "
+                "same standard. Do not reward verbosity, claims of skill use, or plausible intent. "
+                "A check passes only when the supplied transcript, Git state, or artifact evidence "
+                "proves it. Use unknown when evidence is insufficient. Then compare material task "
+                "quality. Return only the required structured result."
+            )
+            executed = self._execute(
+                run_dir=grade_dir,
+                workspace=workspace,
+                prompt=prompt,
+                with_skill=False,
+                sandbox="read-only",
+                model=self.judge_model,
+                output_schema=schema_path,
+                include_peers=False,
+            )
+        finally:
+            shutil.rmtree(workspace_root, ignore_errors=True)
+        judgment: dict[str, Any] | None = None
+        parse_error: str | None = None
+        if executed["status"] == "completed":
+            try:
+                parsed = json.loads(executed["final_response"])
+                if not isinstance(parsed, dict):
+                    raise ValueError("judgment was not an object")
+                judgment = parsed
+            except (json.JSONDecodeError, ValueError) as exc:
+                parse_error = str(exc)
+
+        mapped_grades: dict[str, list[dict[str, Any]]] = {"skill": [], "baseline": []}
+        validation_errors: list[str] = []
+        if judgment is not None:
+            by_label = {
+                item.get("label"): item
+                for item in judgment.get("candidates", [])
+                if isinstance(item, dict)
+            }
+            for label, condition in blind_map.items():
+                candidate = by_label.get(label)
+                if not isinstance(candidate, dict):
+                    validation_errors.append(f"Missing candidate {label}")
+                    continue
+                raw_checks = candidate.get("checks", [])
+                indexed = {
+                    item.get("index"): item
+                    for item in raw_checks
+                    if isinstance(item, dict) and isinstance(item.get("index"), int)
+                }
+                for index, check_text in enumerate(behavior_case.checks):
+                    item = indexed.get(index)
+                    if item is None:
+                        validation_errors.append(f"Candidate {label} missing check {index}")
+                        mapped_grades[condition].append(
+                            {
+                                "index": index,
+                                "check": check_text,
+                                "passed": None,
+                                "confidence": 0,
+                                "evidence": "Judge omitted this check",
+                            }
+                        )
+                        continue
+                    outcome = item.get("result")
+                    mapped_grades[condition].append(
+                        {
+                            "index": index,
+                            "check": check_text,
+                            "passed": True if outcome == "pass" else False if outcome == "fail" else None,
+                            "confidence": item.get("confidence", 0),
+                            "evidence": item.get("evidence", ""),
+                        }
+                    )
+
+        status = (
+            "completed"
+            if executed["status"] == "completed"
+            and judgment is not None
+            and not validation_errors
+            else "invalid"
+            if executed["status"] == "completed"
+            else executed["status"]
+        )
+        result = {
+            "status": status,
+            "blind_map": blind_map,
+            "grades": mapped_grades,
+            "judgment": judgment,
+            "comparison": judgment.get("comparison") if judgment else None,
+            "parse_error": parse_error,
+            "validation_errors": validation_errors,
+            "duration_seconds": executed["duration_seconds"],
+            "usage": executed["usage"],
+            "events_path": executed["events_path"],
+            "stderr_path": executed["stderr_path"],
+        }
+        json_dump(grade_dir / "grading.json", result)
+        return result

@@ -693,6 +693,7 @@ def validate_evals(skill_dir: Path) -> None:
     else:
         positives = 0
         negatives = 0
+        trigger_ids: set[str] = set()
         for item in trigger_evals:
             if not isinstance(item, dict):
                 fail(f"Each trigger eval must be an object in {rel}")
@@ -701,13 +702,37 @@ def validate_evals(skill_dir: Path) -> None:
             if set(item) != required_keys:
                 fail(f"Invalid trigger eval shape in {rel}: {item!r}")
                 continue
+            valid_item = True
+            eval_id = item["id"]
+            if (
+                isinstance(eval_id, bool)
+                or not isinstance(eval_id, (str, int))
+                or not str(eval_id).strip()
+            ):
+                fail(f"Trigger eval id must be a non-empty string or integer in {rel}")
+                valid_item = False
+            elif (
+                (normalized_id := str(eval_id).strip()) in {".", ".."}
+                or "/" in normalized_id
+                or "\\" in normalized_id
+                or "\0" in normalized_id
+            ):
+                fail(f"Trigger eval id must be a safe path segment in {rel}")
+                valid_item = False
+            elif normalized_id in trigger_ids:
+                fail(f"Duplicate trigger eval id {eval_id!r} in {rel}")
+                valid_item = False
+            else:
+                trigger_ids.add(normalized_id)
             if not isinstance(item["query"], str) or not item["query"].strip():
                 fail(f"Trigger eval query must be a non-empty string in {rel}")
+                valid_item = False
             if not isinstance(item["should_trigger"], bool):
                 fail(f"Trigger eval should_trigger must be boolean in {rel}")
-                continue
-            positives += int(item["should_trigger"])
-            negatives += int(not item["should_trigger"])
+                valid_item = False
+            if valid_item:
+                positives += int(item["should_trigger"])
+                negatives += int(not item["should_trigger"])
         if positives < 2:
             fail(f"Need at least 2 positive trigger evals in {rel}")
         if negatives < 2:
@@ -717,6 +742,7 @@ def validate_evals(skill_dir: Path) -> None:
     if not isinstance(behavior_evals, list) or not behavior_evals:
         fail(f"behavior_evals must be a non-empty list in {rel}")
     else:
+        behavior_ids: set[str] = set()
         for item in behavior_evals:
             if not isinstance(item, dict):
                 fail(f"Each behavior eval must be an object in {rel}")
@@ -725,6 +751,24 @@ def validate_evals(skill_dir: Path) -> None:
             if set(item) != required_keys:
                 fail(f"Invalid behavior eval shape in {rel}: {item!r}")
                 continue
+            eval_id = item["id"]
+            if (
+                isinstance(eval_id, bool)
+                or not isinstance(eval_id, (str, int))
+                or not str(eval_id).strip()
+            ):
+                fail(f"Behavior eval id must be a non-empty string or integer in {rel}")
+            elif (
+                (normalized_id := str(eval_id).strip()) in {".", ".."}
+                or "/" in normalized_id
+                or "\\" in normalized_id
+                or "\0" in normalized_id
+            ):
+                fail(f"Behavior eval id must be a safe path segment in {rel}")
+            elif normalized_id in behavior_ids:
+                fail(f"Duplicate behavior eval id {eval_id!r} in {rel}")
+            else:
+                behavior_ids.add(normalized_id)
             if not isinstance(item["prompt"], str) or not item["prompt"].strip():
                 fail(f"Behavior eval prompt must be a non-empty string in {rel}")
             if (
@@ -734,6 +778,27 @@ def validate_evals(skill_dir: Path) -> None:
                 fail(f"Behavior eval expected_behavior must be a non-empty string in {rel}")
             if not isinstance(item["fixtures"], list):
                 fail(f"Behavior eval fixtures must be a list in {rel}")
+            else:
+                for fixture in item["fixtures"]:
+                    if not isinstance(fixture, str) or not fixture.strip():
+                        fail(f"Behavior eval fixtures must contain non-empty strings in {rel}")
+                    elif (
+                        (fixture_path := Path(fixture)).is_absolute()
+                        or ".." in fixture_path.parts
+                        or not fixture_path.parts
+                        or (
+                            fixture_path.parts[0] == "evals"
+                            and (
+                                len(fixture_path.parts) < 3
+                                or fixture_path.parts[1] != "fixtures"
+                            )
+                        )
+                    ):
+                        fail(
+                            "Behavior eval fixture paths must be skill-relative, may not "
+                            "traverse parents, and may not select eval ground truth in "
+                            f"{rel}: {fixture}"
+                        )
             if not isinstance(item["checks"], list) or not item["checks"]:
                 fail(f"Behavior eval checks must be a non-empty list in {rel}")
             else:
