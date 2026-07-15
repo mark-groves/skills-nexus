@@ -1,96 +1,83 @@
 # Deployment
 
-The deployment script installs skill directories into the location discovered
-by a selected agent harness. Run it from any directory; paths are resolved from
-the repository checkout.
+For normal installation from GitHub, use the community `skills` CLI. It
+discovers the canonical packages under `skills/<name>/`:
+
+```bash
+npx skills add mark-groves/skills-nexus --list
+npx skills add mark-groves/skills-nexus --skill commit --agent codex
+```
+
+The repository's deployment script is a local-development and controlled-copy
+adapter. Run it from any directory; it resolves canonical skill paths from the
+checkout and target paths from `harnesses/<name>.json`.
 
 ## Select a harness and skills
 
-Every command requires `--harness`. The name selects a manifest from
-`harnesses/<name>.json`:
+Every command requires `--harness`:
 
 | Harness | User destination | Project destination |
 | --- | --- | --- |
 | `agents` | `~/.agents/skills` | `.agents/skills` |
 | `claude-code` | `~/.claude/skills` | `.claude/skills` |
-| `codex` | `~/.codex/skills` | `.codex/skills` |
+| `codex` | `~/.agents/skills` | `.agents/skills` |
 | `copilot` | `~/.copilot/skills` | `.github/skills` |
 | `cursor` | `~/.cursor/skills` | `.cursor/skills` |
 | `kiro` | `~/.kiro/skills` | `.kiro/skills` |
 
-Select one or more skills with repeated `--skill` options:
+Select one or more canonical names with repeated `--skill` options, or use
+`--all`:
 
 ```bash
 bash scripts/deploy-skills.sh \
   --harness cursor \
   --skill commit \
   --skill pr
+
+bash scripts/deploy-skills.sh --harness agents --all
 ```
 
-A short folder name works when it is unique. A full skill ID is also accepted,
-such as `portable/pr` or `harness/codex/example`.
+`skills/<name>` is also accepted as an explicit selector. Harness-specific
+metadata and install locations are adapter concerns; there are no separate
+harness-owned copies of the skill source.
 
-Bulk selectors are available when maintaining a complete installation:
+## Choose a scope and mode
 
-- `--all-portable` selects every portable skill.
-- `--all-for-harness` selects every skill specific to the chosen harness.
-- `--all` combines both groups.
-
-Harness-specific selections must match the harness named by `--harness`.
-
-## Choose a scope
-
-User scope is the default and installs into the manifest's user destination:
+User scope is the default. It uses symlinks so edits in the checkout are
+immediately visible:
 
 ```bash
 bash scripts/deploy-skills.sh --harness claude-code --skill commit
 ```
 
-Project scope installs beneath a project root:
+Project scope defaults to a clean runtime copy beneath the project root:
 
 ```bash
 bash scripts/deploy-skills.sh \
   --harness copilot \
-  --skill portable/pr \
+  --skill pr \
   --scope project \
   --project-root /path/to/project
 ```
 
-When `--project-root` is omitted, project scope uses the current working
-directory.
+Override either default with `--mode symlink` or `--mode copy`. Copy mode
+packages the canonical directory without repo-only working files. Evals and raw
+observations live outside `skills/`, so neither can leak into a packaged copy.
+The packager preserves `SKILL.md` exactly; deployment never rewrites metadata
+for a target.
 
-## Choose an install mode
+Copy mode replaces an existing destination directory. Symlink mode replaces an
+existing symlink, while preserving and reporting an existing regular directory.
 
-The script supports `--mode symlink` and `--mode copy`.
+## Preview operations
 
-| Installation | Default | Update behavior |
-| --- | --- | --- |
-| User scope, most harnesses | `symlink` | Changes in the checkout are immediately visible |
-| User scope, Codex | `copy` | Run deployment again to refresh the installed copy |
-| Project scope | `copy` | Run deployment again to refresh the project copy |
-
-Copy mode replaces an existing destination directory for the selected skill.
-Symlink mode replaces an existing symlink, while an existing regular directory
-is preserved and reported as skipped.
-
-Codex copy deployment filters the installed `SKILL.md` frontmatter to fields
-the Codex runtime can load safely. The canonical skill in this repository is
-left unchanged.
-
-## Preview and inspect options
-
-Add `--dry-run` to print the target directory and file operations without
-changing the installation:
+Use `--dry-run` to inspect target paths and operations without changing them:
 
 ```bash
 bash scripts/deploy-skills.sh \
   --harness agents \
-  --all-portable \
+  --all \
   --dry-run
 ```
 
-The complete command reference is available from the script:
-
-```bash
-bash scripts/deploy-skills.sh --help
-```
+Run `bash scripts/deploy-skills.sh --help` for the complete command reference.

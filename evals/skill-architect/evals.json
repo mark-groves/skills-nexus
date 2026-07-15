@@ -1,0 +1,160 @@
+{
+  "skill_name": "skill-architect",
+  "trigger_evals": [
+    {
+      "id": 1,
+      "query": "Create a reusable Kubernetes incident-response skill with a shared core for our Codex, Claude Code, and Cursor users.",
+      "should_trigger": true
+    },
+    {
+      "id": 2,
+      "query": "This PDF skill only works in one coding agent right now. Make it reusable across skills-compatible clients.",
+      "should_trigger": true
+    },
+    {
+      "id": 3,
+      "query": "Design training and held-back trigger evals for this skill description.",
+      "should_trigger": true
+    },
+    {
+      "id": 4,
+      "query": "Turn this runbook into a skill we can publish and test across multiple harnesses.",
+      "should_trigger": true
+    },
+    {
+      "id": 5,
+      "query": "Remove the harness-specific tool names and install assumptions from this Agent Skill.",
+      "should_trigger": true
+    },
+    {
+      "id": 6,
+      "query": "Implement the Kubernetes incident response automation.",
+      "should_trigger": false
+    },
+    {
+      "id": 7,
+      "query": "Rewrite this README.",
+      "should_trigger": false
+    },
+    {
+      "id": 8,
+      "query": "Review this PR.",
+      "should_trigger": false
+    },
+    {
+      "id": 9,
+      "query": "Install my existing skills into Codex.",
+      "should_trigger": false
+    },
+    {
+      "id": 10,
+      "query": "Create a Codex-only skill that depends on plan mode and the apply_patch tool.",
+      "should_trigger": true
+    },
+    {
+      "id": 11,
+      "query": "Adapt this shared skill with a Claude Code hook and slash command.",
+      "should_trigger": true
+    },
+    {
+      "id": 12,
+      "query": "Implement Agent Skills discovery and activation in my custom agent harness.",
+      "should_trigger": false
+    }
+  ],
+  "behavior_evals": [
+    {
+      "id": 1,
+      "prompt": "Create a reusable Agent Skill for Kubernetes incident response from docs/incidents.md and save it under skills/kubernetes-incident-response/.",
+      "expected_behavior": "Inspects the target environment and source runbook, then creates a focused runtime package with minimal frontmatter, repository-owned evidence, and explicit compatibility validation.",
+      "fixtures": [
+        "fixtures/kubernetes-runbook/docs/incidents.md"
+      ],
+      "checks": [
+        "Inspects existing skill directories, validators, docs, and local conventions before asking questions",
+        "Captures goal, audience, trigger examples, non-triggers, outputs, risks, and compatibility targets",
+        "Separates SKILL.md and runtime resources from repo-only evals and fixtures when the repository supports that layout",
+        "Uses skill-root-relative paths for bundled resources",
+        "Does not hard-code client install roots, proprietary hooks, branded runtime tools, or client-specific activation syntax",
+        "Reports which cross-client compatibility claims were tested and which remain unverified"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Audit skills/pdf-processing/ for common Agent Skills format compatibility, this repository's canonical contract, cross-harness claims, and triggering quality.",
+      "expected_behavior": "Reviews format and local contract separately, then checks progressive disclosure, runtime boundaries, resource references, triggering, and evidence behind compatibility claims.",
+      "fixtures": [
+        "fixtures/pdf-skill/skills/pdf-processing/SKILL.md",
+        "fixtures/pdf-skill/skills/pdf-processing/references/forms.md"
+      ],
+      "checks": [
+        "Checks the upstream required fields and this repository's stricter name-and-description-only contract separately",
+        "Checks that the skill name matches the directory and uses valid naming rules",
+        "Checks whether SKILL.md is concise enough or should move details into references",
+        "Checks relative references to scripts, references, and assets",
+        "Identifies near-miss negative trigger cases, not just obvious positives",
+        "Finds dependencies on proprietary runtime tools or activation behavior even when the package format is valid"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Improve the description and trigger evals for skills/release-notes/ while preserving its shared runtime behavior.",
+      "expected_behavior": "Produces a concise, intent-focused description and realistic positive and negative trigger evals without overfitting to one failed prompt.",
+      "fixtures": [
+        "fixtures/release-notes-skill/skills/release-notes/SKILL.md",
+        "fixtures/release-notes-skill/evals/release-notes/evals.json"
+      ],
+      "checks": [
+        "States what the skill does and when to use it in the description",
+        "Includes varied positive trigger examples",
+        "Includes near-miss negative examples with overlapping vocabulary",
+        "Avoids stuffing exact failed prompt wording into the description",
+        "Recommends a held-back validation set when trigger quality is important"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "This skill keeps asking agents to rewrite fragile shell snippets. Should it have scripts?",
+      "expected_behavior": "Recommends scripts only for repeated or fragile deterministic work and specifies safe, agent-friendly script interface requirements.",
+      "fixtures": [],
+      "checks": [
+        "Explains whether scripts are justified by repetition, fragility, or determinism",
+        "Requires non-interactive input through flags, environment, files, or stdin",
+        "Requires concise --help output and useful error messages",
+        "Separates parseable stdout from diagnostics on stderr",
+        "Adds dry-run or explicit confirmation requirements for risky operations"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "Create a reusable release-coordination skill from docs/release-runbook.md in this repository, following its packaging, validation, and eval conventions.",
+      "expected_behavior": "Adapts to the discovered local contract, keeps runtime and evidence separate, and makes only compatibility claims supported by tests.",
+      "fixtures": [
+        "fixtures/repo-contract/README.md",
+        "fixtures/repo-contract/docs/release-runbook.md",
+        "fixtures/repo-contract/skills/example/SKILL.md",
+        "fixtures/repo-contract/evals/example/evals.json"
+      ],
+      "checks": [
+        "Discovers local validators and eval schemas before writing files",
+        "Uses the repository's existing eval shape when one exists",
+        "Runs or recommends the local validator after changes",
+        "Keeps repository-only evals outside the published runtime package",
+        "Does not assume this repository's conventions apply to unrelated targets"
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "Use skill-architect to create a Codex-only skill that requires plan mode and apply_patch.",
+      "expected_behavior": "Creates or proposes an honestly labeled Codex-specific integration, separating a shared runtime core only if that core remains useful on its own.",
+      "fixtures": [],
+      "checks": [
+        "Identifies plan mode and apply_patch as Codex-specific dependencies",
+        "Labels the resulting artifact or adapter as Codex-specific",
+        "Does not describe format compliance alone as cross-harness compatibility",
+        "Separates a shared core only if it has meaningful behavior without the Codex dependencies",
+        "Defines how the target integration will be validated"
+      ]
+    }
+  ]
+}

@@ -20,8 +20,8 @@ from .core import (
     EvalError,
     git_observations,
     json_dump,
-    sanitized_skill_copy,
-    sanitized_skill_instructions,
+    runtime_skill_copy,
+    skill_instructions,
     snapshot_workspace,
     workspace_delta,
 )
@@ -204,9 +204,7 @@ class CodexRunner:
         self.peer_skills = tuple(path.resolve() for path in peer_skills)
         self.runtime_skill_names = {self.skill_dir.name, *(path.name for path in self.peer_skills)}
         runtime_skills = (self.skill_dir, *self.peer_skills)
-        self.runtime_instruction_texts = tuple(
-            sanitized_skill_instructions(path) for path in runtime_skills
-        )
+        self.runtime_instruction_texts = tuple(skill_instructions(path) for path in runtime_skills)
         configured_home = Path(os.environ.get("CODEX_HOME", Path.home() / ".codex"))
         self.auth_source = configured_home / "auth.json"
         api_key = os.environ.get("CODEX_API_KEY")
@@ -255,7 +253,7 @@ class CodexRunner:
                 skills_dir = home / ".agents" / "skills"
                 skills_dir.mkdir(parents=True)
                 for skill in skills_to_install:
-                    sanitized_skill_copy(skill, skills_dir / skill.name)
+                    runtime_skill_copy(skill, skills_dir / skill.name)
         except Exception:
             shutil.rmtree(home, ignore_errors=True)
             raise

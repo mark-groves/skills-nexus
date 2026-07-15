@@ -13,30 +13,17 @@ from pathlib import Path
 
 REPO_DIR = Path(__file__).resolve().parents[1]
 SKILLS_DIR = REPO_DIR / "skills"
-PORTABLE_SKILLS_DIR = SKILLS_DIR / "portable"
-HARNESS_SKILLS_DIR = SKILLS_DIR / "harness"
+EVALS_DIR = REPO_DIR / "evals"
 HARNESS_DIR = REPO_DIR / "harnesses"
-CLOUD_DIAGRAM_REFS = PORTABLE_SKILLS_DIR / "cloud-diagram" / "references"
-DRAWIO_FIXTURES = PORTABLE_SKILLS_DIR / "drawio-shapes" / "fixtures" / "extracted"
-DRAWIO_GENERATOR = PORTABLE_SKILLS_DIR / "drawio-shapes" / "scripts" / "generate_catalog.py"
-CLOUD_IMPORTER = PORTABLE_SKILLS_DIR / "cloud-diagram" / "scripts" / "import_shape_catalog.py"
+CLOUD_DIAGRAM_REFS = SKILLS_DIR / "cloud-diagram" / "references"
+DRAWIO_FIXTURES = SKILLS_DIR / "drawio-shapes" / "fixtures" / "extracted"
+DRAWIO_GENERATOR = SKILLS_DIR / "drawio-shapes" / "scripts" / "generate_catalog.py"
+CLOUD_IMPORTER = SKILLS_DIR / "cloud-diagram" / "scripts" / "import_shape_catalog.py"
 GENERATED_MARKER = "<!-- GENERATED BELOW -->"
 
 EXPECTED_HARNESS_KEYS = {"user_install_root", "project_install_root"}
 REQUIRED_HARNESSES = {"agents", "claude-code", "codex", "copilot", "cursor", "kiro"}
-ALLOWED_FRONTMATTER_KEYS = {
-    "name",
-    "description",
-    "license",
-    "compatibility",
-    "metadata",
-    "allowed-tools",
-}
-CODEX_HARNESS_FRONTMATTER_KEYS = {
-    "name",
-    "description",
-    "metadata",
-}
+ALLOWED_FRONTMATTER_KEYS = {"name", "description"}
 REQUIRED_EVAL_KEYS = {"skill_name", "trigger_evals", "behavior_evals"}
 HARD_CODED_INSTALL_ROOTS = (
     "~/.agents/skills",
@@ -64,8 +51,7 @@ NAME_RE = re.compile(r"^[a-z0-9](?:[a-z0-9]|-(?!-)){0,62}[a-z0-9]$|^[a-z0-9]$")
 FRONTMATTER_KEY_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 PATH_SEGMENT_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
 PARENT_PATH_RE = re.compile(r"(?<![A-Za-z0-9_./-])((?:\.\./)+[A-Za-z0-9_./-]+)")
-ALLOWED_INLINE_PREFIXES = ("scripts/", "references/", "assets/", "evals/", "working/")
-ALLOWED_SKILL_ROOTS = {"portable", "harness"}
+ALLOWED_INLINE_PREFIXES = ("scripts/", "references/", "assets/", "fixtures/", "working/")
 
 ERRORS: list[str] = []
 FrontmatterValue = str | dict[str, str]
@@ -80,7 +66,7 @@ def repo_relative(path: Path) -> str:
 
 
 def skill_id(skill_dir: Path) -> str:
-    return str(skill_dir.relative_to(SKILLS_DIR))
+    return skill_dir.name
 
 
 def skill_install_name(skill_id_value: str) -> str:
@@ -459,7 +445,7 @@ def parse_frontmatter(skill_md: Path) -> dict[str, FrontmatterValue] | None:
 
 
 def validate_generated_junk() -> None:
-    for file_path in git_ls_files("skills"):
+    for file_path in git_ls_files("skills", "evals"):
         rel = repo_relative(file_path)
         if "/working/" in rel:
             fail(f"Tracked generated junk under working/: {rel}")
@@ -592,66 +578,16 @@ def validate_frontmatter(skill_dir: Path, skill_md: Path) -> None:
     elif len(description) > 1024:
         fail(f"Description is too long in {repo_relative(skill_md)}")
 
-    license_value = frontmatter.get("license")
-    if license_value is not None and (
-        not isinstance(license_value, str) or not license_value.strip()
-    ):
-        fail(f"Empty optional frontmatter field 'license' in {repo_relative(skill_md)}")
 
-    compatibility_value = frontmatter.get("compatibility")
-    if compatibility_value is not None:
-        compatibility = compatibility_value.strip() if isinstance(compatibility_value, str) else ""
-        if not compatibility:
-            fail(f"Empty optional frontmatter field 'compatibility' in {repo_relative(skill_md)}")
-        elif len(compatibility) > 500:
-            fail(f"Compatibility is too long in {repo_relative(skill_md)}")
-
-    allowed_tools_value = frontmatter.get("allowed-tools")
-    if allowed_tools_value is not None and (
-        not isinstance(allowed_tools_value, str) or not allowed_tools_value.strip()
-    ):
-        fail(f"Empty optional frontmatter field 'allowed-tools' in {repo_relative(skill_md)}")
-
-    metadata = frontmatter.get("metadata")
-    if metadata is None:
-        return
-    if isinstance(metadata, str):
-        if not metadata.strip():
-            fail(f"Empty optional frontmatter field 'metadata' in {repo_relative(skill_md)}")
-        return
-    if not metadata:
-        fail(f"Empty optional frontmatter field 'metadata' in {repo_relative(skill_md)}")
-        return
-    for metadata_key, metadata_value in metadata.items():
-        if not metadata_value.strip():
-            fail(f"Empty metadata value {metadata_key!r} in {repo_relative(skill_md)}")
-
-
-def validate_codex_harness_frontmatter(skill_dir: Path, skill_md: Path) -> None:
-    try:
-        skill_dir.relative_to(HARNESS_SKILLS_DIR / "codex")
-    except ValueError:
-        return
-
-    frontmatter = parse_frontmatter(skill_md)
-    if frontmatter is None:
-        return
-
-    extra_keys = sorted(set(frontmatter) - CODEX_HARNESS_FRONTMATTER_KEYS)
-    if extra_keys:
-        fail(
-            f"Codex harness skills must keep runtime frontmatter to "
-            f"name, description, and optional metadata in {repo_relative(skill_md)}: "
-            + ", ".join(extra_keys)
-        )
-
-
-def validate_evals(skill_dir: Path) -> None:
-    evals_json = skill_dir / "evals" / "evals.json"
+def validate_evals(skill_dir: Path, eval_dir: Path) -> None:
+    evals_json = eval_dir / "evals.json"
     rel = repo_relative(evals_json)
 
     if not evals_json.is_file():
-        fail(f"Missing evals/evals.json for skill: {repo_relative(skill_dir)}")
+        fail(
+            f"Missing external eval suite {repo_relative(eval_dir / 'evals.json')} "
+            f"for skill: {repo_relative(skill_dir)}"
+        )
         return
 
     try:
@@ -778,16 +714,26 @@ def validate_evals(skill_dir: Path) -> None:
                         (fixture_path := Path(fixture)).is_absolute()
                         or ".." in fixture_path.parts
                         or not fixture_path.parts
-                        or (
-                            fixture_path.parts[0] == "evals"
-                            and (len(fixture_path.parts) < 3 or fixture_path.parts[1] != "fixtures")
-                        )
+                        or fixture_path.parts[0] == "evals.json"
+                        or fixture_path.parts == ("fixtures",)
                     ):
                         fail(
-                            "Behavior eval fixture paths must be skill-relative, may not "
-                            "traverse parents, and may not select eval ground truth in "
+                            "Behavior eval fixture paths must be eval-relative, may not "
+                            "traverse parents, and may not select eval ground truth or the "
+                            "broad fixture root in "
                             f"{rel}: {fixture}"
                         )
+                    else:
+                        candidates = [eval_dir / fixture_path]
+                        if len(fixture_path.parts) == 1:
+                            candidates.extend(
+                                [
+                                    eval_dir / "fixtures" / fixture_path,
+                                    eval_dir / f"{fixture_path}.md",
+                                ]
+                            )
+                        if not any(candidate.exists() for candidate in candidates):
+                            fail(f"Behavior eval fixture is unresolved in {rel}: {fixture}")
             if not isinstance(item["checks"], list) or not item["checks"]:
                 fail(f"Behavior eval checks must be a non-empty list in {rel}")
             else:
@@ -803,76 +749,42 @@ def validate_skill_contract(skill_dir: Path) -> None:
         return
 
     validate_frontmatter(skill_dir, skill_md)
-    validate_codex_harness_frontmatter(skill_dir, skill_md)
-    validate_evals(skill_dir)
     validate_portability_patterns(skill_dir)
     validate_skill_local_refs(skill_dir, skill_md)
 
 
 def validate_skills_root() -> list[str]:
     valid_skills: list[str] = []
-    seen_install_names: dict[str, str] = {}
 
-    for entry in sorted(SKILLS_DIR.iterdir(), key=lambda path: path.name):
-        if not entry.is_dir():
-            fail(f"Unexpected file directly under skills/: {repo_relative(entry)}")
+    if not SKILLS_DIR.is_dir():
+        fail("Missing skill root: skills")
+        return valid_skills
+    if not EVALS_DIR.is_dir():
+        fail("Missing eval root: evals")
+
+    for skill_dir in sorted(SKILLS_DIR.iterdir(), key=lambda path: path.name):
+        if not skill_dir.is_dir():
+            fail(f"Unexpected file directly under skills/: {repo_relative(skill_dir)}")
             continue
-        if entry.name not in ALLOWED_SKILL_ROOTS:
-            fail(f"Unexpected top-level skill category: {repo_relative(entry)}")
+        if not (skill_dir / "SKILL.md").is_file():
+            fail(f"Immediate child of skills/ is not a valid skill: {repo_relative(skill_dir)}")
+            continue
+        skill_id_value = skill_id(skill_dir)
+        valid_skills.append(skill_id_value)
+        validate_skill_contract(skill_dir)
+        eval_dir = EVALS_DIR / skill_dir.name
+        if not eval_dir.is_dir():
+            fail(f"Missing eval suite for skill: {repo_relative(skill_dir)}")
+        else:
+            validate_evals(skill_dir, eval_dir)
 
-    if not PORTABLE_SKILLS_DIR.is_dir():
-        fail("Missing portable skill category: skills/portable")
-    else:
-        for skill_dir in sorted(PORTABLE_SKILLS_DIR.iterdir(), key=lambda path: path.name):
-            if not skill_dir.is_dir():
-                fail(f"Unexpected file directly under skills/portable: {repo_relative(skill_dir)}")
-                continue
-            if not (skill_dir / "SKILL.md").is_file():
-                fail(
-                    f"Immediate child of skills/portable is not a valid skill: {repo_relative(skill_dir)}"
-                )
-                continue
-            skill_id_value = skill_id(skill_dir)
-            install_name = skill_install_name(skill_id_value)
-            if install_name in seen_install_names:
-                fail(
-                    f"Duplicate skill install name {install_name!r}: "
-                    f"{seen_install_names[install_name]} and {skill_id_value}"
-                )
-            else:
-                seen_install_names[install_name] = skill_id_value
-            valid_skills.append(skill_id_value)
-            validate_skill_contract(skill_dir)
-
-    if HARNESS_SKILLS_DIR.is_dir():
-        for harness_dir in sorted(HARNESS_SKILLS_DIR.iterdir(), key=lambda path: path.name):
-            if not harness_dir.is_dir():
-                fail(f"Unexpected file directly under skills/harness: {repo_relative(harness_dir)}")
-                continue
-            if harness_dir.name not in REQUIRED_HARNESSES:
-                fail(f"Unknown harness-specific skill namespace: {repo_relative(harness_dir)}")
-            for skill_dir in sorted(harness_dir.iterdir(), key=lambda path: path.name):
-                if not skill_dir.is_dir():
-                    fail(
-                        f"Unexpected file directly under {repo_relative(harness_dir)}: {repo_relative(skill_dir)}"
-                    )
-                    continue
-                if not (skill_dir / "SKILL.md").is_file():
-                    fail(
-                        f"Immediate child of {repo_relative(harness_dir)} is not a valid skill: {repo_relative(skill_dir)}"
-                    )
-                    continue
-                skill_id_value = skill_id(skill_dir)
-                install_name = skill_install_name(skill_id_value)
-                if install_name in seen_install_names:
-                    fail(
-                        f"Duplicate skill install name {install_name!r}: "
-                        f"{seen_install_names[install_name]} and {skill_id_value}"
-                    )
-                else:
-                    seen_install_names[install_name] = skill_id_value
-                valid_skills.append(skill_id_value)
-                validate_skill_contract(skill_dir)
+    if EVALS_DIR.is_dir():
+        skill_names = set(valid_skills)
+        for eval_dir in sorted(EVALS_DIR.iterdir(), key=lambda path: path.name):
+            if not eval_dir.is_dir():
+                fail(f"Unexpected file directly under evals/: {repo_relative(eval_dir)}")
+            elif eval_dir.name not in skill_names:
+                fail(f"Orphan eval suite without matching skill: {repo_relative(eval_dir)}")
 
     if not valid_skills:
         fail("No valid skills found under skills/")
@@ -914,7 +826,7 @@ def validate_deploy_script(
             )
             if "Mode: copy" not in dry_run_explicit.stdout:
                 fail(f"Default project deploy mode must be copy for {harness}")
-            if "cp -R" not in dry_run_explicit.stdout:
+            if "copy runtime" not in dry_run_explicit.stdout:
                 fail(f"Project dry-run deploy should announce copying for {harness}")
 
             dry_run_user = run_command(
@@ -932,16 +844,8 @@ def validate_deploy_script(
                 env=user_env,
             )
             if "Mode: symlink" not in dry_run_user.stdout:
-                if harness == "codex":
-                    if "Mode: copy" not in dry_run_user.stdout:
-                        fail("Default user deploy mode must be copy for codex")
-                    if "cp -R" not in dry_run_user.stdout:
-                        fail("Codex user dry-run deploy should announce copying")
-                else:
-                    fail(f"Default user deploy mode must be symlink for {harness}")
-            elif harness == "codex":
-                fail("Default user deploy mode must not be symlink for codex")
-            elif "ln -s" not in dry_run_user.stdout:
+                fail(f"Default user deploy mode must be symlink for {harness}")
+            if "ln -s" not in dry_run_user.stdout:
                 fail(f"User dry-run deploy should announce symlink creation for {harness}")
 
             run_command(
@@ -987,94 +891,6 @@ def validate_deploy_script(
     if "missing skill" not in unknown_skill.stderr.lower():
         fail("Unknown skill error message changed unexpectedly")
 
-    codex_specific_skill = next(
-        (skill for skill in valid_skills if skill.startswith("harness/codex/")),
-        None,
-    )
-    if codex_specific_skill is not None and "agents" in harnesses:
-        wrong_harness = run_command(
-            "bash",
-            "scripts/deploy-skills.sh",
-            "--harness",
-            "agents",
-            "--skill",
-            codex_specific_skill,
-            "--dry-run",
-            expect_success=False,
-            label="deploy cross-harness full skill selector check",
-        )
-        if "not agents" not in wrong_harness.stderr.lower():
-            fail("Cross-harness full skill selector error message changed unexpectedly")
-
-        wrong_harness_bare = run_command(
-            "bash",
-            "scripts/deploy-skills.sh",
-            "--harness",
-            "agents",
-            "--skill",
-            skill_install_name(codex_specific_skill),
-            "--dry-run",
-            expect_success=False,
-            label="deploy cross-harness bare skill selector check",
-        )
-        if "missing skill" not in wrong_harness_bare.stderr.lower():
-            fail("Cross-harness bare skill selector should not resolve")
-
-    codex_manifest = harness_manifests.get("codex")
-    codex_portable_skill = next(
-        (
-            skill
-            for skill in valid_skills
-            if skill.startswith("portable/")
-            and "\ncompatibility:" in read_text(SKILLS_DIR / skill / "SKILL.md")
-        ),
-        None,
-    )
-    if codex_manifest is not None and codex_portable_skill is not None:
-        codex_install_name = skill_install_name(codex_portable_skill)
-        with tempfile.TemporaryDirectory() as temp_dir:
-            project_root = Path(temp_dir)
-            destination = project_root / codex_manifest["project_install_root"] / codex_install_name
-
-            run_command(
-                "bash",
-                "scripts/deploy-skills.sh",
-                "--harness",
-                "codex",
-                "--scope",
-                "project",
-                "--project-root",
-                str(project_root),
-                "--skill",
-                codex_portable_skill,
-                expect_success=True,
-                label="codex portable copy frontmatter sanitization check",
-            )
-            deployed_skill_md = read_text(destination / "SKILL.md")
-            if "\ncompatibility:" in deployed_skill_md:
-                fail("Codex portable copy deploy left compatibility frontmatter installed")
-            if "name:" not in deployed_skill_md or "description:" not in deployed_skill_md:
-                fail("Codex portable copy deploy removed required frontmatter")
-
-            symlink_result = run_command(
-                "bash",
-                "scripts/deploy-skills.sh",
-                "--harness",
-                "codex",
-                "--scope",
-                "project",
-                "--project-root",
-                str(project_root),
-                "--mode",
-                "symlink",
-                "--skill",
-                codex_portable_skill,
-                expect_success=False,
-                label="codex portable symlink frontmatter safety check",
-            )
-            if "runtime-safe frontmatter" not in symlink_result.stderr:
-                fail("Codex portable symlink deploy did not reject unsafe frontmatter")
-
     agents_manifest = harness_manifests.get("agents")
     if agents_manifest is None:
         return
@@ -1103,6 +919,8 @@ def validate_deploy_script(
         )
         if not destination.is_dir():
             fail("Copy-mode initial deploy did not create the skill directory")
+        if (destination / "evals").exists():
+            fail("Copy-mode deployment included repository-only evals")
 
         sentinel = destination / "stale.txt"
         sentinel.write_text("stale\n", encoding="utf-8")
@@ -1124,9 +942,9 @@ def validate_deploy_script(
             expect_success=True,
             label="copy-mode redeploy dry-run",
         )
-        if f"rm -rf {destination}" not in dry_run_redeploy.stdout:
+        if f"remove directory {destination}" not in dry_run_redeploy.stdout:
             fail("Copy-mode dry-run did not announce removal of an existing destination directory")
-        if f"cp -R {explicit_skill_src} {destination}" not in dry_run_redeploy.stdout:
+        if f"copy runtime {explicit_skill_src} {destination}" not in dry_run_redeploy.stdout:
             fail("Copy-mode dry-run did not announce copying after directory replacement")
 
         run_command(

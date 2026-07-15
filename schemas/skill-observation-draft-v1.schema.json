@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/mark-groves/skills-nexus/schemas/skill-observation-draft-v1.schema.json",
+  "title": "Skills Nexus observation draft v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "source",
+    "runtime",
+    "task",
+    "outcome",
+    "signals",
+    "suggested_change"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "external_run_id"],
+      "properties": {
+        "kind": {"enum": ["agent", "human", "harness", "eval"]},
+        "external_run_id": {"type": ["string", "null"], "minLength": 1, "maxLength": 200}
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["harness", "harness_version", "model", "invocation", "activation"],
+      "properties": {
+        "harness": {"type": "string", "minLength": 1, "maxLength": 100},
+        "harness_version": {"type": ["string", "null"], "minLength": 1, "maxLength": 100},
+        "model": {"type": ["string", "null"], "minLength": 1, "maxLength": 200},
+        "invocation": {"enum": ["automatic", "explicit", "unknown"]},
+        "activation": {"enum": ["activated", "not_activated", "unknown"]}
+      }
+    },
+    "task": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["category", "summary"],
+      "properties": {
+        "category": {"type": "string", "minLength": 1, "maxLength": 100},
+        "summary": {"type": "string", "minLength": 1, "maxLength": 1000}
+      }
+    },
+    "outcome": {"enum": ["success", "partial", "failure", "unknown"]},
+    "signals": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 20,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "observation",
+          "instruction_ref",
+          "evidence_excerpt",
+          "diagnosis",
+          "diagnosis_confidence"
+        ],
+        "properties": {
+          "kind": {
+            "enum": [
+              "worked",
+              "obstacle",
+              "instruction_confusion",
+              "instruction_gap",
+              "instruction_conflict",
+              "workaround",
+              "unexpected_behavior",
+              "other"
+            ]
+          },
+          "observation": {"type": "string", "minLength": 1, "maxLength": 1000},
+          "instruction_ref": {"type": ["string", "null"], "minLength": 1, "maxLength": 500},
+          "evidence_excerpt": {"type": ["string", "null"], "minLength": 1, "maxLength": 2000},
+          "diagnosis": {"type": ["string", "null"], "minLength": 1, "maxLength": 1000},
+          "diagnosis_confidence": {"enum": ["low", "medium", "high", null]}
+        },
+        "allOf": [
+          {
+            "if": {"properties": {"diagnosis": {"type": "null"}}},
+            "then": {"properties": {"diagnosis_confidence": {"type": "null"}}},
+            "else": {"properties": {"diagnosis_confidence": {"enum": ["low", "medium", "high"]}}}
+          }
+        ]
+      }
+    },
+    "suggested_change": {"type": ["string", "null"], "minLength": 1, "maxLength": 2000}
+  }
+}

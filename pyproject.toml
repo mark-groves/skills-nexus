@@ -11,8 +11,8 @@ python_version = "3.11"
 files = [
     "scripts",
     "tests",
-    "skills/portable/cloud-diagram/scripts",
-    "skills/portable/drawio-shapes/scripts",
+    "skills/cloud-diagram/scripts",
+    "skills/drawio-shapes/scripts",
 ]
 exclude = "(^|/)evals/fixtures/"
 check_untyped_defs = true

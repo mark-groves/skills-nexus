@@ -17,6 +17,7 @@ from typing import Any, TypeVar
 
 from skill_eval.codex_runner import CodexRunner
 from skill_eval.core import (
+    RUNTIME_EXCLUDED_NAMES,
     BehaviorCase,
     EvalError,
     TriggerCase,
@@ -65,7 +66,7 @@ def build_parser() -> argparse.ArgumentParser:
         choices=("repository", "isolated"),
         default="repository",
         help=(
-            "Install sanitized repository peers in both conditions, or evaluate the selected "
+            "Install clean runtime copies of repository peers in both conditions, or evaluate the selected "
             "skill alone"
         ),
     )
@@ -79,7 +80,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--allow-fixture-scripts",
         action=argparse.BooleanOptionalAction,
         default=True,
-        help="Run trusted evals/fixtures/*/setup.sh scripts inside isolated fixture workspaces",
+        help="Run trusted eval suite fixture setup scripts in isolated workspaces",
     )
     parser.add_argument(
         "--output-root",
@@ -264,6 +265,7 @@ def _safe_call(
 
 def _print_plan(
     skill_dir: Path,
+    eval_dir: Path,
     trigger_cases: tuple[TriggerCase, ...],
     behavior_cases: tuple[BehaviorCase, ...],
     args: argparse.Namespace,
@@ -286,7 +288,7 @@ def _print_plan(
             with tempfile.TemporaryDirectory() as temp_dir:
                 workspace = Path(temp_dir)
                 records, _scripts = materialize_fixtures(
-                    skill_dir,
+                    eval_dir,
                     case.fixtures,
                     workspace,
                     allow_setup_scripts=args.allow_fixture_scripts,
@@ -300,7 +302,8 @@ def _print_plan(
 def run_evaluation(args: argparse.Namespace) -> tuple[dict[str, Any], Path]:
     repo_root = args.repo_root.resolve()
     skill_dir = resolve_skill(repo_root, args.skill)
-    spec = load_eval_spec(skill_dir)
+    spec = load_eval_spec(skill_dir, repo_root / "evals")
+    eval_dir = spec.path.parent
     trigger_cases = (
         _select_cases(
             spec.trigger_cases,
@@ -324,10 +327,10 @@ def run_evaluation(args: argparse.Namespace) -> tuple[dict[str, Any], Path]:
     if not trigger_cases and not behavior_cases:
         raise EvalError("The selected suite and filters contain no cases")
     if args.plan:
-        _print_plan(skill_dir, trigger_cases, behavior_cases, args)
+        _print_plan(skill_dir, eval_dir, trigger_cases, behavior_cases, args)
         return {}, Path()
 
-    runtime_digest = stable_digest(skill_dir, exclude={"evals", "working", "__pycache__"})
+    runtime_digest = stable_digest(skill_dir, exclude=RUNTIME_EXCLUDED_NAMES)
     spec_digest = stable_digest(spec.path)
     timestamp = datetime.now(UTC)
     run_id = f"{timestamp.strftime('%Y%m%dT%H%M%SZ')}-{runtime_digest[:8]}"
@@ -399,7 +402,7 @@ def run_evaluation(args: argparse.Namespace) -> tuple[dict[str, Any], Path]:
             template = case_root / "_fixture-template"
             template.mkdir(parents=True)
             records, setup_scripts = materialize_fixtures(
-                skill_dir,
+                eval_dir,
                 behavior_case.fixtures,
                 template,
                 allow_setup_scripts=args.allow_fixture_scripts,
@@ -614,6 +617,7 @@ def run_evaluation(args: argparse.Namespace) -> tuple[dict[str, Any], Path]:
         "skill": {
             "name": spec.skill_name,
             "path": str(skill_dir),
+            "eval_path": str(eval_dir),
             "runtime_digest_sha256": runtime_digest,
             "eval_spec_digest_sha256": spec_digest,
         },
