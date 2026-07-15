@@ -355,6 +355,8 @@ def materialize_fixtures(
                 }
             )
             continue
+        if source.is_symlink():
+            raise EvalError(f"Fixture sources may not be symlinks: {source}")
 
         if source.is_file() and source.suffix.lower() == ".md" and source.parent == skill_dir / "evals":
             scenario_dir.mkdir(parents=True, exist_ok=True)

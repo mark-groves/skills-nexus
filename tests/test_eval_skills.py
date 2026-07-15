@@ -249,6 +249,22 @@ class EvalCoreTests(unittest.TestCase):
             self.assertEqual(records[0]["mode"], "description_only")
             self.assertEqual(scripts, [])
 
+    def test_markdown_recipe_rejects_symlink_source(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            skill = root / "skill"
+            workspace = root / "workspace"
+            outside = root / "outside.md"
+            (skill / "evals").mkdir(parents=True)
+            workspace.mkdir()
+            outside.write_text("host-local content\n", encoding="utf-8")
+            (skill / "evals" / "state.md").symlink_to(outside)
+
+            with self.assertRaisesRegex(EvalError, "may not be symlinks"):
+                materialize_fixtures(
+                    skill, ("state",), workspace, allow_setup_scripts=False
+                )
+
     def test_markdown_recipe_withholds_plain_expected_behavior_label(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -364,7 +380,7 @@ class EvalCoreTests(unittest.TestCase):
                         "item": {
                             "type": "command_execution",
                             "command": (
-                                "cat /tmp/private/skills/commit/SKILL.md "
+                                "cat /tmp/private/.agents/skills/commit/SKILL.md "
                                 "&& git status && pytest"
                             ),
                             "exit_code": 0,
@@ -417,7 +433,7 @@ class EvalCoreTests(unittest.TestCase):
                         "item": {
                             "type": "command_execution",
                             "command": (
-                                "cat $(find /tmp/private/skills -name SKILL.md)"
+                                "cat $(find /tmp/private/.agents/skills -name SKILL.md)"
                             ),
                             "exit_code": 0,
                             "status": "completed",
@@ -541,6 +557,39 @@ class EvalCoreTests(unittest.TestCase):
         self.assertTrue(artifact["text_redacted"])
         self.assertNotIn("Always inspect", json.dumps(bundle))
 
+    def test_task_workspace_is_preserved_after_external_execution(self) -> None:
+        runner = object.__new__(CodexRunner)
+        runner.sandbox = "workspace-write"
+        runner.model = None
+        with tempfile.TemporaryDirectory() as temp_dir:
+            run_dir = Path(temp_dir) / "run"
+
+            def fake_execute(**kwargs):
+                workspace = kwargs["workspace"]
+                (workspace / "deliverable.bin").write_bytes(bytes(range(256)) * 64)
+                return {
+                    "status": "completed",
+                    "events_path": str(run_dir / "events.jsonl"),
+                }
+
+            with mock.patch.object(runner, "_execute", side_effect=fake_execute):
+                run = runner.run_task(
+                    run_dir=run_dir,
+                    workspace_template=None,
+                    prompt="create a binary deliverable",
+                    case_type="behavior",
+                    case_id="binary",
+                    repeat=1,
+                    condition="baseline",
+                )
+
+            preserved = Path(run["workspace"])
+            executed = Path(run["execution_workspace"])
+            self.assertEqual(
+                (preserved / "deliverable.bin").read_bytes(), bytes(range(256)) * 64
+            )
+            self.assertFalse(executed.exists())
+
     def test_git_observations_include_head_commit_files(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             workspace = Path(temp_dir)
@@ -650,6 +699,7 @@ class EvalCliIntegrationTests(unittest.TestCase):
                 import stat
                 import subprocess
                 import sys
+                import time
                 from pathlib import Path
 
                 args = sys.argv[1:]
@@ -659,8 +709,17 @@ class EvalCliIntegrationTests(unittest.TestCase):
 
                 home = Path(os.environ["CODEX_HOME"])
                 auth_path = home / "auth.json"
-                auth_is_fifo = stat.S_ISFIFO(auth_path.stat().st_mode)
-                json.loads(auth_path.read_text())
+                auth_is_regular = stat.S_ISREG(auth_path.stat().st_mode)
+                auth = json.loads(auth_path.read_text())
+                safe_external_auth = (
+                    auth.get("auth_mode") == "chatgptAuthTokens"
+                    and auth.get("tokens", {}).get("refresh_token") == ""
+                )
+                print(json.dumps({"type": "turn.started"}), flush=True)
+                deadline = time.monotonic() + 2
+                while auth_path.exists() and time.monotonic() < deadline:
+                    time.sleep(0.01)
+                auth_removed = not auth_path.exists()
                 prompt = sys.stdin.read()
                 output_path = Path(args[args.index("--output-last-message") + 1])
                 if "--output-schema" in args:
@@ -696,12 +755,14 @@ class EvalCliIntegrationTests(unittest.TestCase):
                         }
                     )
                 else:
-                    skill_file = home / "skills" / "demo" / "SKILL.md"
-                    peer_file = home / "skills" / "peer" / "SKILL.md"
+                    skill_file = home / ".agents" / "skills" / "demo" / "SKILL.md"
+                    peer_file = home / ".agents" / "skills" / "peer" / "SKILL.md"
                     final = "skill-assisted result" if skill_file.is_file() else "baseline result"
                     final += f" peer={peer_file.is_file()}"
                     final += f" home_in_run={str(home).startswith(str(Path.cwd().parent))}"
-                    final += f" auth_fifo={auth_is_fifo}"
+                    final += f" auth_ephemeral={auth_is_regular and auth_removed}"
+                    final += f" safe_external_auth={safe_external_auth}"
+                    final += f" isolated_home={Path(os.environ['HOME']) == home}"
                     git_probe = subprocess.run(
                         ["git", "rev-parse", "--show-toplevel"],
                         capture_output=True,
@@ -785,7 +846,18 @@ class EvalCliIntegrationTests(unittest.TestCase):
             subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
             codex_home = root / "user-codex"
             codex_home.mkdir()
-            (codex_home / "auth.json").write_text("{}", encoding="utf-8")
+            (codex_home / "auth.json").write_text(
+                json.dumps(
+                    {
+                        "auth_mode": "chatgpt",
+                        "tokens": {
+                            "access_token": "test-access",
+                            "refresh_token": "test-refresh",
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
             fake_codex = self._write_fake_codex(root)
             output_root = repo / ".skill-evals-test"
 
@@ -820,10 +892,17 @@ class EvalCliIntegrationTests(unittest.TestCase):
             self.assertIn("peer=True", behavior["skill_run"]["final_response"])
             self.assertIn("peer=True", behavior["baseline_run"]["final_response"])
             self.assertIn("home_in_run=False", behavior["skill_run"]["final_response"])
-            self.assertIn("auth_fifo=True", behavior["skill_run"]["final_response"])
+            self.assertIn("auth_ephemeral=True", behavior["skill_run"]["final_response"])
+            self.assertIn("safe_external_auth=True", behavior["skill_run"]["final_response"])
+            self.assertIn("isolated_home=True", behavior["skill_run"]["final_response"])
             self.assertIn("parent_git=False", behavior["skill_run"]["final_response"])
             self.assertFalse(
-                Path(behavior["skill_run"]["workspace"]).is_relative_to(repo)
+                Path(behavior["skill_run"]["execution_workspace"]).is_relative_to(repo)
+            )
+            self.assertFalse(Path(behavior["skill_run"]["execution_workspace"]).exists())
+            self.assertTrue(Path(behavior["skill_run"]["workspace"]).is_dir())
+            self.assertTrue(
+                Path(behavior["skill_run"]["workspace"]).is_relative_to(output_root)
             )
             self.assertTrue((result_paths[0].parent / "report.md").is_file())
             self.assertTrue((result_paths[0].parent / "report.html").is_file())

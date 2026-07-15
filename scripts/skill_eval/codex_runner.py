@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import copy
-import errno
 import hashlib
 import json
 import os
@@ -14,7 +13,7 @@ import tempfile
 import threading
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, TextIO
 
 from .core import (
     BehaviorCase,
@@ -143,7 +142,7 @@ def _may_expose_skill_instructions(
 
     lowered_command = normalized_command.lower()
     normalized_home = runtime_home.replace("\\", "/")
-    if "skill.md" in lowered_command or f"{normalized_home}/skills" in combined:
+    if "skill.md" in lowered_command or f"{normalized_home}/.agents/skills" in combined:
         return True
 
     return bool(
@@ -221,11 +220,15 @@ class CodexRunner:
             raise EvalError(f"Codex authentication could not be read: {exc}") from exc
         if not isinstance(auth_payload, dict):
             raise EvalError("Codex authentication must be a JSON object")
-        if auth_payload.get("auth_mode") == "chatgpt":
+        tokens = auth_payload.get("tokens")
+        if (
+            auth_payload.get("auth_mode") in {None, "chatgpt", "chatgptAuthTokens"}
+            and isinstance(tokens, dict)
+        ):
+            # External-token mode prevents this isolated copy from rotating the user's
+            # refresh token while still supporting authenticated evaluator turns.
             auth_payload["auth_mode"] = "chatgptAuthTokens"
-            tokens = auth_payload.get("tokens")
-            if isinstance(tokens, dict):
-                tokens["refresh_token"] = ""
+            tokens["refresh_token"] = ""
         self.auth_payload = json.dumps(auth_payload)
         version = subprocess.run(
             [self.codex_binary, "--version"],
@@ -242,8 +245,8 @@ class CodexRunner:
             if with_skill:
                 skills_to_install.append(self.skill_dir)
             if skills_to_install:
-                skills_dir = home / "skills"
-                skills_dir.mkdir()
+                skills_dir = home / ".agents" / "skills"
+                skills_dir.mkdir(parents=True)
                 for skill in skills_to_install:
                     sanitized_skill_copy(skill, skills_dir / skill.name)
         except Exception:
@@ -251,36 +254,26 @@ class CodexRunner:
             raise
         return home
 
-    def _feed_auth_fifo(
-        self,
-        auth_fifo: Path,
-        process: subprocess.Popen[str],
-        errors: list[BaseException],
+    @staticmethod
+    def _capture_process_output(
+        stream: TextIO,
+        chunks: list[str],
+        auth_path: Path | None = None,
     ) -> None:
-        deadline = time.monotonic() + min(10.0, self.timeout_seconds)
-        descriptor: int | None = None
+        """Capture a process stream and remove startup auth before agent commands run."""
         try:
-            while descriptor is None:
+            for line in stream:
+                chunks.append(line)
+                if auth_path is None:
+                    continue
                 try:
-                    descriptor = os.open(auth_fifo, os.O_WRONLY | os.O_NONBLOCK)
-                except OSError as exc:
-                    if exc.errno != errno.ENXIO:
-                        raise
-                    if process.poll() is not None:
-                        raise EvalError("Codex exited before reading ephemeral authentication")
-                    if time.monotonic() >= deadline:
-                        raise EvalError("Codex did not read ephemeral authentication in time")
-                    time.sleep(0.01)
-            with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
-                descriptor = None
-                stream.write(self.auth_payload)
-                stream.flush()
-        except BaseException as exc:
-            errors.append(exc)
+                    event = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(event, dict) and event.get("type") == "turn.started":
+                    auth_path.unlink(missing_ok=True)
         finally:
-            if descriptor is not None:
-                os.close(descriptor)
-            auth_fifo.unlink(missing_ok=True)
+            stream.close()
 
     def _execute(
         self,
@@ -298,12 +291,15 @@ class CodexRunner:
         prompt_path = run_dir / "prompt.txt"
         prompt_path.write_text(prompt, encoding="utf-8")
         home = self._prepare_home(with_skill=with_skill, include_peers=include_peers)
-        auth_fifo = home / "auth.json"
-        if not hasattr(os, "mkfifo"):
-            shutil.rmtree(home, ignore_errors=True)
-            raise EvalError("Secure ephemeral Codex authentication requires FIFO support")
+        auth_path = home / "auth.json"
         try:
-            os.mkfifo(auth_fifo, mode=0o600)
+            descriptor = os.open(
+                auth_path,
+                os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+                0o600,
+            )
+            with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+                stream.write(self.auth_payload)
         except Exception:
             shutil.rmtree(home, ignore_errors=True)
             raise
@@ -339,11 +335,15 @@ class CodexRunner:
 
         env = os.environ.copy()
         env["CODEX_HOME"] = str(home)
+        env["HOME"] = str(home)
         env["GIT_CEILING_DIRECTORIES"] = git_ceiling
         started = time.monotonic()
         timed_out = False
         process: subprocess.Popen[str] | None = None
-        auth_thread: threading.Thread | None = None
+        stdout_thread: threading.Thread | None = None
+        stderr_thread: threading.Thread | None = None
+        stdout_chunks: list[str] = []
+        stderr_chunks: list[str] = []
         try:
             try:
                 process = subprocess.Popen(
@@ -355,41 +355,50 @@ class CodexRunner:
                     env=env,
                     text=True,
                 )
-                auth_errors: list[BaseException] = []
-                auth_thread = threading.Thread(
-                    target=self._feed_auth_fifo,
-                    args=(auth_fifo, process, auth_errors),
+                if process.stdin is None or process.stdout is None or process.stderr is None:
+                    raise EvalError("Codex process pipes were not available")
+                stdout_thread = threading.Thread(
+                    target=self._capture_process_output,
+                    args=(process.stdout, stdout_chunks, auth_path),
                     daemon=True,
                 )
-                auth_thread.start()
-                stdout, stderr = process.communicate(
-                    input=prompt, timeout=self.timeout_seconds
+                stderr_thread = threading.Thread(
+                    target=self._capture_process_output,
+                    args=(process.stderr, stderr_chunks),
+                    daemon=True,
                 )
-                auth_thread.join(timeout=1)
-                if auth_errors:
-                    raise EvalError(str(auth_errors[0]))
-                if auth_thread.is_alive():
-                    raise EvalError("Ephemeral authentication writer did not finish")
+                stdout_thread.start()
+                stderr_thread.start()
+                try:
+                    process.stdin.write(prompt)
+                    process.stdin.flush()
+                except BrokenPipeError:
+                    pass
+                finally:
+                    process.stdin.close()
+                process.wait(timeout=self.timeout_seconds)
                 exit_code: int | None = process.returncode
             except subprocess.TimeoutExpired:
                 timed_out = True
                 if process is not None:
                     process.kill()
-                    stdout, stderr = process.communicate()
-                else:
-                    stdout, stderr = "", ""
+                    process.wait()
                 exit_code = None
             except BaseException:
                 if process is not None and process.poll() is None:
                     process.kill()
-                    process.communicate()
+                    process.wait()
                 raise
         finally:
-            auth_fifo.unlink(missing_ok=True)
-            if auth_thread is not None and auth_thread.is_alive():
-                auth_thread.join(timeout=1)
+            auth_path.unlink(missing_ok=True)
+            if stdout_thread is not None:
+                stdout_thread.join()
+            if stderr_thread is not None:
+                stderr_thread.join()
             shutil.rmtree(home, ignore_errors=True)
         duration = time.monotonic() - started
+        stdout = "".join(stdout_chunks)
+        stderr = "".join(stderr_chunks)
 
         events_path = run_dir / "events.jsonl"
         stderr_path = run_dir / "stderr.log"
@@ -437,8 +446,13 @@ class CodexRunner:
         repeat: int,
         condition: str,
     ) -> dict[str, Any]:
+        run_dir.mkdir(parents=True, exist_ok=True)
         workspace_root = Path(tempfile.mkdtemp(prefix="skill-eval-task-workspace-"))
         workspace = workspace_root / "workspace"
+        preserved_workspace = run_dir / "workspace"
+        if preserved_workspace.exists():
+            shutil.rmtree(workspace_root, ignore_errors=True)
+            raise EvalError(f"Run workspace already exists: {preserved_workspace}")
         try:
             if workspace_template is None:
                 workspace.mkdir()
@@ -458,6 +472,8 @@ class CodexRunner:
             artifacts = workspace_delta(before, after)
             git = git_observations(workspace)
         finally:
+            if workspace.exists():
+                shutil.move(str(workspace), preserved_workspace)
             shutil.rmtree(workspace_root, ignore_errors=True)
         executed.update(
             {
@@ -465,7 +481,8 @@ class CodexRunner:
                 "case_id": case_id,
                 "repeat": repeat,
                 "condition": condition,
-                "workspace": str(workspace),
+                "workspace": str(preserved_workspace),
+                "execution_workspace": str(workspace),
                 "artifact_delta": artifacts,
                 "git": git,
                 "prompt_sha256": hashlib.sha256(prompt.encode()).hexdigest(),
@@ -478,14 +495,21 @@ class CodexRunner:
         events_text = Path(run["events_path"]).read_text(encoding="utf-8", errors="replace")
         events, _errors = _load_events(events_text)
         workspace = str(Path(run["workspace"]).resolve())
-        run_root = str(Path(run["workspace"]).parent.resolve())
+        execution_workspace = str(
+            Path(run.get("execution_workspace", run["workspace"])).resolve()
+        )
+        run_root = str(Path(execution_workspace).parent.resolve())
         runtime_home = str(run.get("runtime_home", "")).replace("\\", "/")
-        replacements = {workspace: "<WORKSPACE>", run_root: "<RUN_ROOT>"}
+        replacements = {
+            workspace: "<WORKSPACE>",
+            execution_workspace: "<WORKSPACE>",
+            run_root: "<RUN_ROOT>",
+        }
         if runtime_home:
             replacements[runtime_home] = "<CODEX_HOME>"
         commands: list[dict[str, Any]] = []
         activation_markers = {
-            f"{runtime_home}/skills/{name}/SKILL.md"
+            f"{runtime_home}/.agents/skills/{name}/SKILL.md"
             for name in self.runtime_skill_names
             if runtime_home
         }
