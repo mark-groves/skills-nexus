@@ -1,191 +1,178 @@
 ---
 name: pr
-description: Push the current git branch and open a GitHub pull request with a structured summary and test plan. Use when the user asks to create, open, submit, or publish a PR from the current branch.
+description: Draft or publish a pull request from the current Git branch on GitHub or Azure DevOps, including provider detection, safe push handling, a structured summary, and validation evidence. Use when the user asks to write, create, open, submit, or publish a PR, including Azure Repos pull requests.
 ---
 
-# Instructions
+# Pull request workflow
 
-You are a pull request assistant. Your job is to create a well-structured
-GitHub PR using `gh`. Never use tools other than Bash with git and gh
-commands.
+Draft and, when requested, publish a pull request without assuming every Git
+remote is hosted on GitHub.
 
-## Sandbox execution rule
+Use shell commands with `git` and the detected provider CLI. Run read-only
+local inspection first. Request the permissions required by the active harness
+before commands that use network credentials or mutate repository state. Do
+not change remotes, branches, or command strategy merely to work around a
+permission error.
 
-Run local read-only Git inspection commands without escalation unless they
-fail with an error that could be caused by sandbox filesystem or host
-permission restrictions.
+## 1. Determine the requested mode
 
-Run commands that depend on network, SSH, keychain, host credentials, or
-repository mutation with escalated permissions from the start. This
-includes:
+Treat requests to write, format, or preview PR text as **draft-only**. Do not
+push, authenticate to a provider, or create a PR in this mode.
 
-- `gh auth status`
-- `gh repo view`
-- `gh pr view`
-- `gh pr create`
-- `git push`
+Treat requests to create, open, submit, or publish a PR as **publish**. The
+request authorizes the required branch push and PR creation after all safety,
+provider, and repository checks pass; do not pause for draft approval.
 
-Treat these as sandbox-suspect errors:
+Use a user-supplied branch argument as the base branch. Otherwise resolve the
+default branch later; never silently assume `main`.
 
-- `Read-only file system`
-- `cannot lock ref`
-- `unable to create directory for .git/refs`
-- `Bad owner or permissions on /etc/ssh/`
-- `Could not read from remote repository`
-- `gh auth status` failures when auth may depend on network, keychain,
-  host config, or credentials outside the sandbox
+## 2. Inspect local state
 
-If a local read-only Git command fails with one of those errors, retry the
-same command once with escalated permissions before changing strategy or
-diagnosing a real Git or GitHub problem.
-
-If an escalated `git push` fails, treat the remaining error as real. If an
-escalated `gh pr create` fails, check once with escalated `gh pr view`
-before reporting failure, because the PR may have been created before the
-CLI returned an error.
-
-## Step 1 — Determine base branch
-
-Resolve the repository's default branch for safety checks:
-
-1. Prefer `git symbolic-ref --quiet --short refs/remotes/origin/HEAD`
-   and strip the `origin/` prefix.
-2. Fall back to `gh repo view --json defaultBranchRef --jq
-   '.defaultBranchRef.name'`.
-3. If both commands fail, tell the user the default branch could not be
-   resolved and stop. Ask them to specify the base branch or fix default
-   branch resolution before trying again.
-
-Use the user's argument as the base branch. If no argument is provided,
-use the resolved default branch as the base.
-
-## Step 2 — Check state and prerequisites
-
-Run all commands in parallel:
+Minimize tool calls. Gather these in one read-only shell invocation when
+possible:
 
 - `git status --short --branch` (never use `-uall`)
 - `git symbolic-ref --quiet --short HEAD`
-- `gh --version`
-- `gh auth status`
+- `git remote -v`
+- `git rev-parse --abbrev-ref @{upstream}` (failure means no upstream)
 
-If there are uncommitted changes, warn the user and suggest running
-`/commit` first. Do not proceed until the working tree is clean or the
-user explicitly says to continue.
+Stop if HEAD is detached. If the working tree is dirty, suggest committing
+first and stop unless the user explicitly asks to continue with the dirty tree.
 
-If `git symbolic-ref --quiet --short HEAD` fails, the repo is in a
-detached HEAD state. Tell the user to switch to a branch first and stop.
+Select the remote that represents the branch's publish destination:
 
-If `gh` is missing, tell the user to install the GitHub CLI and stop.
-If escalated `gh auth status` fails, tell the user to authenticate with
-GitHub CLI and stop.
+1. Use the upstream remote when one exists.
+2. Otherwise prefer `branch.<current-branch>.pushRemote`.
+3. Then prefer `remote.pushDefault`.
+4. Then prefer `branch.<current-branch>.remote`.
+5. Then use the only configured remote.
+6. If several remotes remain possible, ask the user to choose; do not assume
+   `origin`.
 
-## Step 3 — Gather context
+Read its URL with `git remote get-url <remote>`. Prefer an explicit provider
+named by the user; otherwise detect it from the URL:
 
-Run all commands in parallel:
+- GitHub: `github.com`
+- Azure DevOps: `dev.azure.com`, `ssh.dev.azure.com`,
+  `vs-ssh.visualstudio.com`, or an organization host ending in
+  `.visualstudio.com`
 
-- `git log --oneline <base>..HEAD` to see all commits on the branch.
-- `git diff <base>...HEAD` to see the full diff against the base.
-- Check remote tracking: `git rev-parse --abbrev-ref @{upstream}`
-  (failures are fine — it means no upstream is set yet).
-- If an upstream exists, check push state with
-  `git rev-list --left-right --count @{upstream}...HEAD`.
-- Check for an existing pull request with
-  `gh pr view --json url --jq '.url'` (failures are fine — it means no
-  PR exists yet).
+Do not interpret an unfamiliar host as GitHub. Draft-only mode may continue if
+the base can be resolved locally. Publish mode must stop and ask which provider
+and publishing tool to use.
 
-If there are no commits ahead of the base branch, tell the user and
-stop.
+## 3. Resolve the base branch
 
-If `gh pr view` returns an existing PR URL for the branch, print that
-URL and stop instead of creating a duplicate PR.
+First try the selected remote's symbolic default:
 
-Determine whether a push is needed:
+```bash
+git symbolic-ref --quiet --short refs/remotes/<remote>/HEAD
+```
 
-- If there is no upstream, determine the publish remote before presenting
-  or running a push:
-  1. Prefer `git config branch.<current-branch>.pushRemote`.
-  2. Fall back to `git config remote.pushDefault`.
-  3. Fall back to `git config branch.<current-branch>.remote`.
-  4. Fall back to the only configured remote from `git remote`.
-  5. If multiple remotes exist and none of the configured preferences
-     identify one, ask the user to choose or configure the publish remote
-     and stop.
-- When there is no upstream and the publish remote is known, a push is
-  needed with `git push -u <publish-remote> <current-branch>`.
-- If there is an upstream and the local branch is ahead, a push is
-  needed with `git push`.
-- If the upstream is ahead or the branches have diverged, tell the user
-  to reconcile the branch first and stop before pushing or creating a
-  PR.
-- Otherwise, no push is needed.
+Strip the `<remote>/` prefix. If that fails, use the detected provider's
+default-branch command from [provider workflows](references/providers.md).
+Stop and ask for a base branch if neither method succeeds.
 
-## Step 4 — Validate branch
+Even when the user supplied a different base, still resolve the default branch
+for source-branch safety checks.
 
-- If the current branch is `main`, `master`, or the resolved default
-  branch, warn the user and stop. Never push or create a PR from the
-  default branch.
-- Verify the branch name uses a conventional prefix (`feat/`, `fix/`,
-  `chore/`, `refactor/`, `docs/`, `test/`, `ci/`). If not, warn the
-  user but allow them to continue.
+## 4. Validate the branch and provider
 
-## Step 5 — Draft the PR
+Stop if the current branch is `main`, `master`, or the resolved default branch.
+Never push or create a PR from the default branch.
 
-Analyze **all** commits on the branch (not just the latest) and draft:
+Warn, but allow the user to continue, when the branch lacks a conventional
+prefix such as `feat/`, `fix/`, `chore/`, `refactor/`, `docs/`, `test/`, or
+`ci/`.
 
-- **Title:** imperative, under 70 characters, summarizing the change.
-  Use a conventional-style prefix such as `feat:`, `fix:`, or `docs:`
-  only when it clearly matches the change; do not force one.
-- **Body** using this template:
+For publish mode, read
+[provider workflows](references/providers.md) and run only the prerequisite
+checks for the detected provider. A failed GitHub check is not evidence that an
+Azure DevOps repository is misconfigured, or vice versa.
+
+## 5. Gather the complete change
+
+Inspect all branch work, not only the latest commit:
+
+```bash
+git log --oneline <base>..HEAD
+git diff --stat <base>...HEAD
+git diff <base>...HEAD
+```
+
+Stop if there are no commits ahead of the base.
+
+In publish mode, use the provider workflow to check for an existing active PR
+from this source branch to the selected base. Return its web URL and stop if one
+exists.
+
+Determine push state:
+
+- No upstream: push with `git push -u <remote> <current-branch>`.
+- Upstream exists and local is ahead: push with `git push`.
+- Upstream is current: no push is needed.
+- Upstream is ahead or diverged: stop and ask the user to reconcile it.
+
+Use `git rev-list --left-right --count @{upstream}...HEAD` for ahead/behind
+counts.
+
+## 6. Draft the PR
+
+Write a title under 70 characters. Use imperative wording with no trailing
+period. Use a Conventional Commit-style prefix and optional stable scope only
+when the change maps cleanly to one, for example
+`feat(pr): support Azure DevOps repositories`; otherwise use a plain imperative
+title.
+
+Write concise Markdown based on the diff and observed validation:
 
 ```markdown
 ## Summary
-- What changed and why.
-- Any user-visible or behavioral impact.
 
-## Test plan
-- Ran `...`
-- Not run: reason, if applicable
+- <primary outcome and why it matters>
+- <important behavioral or operational impact, when distinct>
+
+## Validation
+
+- `<exact command>` — passed
+- Not run: <specific reason>
+
+## Notes
+
+- <breaking change, migration, rollout risk, or follow-up>
 ```
 
-## Step 6 — Present for approval
+Apply these formatting rules:
 
-Show the user:
+- Keep Summary to 1–3 outcome-focused bullets; do not inventory files or repeat
+  the title.
+- Report only validation that evidence shows was run. Include the result, not
+  merely a proposed test plan.
+- Use `Not run: <reason>` when no validation ran.
+- Omit Notes entirely when there is no material note. Never emit empty sections
+  or placeholder text.
+- Mention breaking changes, migrations, and user-visible impact explicitly.
 
-1. The base branch and current branch.
-2. The draft title and body.
-3. Whether a push is needed, including the exact push command that will
-   be used if needed.
+## 7. Return or publish
 
-Wait for explicit approval before proceeding.
+For draft-only mode, return the provider (if known), base/head branches, title,
+and body. Do not publish it.
 
-## Step 7 — Push and create
+For publish mode, do not stop to preview the title, body, file list, or push
+command. Push when needed, then immediately use the provider-specific create
+command from [provider workflows](references/providers.md). Preserve the
+generated Markdown exactly; do not flatten newlines or rewrite it during
+submission.
 
-- If no upstream exists, push with `git push -u <publish-remote>
-  <current-branch>`.
-- If an upstream exists and the local branch is ahead, push with
-  `git push`.
-- Create the PR:
+Return the human-facing PR URL, provider, base/head branches, title, body, and
+push result.
 
-```bash
-gh pr create --base "$base" --title "$title" --body-file - <<'EOF'
-## Summary
-- ...
+## Safety
 
-## Test plan
-- Ran `...`
-- Not run: ...
-EOF
-```
-
-## Step 8 — Return the PR URL
-
-Print the URL returned by `gh pr create` so the user can open it.
-
-## Safety rules
-
-- Never force push (`--force`, `--force-with-lease`).
-- Never push to `main`, `master`, or the resolved default branch.
-- Never use `--no-verify`.
-- If escalated `gh pr create` fails and escalated `gh pr view` does not
-  find a created PR, show the error and stop. Do not retry `gh pr create`
-  automatically.
+- Never force push or use `--no-verify`.
+- Never push the default branch.
+- Never create a duplicate PR.
+- Never install a CLI or extension, start interactive authentication, or alter
+  provider defaults without the user's approval.
+- If creation reports an error, perform the provider workflow's one read-back
+  check. Do not retry creation automatically.
