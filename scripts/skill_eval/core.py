@@ -248,10 +248,16 @@ def _safe_ref(ref: str) -> Path:
     candidate = Path(ref)
     parts = candidate.parts
     exposes_eval_ground_truth = not parts or parts[0] == "evals.json"
-    if candidate.is_absolute() or ".." in parts or exposes_eval_ground_truth:
+    selects_fixture_root = parts == ("fixtures",)
+    if (
+        candidate.is_absolute()
+        or ".." in parts
+        or exposes_eval_ground_truth
+        or selects_fixture_root
+    ):
         raise EvalError(
             "Fixture path must be eval-relative, may not traverse parents, and may not "
-            f"select eval ground truth: {ref}"
+            f"select eval ground truth or the broad fixture root: {ref}"
         )
     return candidate
 

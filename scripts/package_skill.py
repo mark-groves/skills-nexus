@@ -26,11 +26,16 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     source = args.source.resolve()
     destination = args.destination.absolute()
+    resolved_destination = destination.resolve()
     if not (source / "SKILL.md").is_file():
         print(f"error: source is not a skill directory: {source}", file=sys.stderr)
         return 1
 
-    if destination == source or source in destination.parents or destination in source.parents:
+    if (
+        resolved_destination == source
+        or source in resolved_destination.parents
+        or resolved_destination in source.parents
+    ):
         print("error: source and destination skill trees may not overlap", file=sys.stderr)
         return 1
 

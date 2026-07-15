@@ -71,6 +71,20 @@ class PackageSkillTests(unittest.TestCase):
             self.assertEqual(status, 1)
             self.assertFalse((source / "package").exists())
 
+    def test_destination_parent_symlink_may_not_bypass_overlap_check(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = self.write_skill(root / "source-root")
+            linked_parent = root / "linked-parent"
+            linked_parent.symlink_to(source, target_is_directory=True)
+            destination = linked_parent / "package"
+
+            with contextlib.redirect_stderr(io.StringIO()):
+                status = package_skill.main([str(source), str(destination)])
+
+            self.assertEqual(status, 1)
+            self.assertFalse((source / "package").exists())
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -109,7 +109,7 @@ class EvalCoreTests(unittest.TestCase):
             (eval_dir / "evals.json").write_text("{}", encoding="utf-8")
             workspace.mkdir()
 
-            for fixture in (".", "evals.json"):
+            for fixture in (".", "evals.json", "fixtures"):
                 with self.subTest(fixture=fixture):
                     with self.assertRaisesRegex(EvalError, "eval ground truth"):
                         materialize_fixtures(
