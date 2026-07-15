@@ -76,11 +76,9 @@ skill.
 Design a coherent skill unit: broad enough that one task does not need
 several skills loaded, narrow enough that triggering remains precise.
 
-Use the minimal standard frontmatter by default. Add optional standard
-fields only when they carry real information, and never make correct or
-safe execution depend on an optional field that target clients may
-ignore. In particular, treat `allowed-tools` as experimental rather than
-as the only safety boundary.
+Use only `name` and `description` in frontmatter so the skill remains
+discoverable across compatible harnesses. Put requirements, safety
+constraints, and other operating guidance in the Markdown body.
 
 Choose bundled resources deliberately:
 
@@ -168,7 +166,7 @@ Before reporting a portable skill complete, verify that:
 - every bundled path is skill-root-relative and resolves;
 - the workflow does not depend on client-native paths, hooks, tools,
   invocation syntax, sibling skills, or proprietary configuration;
-- optional frontmatter is valid but not required for core behavior;
+- frontmatter contains only `name` and `description`;
 - runtime and network requirements are explicit;
 - scripts are safe to retry and usable in the intended environments;
 - the artifact has been checked against at least two intended clients

@@ -16,7 +16,7 @@ after activation.
 
 ## Frontmatter
 
-Required fields:
+Use these frontmatter fields:
 
 - `name`: skill identifier. Use 1-64 characters, lowercase ASCII letters,
   digits, and hyphens. Do not start or end with a hyphen, do not use
@@ -24,20 +24,9 @@ Required fields:
 - `description`: 1-1024 characters. State what the skill does and when
   to use it. This is the primary trigger surface.
 
-Optional fields:
-
-- `license`: short license name or a reference to a bundled license file.
-- `compatibility`: 1-500 characters if present. Include only when the
-  skill has real environment, client, package, network, or system
-  requirements.
-- `metadata`: string-to-string map for client or organization-specific
-  properties. Use specific key names to avoid accidental conflicts.
-- `allowed-tools`: experimental space-separated tool allowlist. Support
-  varies by client, so treat it as an optimization rather than the only
-  safety boundary.
-
-Use only `name` and `description` by default. Optional fields remain part
-of the standard, but include them only when they carry real information.
+Keep frontmatter to `name` and `description` for consistent discovery
+across compatible clients. Put runtime requirements and safety guidance
+in the Markdown body.
 Quote or use a block scalar for YAML values whose punctuation could make
 the frontmatter ambiguous.
 
@@ -98,7 +87,7 @@ portable skill package.
 
 The specification defines the skill directory and progressive disclosure
 model. It does not make client discovery paths, activation syntax, tools,
-permissions, runtimes, or optional field enforcement identical. Validate
+permissions, or runtimes identical. Validate
 both the package format and the absence of harness-specific assumptions.
 
 ## Validation
@@ -107,9 +96,8 @@ When a local validator exists, run it. Use `skills-ref validate` when the
 official reference validator is available. Otherwise manually check:
 
 - `SKILL.md` exists and starts with valid YAML frontmatter;
-- required fields are present and within limits;
+- `name` and `description` are present and within limits;
 - `name` matches the directory;
-- optional fields are non-empty and shaped correctly;
 - referenced files exist;
 - large details are in references or assets instead of the main body;
 - examples and commands are safe for the intended environment.
