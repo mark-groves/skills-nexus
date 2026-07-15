@@ -20,6 +20,9 @@ class EvalError(RuntimeError):
     """Raised for a user-actionable evaluator configuration error."""
 
 
+RUNTIME_EXCLUDED_NAMES = frozenset({"evals", "working", "__pycache__", ".git"})
+
+
 @dataclass(frozen=True)
 class TriggerCase:
     id: str
@@ -197,12 +200,10 @@ def stable_digest(path: Path, *, exclude: Iterable[str] = ()) -> str:
 
 def runtime_skill_copy(skill_dir: Path, destination: Path) -> None:
     """Copy publishable runtime content without repository-generated files."""
-    ignored = {"working", "__pycache__", ".git"}
-
     symlinks: list[Path] = []
     for path in skill_dir.rglob("*"):
         relative = path.relative_to(skill_dir)
-        if any(part in ignored for part in relative.parts):
+        if any(part in RUNTIME_EXCLUDED_NAMES for part in relative.parts):
             continue
         if path.is_symlink():
             symlinks.append(relative)
@@ -212,7 +213,7 @@ def runtime_skill_copy(skill_dir: Path, destination: Path) -> None:
         raise EvalError(f"Skill runtime content may not contain symlinks: {display}")
 
     def ignore(_directory: str, names: list[str]) -> set[str]:
-        return ignored.intersection(names)
+        return set(RUNTIME_EXCLUDED_NAMES.intersection(names))
 
     shutil.copytree(skill_dir, destination, ignore=ignore)
 

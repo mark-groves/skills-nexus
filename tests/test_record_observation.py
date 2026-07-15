@@ -152,6 +152,22 @@ class ObservationContractTests(unittest.TestCase):
         self.assertEqual(len(stored["skill"]["runtime_digest_sha256"]), 64)
         self.assertEqual(mode, 0o600)
 
+    def test_runtime_digest_excludes_repository_only_evals(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            skill = self.write_skill(root)
+            draft = load_draft(self.write_draft(root, valid_draft()))
+            before = build_observation(draft, skill_dir=skill, repo_root=root)
+
+            (skill / "evals").mkdir()
+            (skill / "evals" / "evals.json").write_text("{}", encoding="utf-8")
+            after = build_observation(draft, skill_dir=skill, repo_root=root)
+
+        self.assertEqual(
+            before["skill"]["runtime_digest_sha256"],
+            after["skill"]["runtime_digest_sha256"],
+        )
+
     def test_write_rejects_symlinked_output_root(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

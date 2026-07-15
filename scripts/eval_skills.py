@@ -17,6 +17,7 @@ from typing import Any, TypeVar
 
 from skill_eval.codex_runner import CodexRunner
 from skill_eval.core import (
+    RUNTIME_EXCLUDED_NAMES,
     BehaviorCase,
     EvalError,
     TriggerCase,
@@ -329,7 +330,7 @@ def run_evaluation(args: argparse.Namespace) -> tuple[dict[str, Any], Path]:
         _print_plan(skill_dir, eval_dir, trigger_cases, behavior_cases, args)
         return {}, Path()
 
-    runtime_digest = stable_digest(skill_dir, exclude={"working", "__pycache__"})
+    runtime_digest = stable_digest(skill_dir, exclude=RUNTIME_EXCLUDED_NAMES)
     spec_digest = stable_digest(spec.path)
     timestamp = datetime.now(UTC)
     run_id = f"{timestamp.strftime('%Y%m%dT%H%M%SZ')}-{runtime_digest[:8]}"

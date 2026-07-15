@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from skill_eval.core import stable_digest
+from skill_eval.core import RUNTIME_EXCLUDED_NAMES, stable_digest
 
 MAX_INPUT_BYTES = 64 * 1024
 MAX_SIGNALS = 20
@@ -243,7 +243,7 @@ def build_observation(draft: dict[str, Any], *, skill_dir: Path, repo_root: Path
         "source": draft["source"],
         "skill": {
             "id": skill_dir.name,
-            "runtime_digest_sha256": stable_digest(skill_dir, exclude={"working", "__pycache__"}),
+            "runtime_digest_sha256": stable_digest(skill_dir, exclude=RUNTIME_EXCLUDED_NAMES),
             "repository_commit": commit,
             "repository_dirty": bool(status) if status is not None else None,
         },

@@ -160,12 +160,15 @@ class EvalCoreTests(unittest.TestCase):
             source = root / "source"
             (source / "references").mkdir(parents=True)
             (source / "working").mkdir()
+            (source / "evals" / "fixtures").mkdir(parents=True)
             (source / "SKILL.md").write_text(
                 "---\nname: source\ndescription: Example skill\n---\n\n# Skill\n",
                 encoding="utf-8",
             )
             (source / "references" / "guide.md").write_text("guide", encoding="utf-8")
             (source / "working" / "scratch.txt").write_text("scratch", encoding="utf-8")
+            (source / "evals" / "evals.json").write_text("{}", encoding="utf-8")
+            (source / "evals" / "fixtures" / "secret.txt").write_text("withheld", encoding="utf-8")
 
             destination = root / "installed"
             runtime_skill_copy(source, destination)
@@ -173,6 +176,7 @@ class EvalCoreTests(unittest.TestCase):
             self.assertTrue((destination / "SKILL.md").is_file())
             self.assertTrue((destination / "references" / "guide.md").is_file())
             self.assertFalse((destination / "working").exists())
+            self.assertFalse((destination / "evals").exists())
             self.assertEqual(
                 (destination / "SKILL.md").read_text(encoding="utf-8"),
                 (source / "SKILL.md").read_text(encoding="utf-8"),
