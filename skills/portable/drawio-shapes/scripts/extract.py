@@ -17,9 +17,7 @@ from pathlib import Path
 
 KNOWN_LIBRARIES = {"GCPIcons", "GCP2", "AWS4", "Azure2"}
 BASE64_SVG_PREFIX = r"(?:PHN2Zy|PD94bWw)"
-PALETTE_PREFIX_RE = re.compile(
-    r"Sidebar\.prototype\.add(\w+)Palette\s*=\s*function\([^)]*\)\s*\{"
-)
+PALETTE_PREFIX_RE = re.compile(r"Sidebar\.prototype\.add(\w+)Palette\s*=\s*function\([^)]*\)\s*\{")
 AZURE_PALETTE_CALL_RE = re.compile(
     r"this\.addAzure2(\w+)Palette\([^;]*?\b[A-Za-z_]\w*\s*\+ '([^']+/)'\);",
     re.S,
@@ -166,9 +164,7 @@ def find_palette_prefix(content):
 
 def split_by_palette(content, prefix):
     """Split content into sections by palette function definitions."""
-    pattern = (
-        rf"Sidebar\.prototype\.add{prefix}(\w+)Palette\s*=\s*function\([^)]*\)"
-    )
+    pattern = rf"Sidebar\.prototype\.add{prefix}(\w+)Palette\s*=\s*function\([^)]*\)"
     return re.split(pattern, content)
 
 
@@ -222,9 +218,8 @@ def resolve_string_expression(expr, variables):
     resolved = []
 
     for token in _split_concat_expression(expr):
-        if (
-            (token.startswith("'") and token.endswith("'"))
-            or (token.startswith('"') and token.endswith('"'))
+        if (token.startswith("'") and token.endswith("'")) or (
+            token.startswith('"') and token.endswith('"')
         ):
             resolved.append(token[1:-1])
         elif token == "mxConstants.STYLE_SHAPE":
@@ -240,10 +235,7 @@ def resolve_string_expression(expr, variables):
 def extract_string_variables(section, initial_vars=None):
     """Resolve simple string variable declarations inside a palette section."""
     variables = dict(initial_vars or {})
-    pending = {
-        match.group(1): match.group(2)
-        for match in STRING_VAR_RE.finditer(section)
-    }
+    pending = {match.group(1): match.group(2) for match in STRING_VAR_RE.finditer(section)}
 
     progress = True
     while pending and progress:
@@ -266,7 +258,7 @@ def parse_dimension(expr, base_size=None, numeric_vars=None):
 
     scale_match = re.fullmatch(r"[A-Za-z_]\w*\s*\*\s*([\d.]+)", expr)
     if scale_match:
-        var_name = re.match(r"([A-Za-z_]\w*)", expr).group(1)
+        var_name = expr.partition("*")[0].strip()
         scale = float(scale_match.group(1))
         if var_name in numeric_vars:
             return None, int(round(numeric_vars[var_name] * scale))
@@ -325,9 +317,7 @@ def extract_azure_section(section, category_name, azure_context):
     for match in AZURE_SVG_VAR_RE.finditer(section):
         filename, width_expr, height_expr, name = match.groups()
         if not category_prefix:
-            raise RuntimeError(
-                f"Missing Azure folder prefix for palette '{category_name}'"
-            )
+            raise RuntimeError(f"Missing Azure folder prefix for palette '{category_name}'")
 
         icons.append(
             {
@@ -624,9 +614,7 @@ def print_summary(data):
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Extract shapes from a draw.io sidebar JS file."
-    )
+    parser = argparse.ArgumentParser(description="Extract shapes from a draw.io sidebar JS file.")
     parser.add_argument("file", help="Path to the sidebar JS file")
     parser.add_argument(
         "-o",

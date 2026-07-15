@@ -229,9 +229,8 @@ class CodexRunner:
         if not isinstance(auth_payload, dict):
             raise EvalError("Codex authentication must be a JSON object")
         tokens = auth_payload.get("tokens")
-        if (
-            auth_payload.get("auth_mode") in {None, "chatgpt", "chatgptAuthTokens"}
-            and isinstance(tokens, dict)
+        if auth_payload.get("auth_mode") in {None, "chatgpt", "chatgptAuthTokens"} and isinstance(
+            tokens, dict
         ):
             # External-token mode prevents this isolated copy from rotating the user's
             # refresh token while still supporting authenticated evaluator turns.
@@ -416,18 +415,14 @@ class CodexRunner:
         events_path.write_text(stdout, encoding="utf-8")
         stderr_path.write_text(stderr, encoding="utf-8")
         events, parse_errors = _load_events(stdout)
-        activation_marker = (
-            f"skills/{self.skill_dir.name}/SKILL.md" if with_skill else None
-        )
+        activation_marker = f"skills/{self.skill_dir.name}/SKILL.md" if with_skill else None
         summary = _event_summary(
             events,
             activation_marker=activation_marker,
             activation_name=self.skill_dir.name if with_skill else None,
         )
         if output_message.is_file():
-            summary["final_response"] = output_message.read_text(
-                encoding="utf-8", errors="replace"
-            )
+            summary["final_response"] = output_message.read_text(encoding="utf-8", errors="replace")
 
         status = "timeout" if timed_out else "completed" if exit_code == 0 else "failed"
         return {
@@ -506,9 +501,7 @@ class CodexRunner:
         events_text = Path(run["events_path"]).read_text(encoding="utf-8", errors="replace")
         events, _errors = _load_events(events_text)
         workspace = str(Path(run["workspace"]).resolve())
-        execution_workspace = str(
-            Path(run.get("execution_workspace", run["workspace"])).resolve()
-        )
+        execution_workspace = str(Path(run.get("execution_workspace", run["workspace"])).resolve())
         run_root = str(Path(execution_workspace).parent.resolve())
         runtime_home = str(run.get("runtime_home", "")).replace("\\", "/")
         replacements = {
@@ -558,9 +551,7 @@ class CodexRunner:
                 }
             )
         final = _scrub(run.get("final_response", ""), replacements)
-        if _contains_instruction_excerpt(
-            final, getattr(self, "runtime_instruction_texts", ())
-        ):
+        if _contains_instruction_excerpt(final, getattr(self, "runtime_instruction_texts", ())):
             final = "<REDACTED: final response included skill instructions>"
         return {
             "status": run["status"],
@@ -644,9 +635,7 @@ class CodexRunner:
         workspace_root = Path(tempfile.mkdtemp(prefix="skill-eval-judge-workspace-"))
         workspace = workspace_root / "workspace"
         workspace.mkdir()
-        flip = int(
-            hashlib.sha256(f"{behavior_case.id}:{repeat}".encode()).hexdigest(), 16
-        ) % 2
+        flip = int(hashlib.sha256(f"{behavior_case.id}:{repeat}".encode()).hexdigest(), 16) % 2
         if flip:
             candidates = {
                 "A": self._evidence_bundle(baseline_run),
@@ -664,8 +653,7 @@ class CodexRunner:
             "task": behavior_case.prompt,
             "expected_behavior": behavior_case.expected_behavior,
             "checks": [
-                {"index": index, "text": check}
-                for index, check in enumerate(behavior_case.checks)
+                {"index": index, "text": check} for index, check in enumerate(behavior_case.checks)
             ],
             "candidates": candidates,
             "grading_policy": {
@@ -748,7 +736,11 @@ class CodexRunner:
                         {
                             "index": index,
                             "check": check_text,
-                            "passed": True if outcome == "pass" else False if outcome == "fail" else None,
+                            "passed": True
+                            if outcome == "pass"
+                            else False
+                            if outcome == "fail"
+                            else None,
                             "confidence": item.get("confidence", 0),
                             "evidence": item.get("evidence", ""),
                         }
@@ -756,9 +748,7 @@ class CodexRunner:
 
         status = (
             "completed"
-            if executed["status"] == "completed"
-            and judgment is not None
-            and not validation_errors
+            if executed["status"] == "completed" and judgment is not None and not validation_errors
             else "invalid"
             if executed["status"] == "completed"
             else executed["status"]

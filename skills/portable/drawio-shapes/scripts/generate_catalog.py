@@ -7,6 +7,7 @@ import argparse
 import json
 import re
 from pathlib import Path
+from typing import Any
 
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 WORKING_ROOT = SKILL_ROOT / "working"
@@ -137,7 +138,7 @@ DISPLAY_NAMES = {
     },
 }
 
-PROVIDERS = {
+PROVIDERS: dict[str, dict[str, Any]] = {
     "AWS4": {
         "library": "AWS4",
         "fragment_name": "aws4-shapes.generated.md",
@@ -228,13 +229,17 @@ def display_size(library: str, category: str, entry: dict) -> tuple[int, int]:
     def fallback(value: object) -> int:
         if value is None:
             return 50
+        if not isinstance(value, (str, int, float)):
+            raise TypeError(f"Unsupported shape dimension: {value!r}")
         float_value = float(value)
         if float_value <= 5:
             return int(round(float_value * 100))
         return int(round(float_value))
 
     width = int(round(entry["width"])) if "width" in entry else fallback(entry.get("width_scale"))
-    height = int(round(entry["height"])) if "height" in entry else fallback(entry.get("height_scale"))
+    height = (
+        int(round(entry["height"])) if "height" in entry else fallback(entry.get("height_scale"))
+    )
 
     if library == "GCP2" and category.startswith("Icons") and max(width, height) > 100:
         return 50, 50
@@ -320,8 +325,10 @@ def load_provider_categories(config: dict, input_dir: Path) -> list[tuple[str, l
     return categories
 
 
-def dedupe_entries(library: str, categories: list[tuple[str, list[dict]]]):
-    flattened = []
+def dedupe_entries(
+    library: str, categories: list[tuple[str, list[dict]]]
+) -> tuple[list[tuple[str, list[dict]]], int, int, int]:
+    flattened: list[dict[str, Any]] = []
     total_before = 0
 
     for category, entries in categories:
@@ -338,7 +345,7 @@ def dedupe_entries(library: str, categories: list[tuple[str, list[dict]]]):
                 }
             )
 
-    best_by_key = {}
+    best_by_key: dict[tuple[str, str], dict[str, Any]] = {}
     for item in flattened:
         current = best_by_key.get(item["key"])
         if current is None or item["area"] < current["area"]:
@@ -347,10 +354,10 @@ def dedupe_entries(library: str, categories: list[tuple[str, list[dict]]]):
     keep_indexes = {item["index"] for item in best_by_key.values()}
     removed_duplicates = total_before - len(keep_indexes)
 
-    deduped = []
+    deduped: list[tuple[str, list[dict]]] = []
     removed_categories = 0
     for category, _ in categories:
-        kept = []
+        kept: list[dict] = []
         for item in flattened:
             if item["category"] == category and item["index"] in keep_indexes:
                 kept.append(item["entry"])
@@ -448,7 +455,7 @@ def main() -> None:
                 f"wrote {fragment_path}"
             )
     except RuntimeError as err:
-        raise SystemExit(str(err))
+        raise SystemExit(str(err)) from None
 
 
 if __name__ == "__main__":

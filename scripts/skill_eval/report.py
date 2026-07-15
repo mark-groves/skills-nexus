@@ -113,8 +113,8 @@ def render_markdown(result: dict[str, Any]) -> str:
                 skill_grade = skill_grades[index] if index < len(skill_grades) else {}
                 base_grade = baseline_grades[index] if index < len(baseline_grades) else {}
                 escaped_check = check.replace("|", "\\|")
-                evidence = str(skill_grade.get("evidence", "")).replace("|", "\\|").replace(
-                    "\n", " "
+                evidence = (
+                    str(skill_grade.get("evidence", "")).replace("|", "\\|").replace("\n", " ")
                 )
                 lines.append(
                     f"| {escaped_check} | {_mark(skill_grade.get('passed'))} | "
@@ -188,15 +188,19 @@ def render_html(result: dict[str, Any]) -> str:
             baseline_final = html.escape(case["baseline_run"].get("final_response", ""))
             behavior_sections += f"""
             <details>
-              <summary>Behavior {html.escape(str(case['case_id']))} · repeat {case['repeat']} · fidelity {html.escape(case['fixture_fidelity'])}</summary>
+              <summary>Behavior {html.escape(str(case["case_id"]))} · repeat {case["repeat"]} · fidelity {html.escape(case["fixture_fidelity"])}</summary>
               <table><thead><tr><th>Check</th><th>Skill</th><th>Baseline</th><th>Skill evidence</th></tr></thead><tbody>{rows}</tbody></table>
               <div class="columns"><div><h4>Skill response</h4><pre>{skill_final}</pre></div><div><h4>Baseline response</h4><pre>{baseline_final}</pre></div></div>
             </details>
             """
 
-    warnings = "".join(
-        f"<li>{html.escape(warning)}</li>" for warning in result["integrity"].get("warnings", [])
-    ) or "<li>No framework integrity warnings.</li>"
+    warnings = (
+        "".join(
+            f"<li>{html.escape(warning)}</li>"
+            for warning in result["integrity"].get("warnings", [])
+        )
+        or "<li>No framework integrity warnings.</li>"
+    )
     summary_cards = [
         ("Absolute efficacy", _percent(profile["absolute_efficacy"])),
         ("Activation quality", _percent(profile["activation_quality"])),
@@ -211,7 +215,7 @@ def render_html(result: dict[str, Any]) -> str:
     trigger_section = (
         f"""
         <section><h2>Triggering</h2>
-        <p>Balanced accuracy {_percent(trigger['summary']['balanced_accuracy'])}; recall {_percent(trigger['summary']['recall'])}; specificity {_percent(trigger['summary']['specificity'])}.</p>
+        <p>Balanced accuracy {_percent(trigger["summary"]["balanced_accuracy"])}; recall {_percent(trigger["summary"]["recall"])}; specificity {_percent(trigger["summary"]["specificity"])}.</p>
         <table><thead><tr><th>Case</th><th>Expected</th><th>Activation</th><th>Result</th><th>Query</th></tr></thead><tbody>{trigger_rows}</tbody></table></section>
         """
         if trigger
@@ -228,7 +232,7 @@ def render_html(result: dict[str, Any]) -> str:
 
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Skill efficacy · {html.escape(result['skill']['name'])}</title>
+<title>Skill efficacy · {html.escape(result["skill"]["name"])}</title>
 <style>
 :root{{--ink:#182126;--muted:#607078;--paper:#f5f2ea;--panel:#fffdf8;--accent:#006f62;--line:#d8d4ca}}
 *{{box-sizing:border-box}}body{{margin:0;background:var(--paper);color:var(--ink);font:15px/1.55 ui-sans-serif,system-ui,sans-serif}}
@@ -239,13 +243,13 @@ table{{width:100%;border-collapse:collapse;background:var(--panel);margin:12px 0
 details{{background:var(--panel);border:1px solid var(--line);border-radius:10px;margin:12px 0;padding:12px}}summary{{cursor:pointer;font-weight:700}}pre{{white-space:pre-wrap;word-break:break-word;background:#182126;color:#ecf3ef;padding:14px;border-radius:8px;max-height:420px;overflow:auto}}
 .columns{{display:grid;grid-template-columns:1fr 1fr;gap:16px}}code{{background:#e7e3d8;padding:.12rem .35rem;border-radius:4px}}@media(max-width:760px){{.columns{{grid-template-columns:1fr}}}}
 </style></head><body><main>
-<div class="eyebrow">Skills Nexus evaluation</div><h1>{html.escape(result['skill']['name'])}</h1>
-<p><span class="verdict">{html.escape(profile['verdict'])}</span> Run <code>{html.escape(result['run_id'])}</code> · {html.escape(result['generated_at'])}</p>
-<div class="cards">{cards}</div><p>{html.escape(profile['formula'])} {html.escape(profile['note'])}</p>
+<div class="eyebrow">Skills Nexus evaluation</div><h1>{html.escape(result["skill"]["name"])}</h1>
+<p><span class="verdict">{html.escape(profile["verdict"])}</span> Run <code>{html.escape(result["run_id"])}</code> · {html.escape(result["generated_at"])}</p>
+<div class="cards">{cards}</div><p>{html.escape(profile["formula"])} {html.escape(profile["note"])}</p>
 {trigger_section}
-<section><h2>Behavior and lift</h2>{behavior_intro}{behavior_sections or '<p>Behavior suite was not selected.</p>'}</section>
-<section><h2>Integrity and limitations</h2><ul>{warnings}</ul><p>Eval ground truth withheld: <code>{result['integrity']['evals_withheld']}</code> · fresh contexts: <code>{result['integrity']['fresh_contexts']}</code> · peer parity: <code>{result['integrity']['peer_skill_parity']}</code> · randomized paired grading: <code>{result['integrity']['blind_paired_grading']}</code></p></section>
-<section><h2>Reproduce</h2><pre>{html.escape(result['reproduce_command'])}</pre></section>
+<section><h2>Behavior and lift</h2>{behavior_intro}{behavior_sections or "<p>Behavior suite was not selected.</p>"}</section>
+<section><h2>Integrity and limitations</h2><ul>{warnings}</ul><p>Eval ground truth withheld: <code>{result["integrity"]["evals_withheld"]}</code> · fresh contexts: <code>{result["integrity"]["fresh_contexts"]}</code> · peer parity: <code>{result["integrity"]["peer_skill_parity"]}</code> · randomized paired grading: <code>{result["integrity"]["blind_paired_grading"]}</code></p></section>
+<section><h2>Reproduce</h2><pre>{html.escape(result["reproduce_command"])}</pre></section>
 </main></body></html>"""
 
 

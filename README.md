@@ -141,6 +141,35 @@ For project-scoped installs, pass `--scope project --project-root /path/to/proje
 
 `scripts/check-skills.sh` runs the repository validator in offline, deterministic mode. It checks the skill directory contract, supported frontmatter, Codex harness frontmatter constraints, portability rules, thin harness manifests, deployment behavior, and repository-specific generated-content workflows.
 
+## Continuous Integration
+
+GitHub Actions runs the repository tests and contract validator on Python 3.11
+and 3.14. A separate quality gate runs Ruff, Ruff's formatter check, mypy,
+ShellCheck, actionlint, Bandit, and zizmor. Development-tool dependencies are
+audited with `pip-audit`, pull requests receive GitHub dependency review, and
+CodeQL performs extended Python security analysis on changes plus a weekly
+schedule.
+
+Actions are pinned to immutable commit SHAs and use read-only permissions unless
+a job needs the CodeQL `security-events: write` permission. Dependabot proposes
+weekly updates for both the pinned actions and Python quality tools.
+
+Run the same checks locally with Python 3.11 or newer:
+
+```bash
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install -r requirements-dev.txt
+bash scripts/check-skills.sh
+bash scripts/check-quality.sh
+pip-audit --requirement requirements-dev.txt --strict
+```
+
+For protected branches, require `Static and security analysis`, both Python test
+matrix jobs, `Python dependency audit`, `Dependency review`, and `CodeQL
+(Python)`. GitHub treats the dependency-review job as skipped (and therefore
+successful) for non-pull-request events.
+
 ## Skill Evals
 
 `scripts/eval_skills.py` turns each skill's `evals/evals.json` into an

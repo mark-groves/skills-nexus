@@ -10,9 +10,10 @@ import re
 import shutil
 import statistics
 import subprocess
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 
 class EvalError(RuntimeError):
@@ -60,14 +61,10 @@ def discover_repository_skills(repo_root: Path) -> tuple[Path, ...]:
     discovered: list[Path] = []
     portable = skills_root / "portable"
     if portable.is_dir():
-        discovered.extend(
-            path.parent.resolve() for path in portable.glob("*/SKILL.md")
-        )
+        discovered.extend(path.parent.resolve() for path in portable.glob("*/SKILL.md"))
     codex_harness = skills_root / "harness" / "codex"
     if codex_harness.is_dir():
-        discovered.extend(
-            path.parent.resolve() for path in codex_harness.glob("*/SKILL.md")
-        )
+        discovered.extend(path.parent.resolve() for path in codex_harness.glob("*/SKILL.md"))
     return tuple(sorted(set(discovered), key=lambda path: str(path)))
 
 
@@ -89,9 +86,7 @@ def resolve_skill(repo_root: Path, selector: str) -> Path:
     if (exact / "SKILL.md").is_file():
         return exact
 
-    matches = [
-        path for path in discover_repository_skills(repo_root) if path.name == selector
-    ]
+    matches = [path for path in discover_repository_skills(repo_root) if path.name == selector]
     if not matches:
         raise EvalError(
             f"No skill matches {selector!r}. Use a short name such as 'commit', "
@@ -153,23 +148,17 @@ def load_eval_spec(skill_dir: Path) -> EvalSpec:
         if not isinstance(prompt, str) or not prompt.strip():
             raise EvalError(f"behavior_evals[{index}].prompt must be a non-empty string")
         if not isinstance(expected_behavior, str) or not expected_behavior.strip():
-            raise EvalError(
-                f"behavior_evals[{index}].expected_behavior must be a non-empty string"
-            )
+            raise EvalError(f"behavior_evals[{index}].expected_behavior must be a non-empty string")
         if not isinstance(fixtures, list) or not all(
             isinstance(x, str) and x.strip() for x in fixtures
         ):
-            raise EvalError(
-                f"behavior_evals[{index}].fixtures must be a list of non-empty strings"
-            )
+            raise EvalError(f"behavior_evals[{index}].fixtures must be a list of non-empty strings")
         if (
             not isinstance(checks, list)
             or not checks
             or not all(isinstance(x, str) and x.strip() for x in checks)
         ):
-            raise EvalError(
-                f"behavior_evals[{index}].checks must be a non-empty list of strings"
-            )
+            raise EvalError(f"behavior_evals[{index}].checks must be a non-empty list of strings")
         behavior_cases.append(
             BehaviorCase(
                 case_id,
@@ -358,7 +347,11 @@ def materialize_fixtures(
         if source.is_symlink():
             raise EvalError(f"Fixture sources may not be symlinks: {source}")
 
-        if source.is_file() and source.suffix.lower() == ".md" and source.parent == skill_dir / "evals":
+        if (
+            source.is_file()
+            and source.suffix.lower() == ".md"
+            and source.parent == skill_dir / "evals"
+        ):
             scenario_dir.mkdir(parents=True, exist_ok=True)
             destination = scenario_dir / source.name
             destination.write_text(
@@ -526,9 +519,7 @@ def snapshot_workspace(workspace: Path, *, preview_bytes: int = 12_000) -> dict[
                 prefix = data[:prefix_bytes].decode("utf-8", errors="ignore")
                 suffix = data[-suffix_bytes:].decode("utf-8", errors="ignore")
                 omitted = len(data) - prefix_bytes - suffix_bytes
-                record["text"] = (
-                    f"{prefix}\n... <{omitted} bytes omitted> ...\n{suffix}"
-                )
+                record["text"] = f"{prefix}\n... <{omitted} bytes omitted> ...\n{suffix}"
                 record["text_truncated"] = True
         except UnicodeDecodeError:
             pass
@@ -593,9 +584,7 @@ def wilson_interval(successes: int, total: int, z: float = 1.96) -> list[float] 
     centre = (proportion + z * z / (2 * total)) / denominator
     margin = (
         z
-        * math.sqrt(
-            proportion * (1 - proportion) / total + z * z / (4 * total * total)
-        )
+        * math.sqrt(proportion * (1 - proportion) / total + z * z / (4 * total * total))
         / denominator
     )
     return [max(0.0, centre - margin), min(1.0, centre + margin)]
@@ -690,7 +679,9 @@ def summarize_trigger_results(
     }
 
 
-def _grade_counts(grades: Iterable[dict[str, Any]]) -> dict[str, int | float | None]:
+def _grade_counts(
+    grades: Iterable[dict[str, Any]],
+) -> dict[str, int | float | list[float] | None]:
     items = list(grades)
     passed = sum(item.get("passed") is True for item in items)
     failed = sum(item.get("passed") is False for item in items)
@@ -724,9 +715,7 @@ def summarize_behavior_results(results: list[dict[str, Any]]) -> dict[str, Any]:
         if skill or baseline:
             graded_cases += 1
         skill_case_pass = bool(skill) and all(item.get("passed") is True for item in skill)
-        baseline_case_pass = bool(baseline) and all(
-            item.get("passed") is True for item in baseline
-        )
+        baseline_case_pass = bool(baseline) and all(item.get("passed") is True for item in baseline)
         skill_case_passes += skill_case_pass
         baseline_case_passes += baseline_case_pass
         for skill_item, baseline_item in zip(skill, baseline, strict=False):
@@ -816,13 +805,9 @@ def efficacy_profile(
     trigger_summary: dict[str, Any] | None,
     behavior_summary: dict[str, Any] | None,
 ) -> dict[str, Any]:
-    activation = (
-        trigger_summary.get("balanced_accuracy") if trigger_summary is not None else None
-    )
+    activation = trigger_summary.get("balanced_accuracy") if trigger_summary is not None else None
     execution = (
-        behavior_summary.get("skill", {}).get("pass_rate")
-        if behavior_summary is not None
-        else None
+        behavior_summary.get("skill", {}).get("pass_rate") if behavior_summary is not None else None
     )
     lift = behavior_summary.get("absolute_lift") if behavior_summary is not None else None
     coverage = (

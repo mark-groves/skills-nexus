@@ -1,0 +1,7 @@
+# CI and local quality tooling. Keep exact pins so Dependabot changes are reviewable.
+actionlint-py==1.7.12.24
+bandit[toml]==1.9.4
+mypy==2.3.0
+pip-audit==2.10.1
+ruff==0.15.21
+zizmor==1.27.0
