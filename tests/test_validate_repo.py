@@ -6,7 +6,6 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-
 REPO_DIR = Path(__file__).resolve().parents[1]
 MODULE_PATH = REPO_DIR / "scripts" / "validate_repo.py"
 SPEC = importlib.util.spec_from_file_location("validate_repo", MODULE_PATH)
@@ -282,9 +281,7 @@ class ValidateRepoFrontmatterTests(unittest.TestCase):
             harness_skills_dir = Path(temp_dir) / "skills" / "harness"
             codex_root = harness_skills_dir / "codex"
             codex_root.mkdir(parents=True)
-            with mock.patch.object(
-                validate_repo, "HARNESS_SKILLS_DIR", harness_skills_dir
-            ):
+            with mock.patch.object(validate_repo, "HARNESS_SKILLS_DIR", harness_skills_dir):
                 skill_dir = self.write_skill_with_frontmatter(
                     codex_root,
                     "codex-frontmatter-skill",
@@ -298,7 +295,10 @@ class ValidateRepoFrontmatterTests(unittest.TestCase):
                 validate_repo.validate_skill_contract(skill_dir)
 
         self.assertTrue(
-            any("Codex harness skills must keep runtime frontmatter" in error for error in validate_repo.ERRORS),
+            any(
+                "Codex harness skills must keep runtime frontmatter" in error
+                for error in validate_repo.ERRORS
+            ),
             validate_repo.ERRORS,
         )
 
@@ -307,9 +307,7 @@ class ValidateRepoFrontmatterTests(unittest.TestCase):
             harness_skills_dir = Path(temp_dir) / "skills" / "harness"
             codex_root = harness_skills_dir / "codex"
             codex_root.mkdir(parents=True)
-            with mock.patch.object(
-                validate_repo, "HARNESS_SKILLS_DIR", harness_skills_dir
-            ):
+            with mock.patch.object(validate_repo, "HARNESS_SKILLS_DIR", harness_skills_dir):
                 skill_dir = self.write_skill_with_frontmatter(
                     codex_root,
                     "codex-metadata-skill",
@@ -501,9 +499,7 @@ class ValidateRepoEvalTests(unittest.TestCase):
 
             validate_repo.validate_evals(skill_dir)
 
-        path_errors = [
-            error for error in validate_repo.ERRORS if "must be skill-relative" in error
-        ]
+        path_errors = [error for error in validate_repo.ERRORS if "must be skill-relative" in error]
         self.assertEqual(
             len(path_errors),
             4,
@@ -532,12 +528,8 @@ class ValidateRepoSkillLayoutTests(unittest.TestCase):
 
             with (
                 mock.patch.object(validate_repo, "SKILLS_DIR", skills_dir),
-                mock.patch.object(
-                    validate_repo, "PORTABLE_SKILLS_DIR", portable_skills_dir
-                ),
-                mock.patch.object(
-                    validate_repo, "HARNESS_SKILLS_DIR", harness_skills_dir
-                ),
+                mock.patch.object(validate_repo, "PORTABLE_SKILLS_DIR", portable_skills_dir),
+                mock.patch.object(validate_repo, "HARNESS_SKILLS_DIR", harness_skills_dir),
                 mock.patch.object(validate_repo, "validate_skill_contract"),
             ):
                 valid_skills = validate_repo.validate_skills_root()

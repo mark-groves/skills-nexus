@@ -97,7 +97,14 @@ def assemble_import(target_path: Path, fragment_text: str, library: str) -> str:
 
     header, _ = target_text.split(marker, 1)
     refreshed_header = refresh_header_summary(library, header, count_entries(fragment_text))
-    return refreshed_header.rstrip() + "\n\n" + GENERATED_MARKER + "\n\n" + fragment_text.strip() + "\n"
+    return (
+        refreshed_header.rstrip()
+        + "\n\n"
+        + GENERATED_MARKER
+        + "\n\n"
+        + fragment_text.strip()
+        + "\n"
+    )
 
 
 def normalize_provider_args(values: list[str]) -> list[str]:
@@ -166,7 +173,7 @@ def main() -> None:
             target_path.write_text(rendered, encoding="utf-8")
             print(f"{config['library']}: imported {fragment_path} into {target_path}")
     except RuntimeError as err:
-        raise SystemExit(str(err))
+        raise SystemExit(str(err)) from None
 
 
 if __name__ == "__main__":

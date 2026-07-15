@@ -5,16 +5,15 @@ from __future__ import annotations
 
 import argparse
 import concurrent.futures
-import json
-import os
 import shlex
-import shutil
 import subprocess
 import sys
 import tempfile
-from datetime import datetime, timezone
+from collections.abc import Callable
+from datetime import UTC, datetime
+from functools import partial
 from pathlib import Path
-from typing import Any, Callable, TypeVar
+from typing import Any, TypeVar
 
 from skill_eval.codex_runner import CodexRunner
 from skill_eval.core import (
@@ -36,9 +35,8 @@ from skill_eval.core import (
 )
 from skill_eval.report import write_reports
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
-T = TypeVar("T")
+T = TypeVar("T", TriggerCase, BehaviorCase)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -49,9 +47,7 @@ def build_parser() -> argparse.ArgumentParser:
         )
     )
     parser.add_argument("--skill", required=True, help="Short name, full skill id, or directory")
-    parser.add_argument(
-        "--suite", choices=("all", "trigger", "behavior"), default="all"
-    )
+    parser.add_argument("--suite", choices=("all", "trigger", "behavior"), default="all")
     parser.add_argument("--trigger-case", action="append", default=[], metavar="ID")
     parser.add_argument("--behavior-case", action="append", default=[], metavar="ID")
     parser.add_argument("--max-trigger-cases", type=int)
@@ -118,11 +114,9 @@ def _select_cases(
     *,
     kind: str,
 ) -> tuple[T, ...]:
-    by_id = {str(getattr(case, "id")): case for case in cases}
+    by_id = {case.id: case for case in cases}
     if requested:
-        duplicates = sorted(
-            case_id for case_id in set(requested) if requested.count(case_id) > 1
-        )
+        duplicates = sorted(case_id for case_id in set(requested) if requested.count(case_id) > 1)
         if duplicates:
             raise EvalError(f"Duplicate {kind} case id(s): {', '.join(duplicates)}")
         unknown = [case_id for case_id in requested if case_id not in by_id]
@@ -196,7 +190,7 @@ def _fixture_error_run(
     *, case_id: str, repeat: int, condition: str, run_dir: Path, fidelity: str
 ) -> dict[str, Any]:
     run_dir.mkdir(parents=True, exist_ok=True)
-    result = {
+    result: dict[str, Any] = {
         "status": "fixture_error",
         "exit_code": None,
         "duration_seconds": 0.0,
@@ -228,7 +222,10 @@ def _unknown_grades(case: BehaviorCase, reason: str) -> dict[str, list[dict[str,
         }
         for index, check in enumerate(case.checks)
     ]
-    return {"skill": [dict(value) for value in values], "baseline": [dict(value) for value in values]}
+    return {
+        "skill": [dict(value) for value in values],
+        "baseline": [dict(value) for value in values],
+    }
 
 
 def _safe_call(
@@ -244,7 +241,7 @@ def _safe_call(
         return call()
     except Exception as exc:  # preserve other cases and produce inspectable evidence
         run_dir.mkdir(parents=True, exist_ok=True)
-        result = {
+        result: dict[str, Any] = {
             "status": "framework_error",
             "exit_code": None,
             "duration_seconds": 0.0,
@@ -295,8 +292,7 @@ def _print_plan(
                     allow_setup_scripts=args.allow_fixture_scripts,
                 )
             details = ", ".join(
-                f"{record['reference']} [{record['status']}/{record['mode']}]"
-                for record in records
+                f"{record['reference']} [{record['status']}/{record['mode']}]" for record in records
             )
             print(f"  {case.id}: {details}")
 
@@ -333,7 +329,7 @@ def run_evaluation(args: argparse.Namespace) -> tuple[dict[str, Any], Path]:
 
     runtime_digest = stable_digest(skill_dir, exclude={"evals", "working", "__pycache__"})
     spec_digest = stable_digest(spec.path)
-    timestamp = datetime.now(timezone.utc)
+    timestamp = datetime.now(UTC)
     run_id = f"{timestamp.strftime('%Y%m%dT%H%M%SZ')}-{runtime_digest[:8]}"
     output_dir = args.output_root.resolve() / spec.skill_name / run_id
     suffix = 1
@@ -351,11 +347,7 @@ def run_evaluation(args: argparse.Namespace) -> tuple[dict[str, Any], Path]:
         timeout_seconds=args.timeout,
         sandbox=args.sandbox,
         peer_skills=(
-            tuple(
-                path
-                for path in discover_repository_skills(repo_root)
-                if path != skill_dir
-            )
+            tuple(path for path in discover_repository_skills(repo_root) if path != skill_dir)
             if args.skill_universe == "repository"
             else ()
         ),
@@ -364,30 +356,33 @@ def run_evaluation(args: argparse.Namespace) -> tuple[dict[str, Any], Path]:
 
     trigger_runs: list[dict[str, Any]] = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as executor:
-        futures: dict[concurrent.futures.Future[dict[str, Any]], tuple[str, int]] = {}
-        for case in trigger_cases:
+        trigger_futures: dict[concurrent.futures.Future[dict[str, Any]], tuple[str, int]] = {}
+        for trigger_case in trigger_cases:
             for repeat in range(1, args.trigger_repeats + 1):
-                run_dir = output_dir / "runs" / "trigger" / case.id / f"repeat-{repeat}" / "skill"
+                run_dir = (
+                    output_dir / "runs" / "trigger" / trigger_case.id / f"repeat-{repeat}" / "skill"
+                )
                 future = executor.submit(
                     _safe_call,
-                    lambda c=case, r=repeat, d=run_dir: runner.run_task(
-                        run_dir=d,
+                    partial(
+                        runner.run_task,
+                        run_dir=run_dir,
                         workspace_template=None,
-                        prompt=c.query,
+                        prompt=trigger_case.query,
                         case_type="trigger",
-                        case_id=c.id,
-                        repeat=r,
+                        case_id=trigger_case.id,
+                        repeat=repeat,
                         condition="skill",
                     ),
                     case_type="trigger",
-                    case_id=case.id,
+                    case_id=trigger_case.id,
                     repeat=repeat,
                     condition="skill",
                     run_dir=run_dir,
                 )
-                futures[future] = (case.id, repeat)
-        for future in concurrent.futures.as_completed(futures):
-            case_id, repeat = futures[future]
+                trigger_futures[future] = (trigger_case.id, repeat)
+        for future in concurrent.futures.as_completed(trigger_futures):
+            case_id, repeat = trigger_futures[future]
             run = future.result()
             trigger_runs.append(run)
             print(
@@ -398,14 +393,14 @@ def run_evaluation(args: argparse.Namespace) -> tuple[dict[str, Any], Path]:
 
     behavior_jobs: list[dict[str, Any]] = []
     fixture_warnings: list[str] = []
-    for case in behavior_cases:
+    for behavior_case in behavior_cases:
         for repeat in range(1, args.behavior_repeats + 1):
-            case_root = output_dir / "runs" / "behavior" / case.id / f"repeat-{repeat}"
+            case_root = output_dir / "runs" / "behavior" / behavior_case.id / f"repeat-{repeat}"
             template = case_root / "_fixture-template"
             template.mkdir(parents=True)
             records, setup_scripts = materialize_fixtures(
                 skill_dir,
-                case.fixtures,
+                behavior_case.fixtures,
                 template,
                 allow_setup_scripts=args.allow_fixture_scripts,
             )
@@ -421,10 +416,12 @@ def run_evaluation(args: argparse.Namespace) -> tuple[dict[str, Any], Path]:
             fixture_manifest["fidelity"] = fidelity
             json_dump(case_root / "fixture.json", fixture_manifest)
             if fidelity in {"missing", "setup-failed", "degraded", "description-only"}:
-                fixture_warnings.append(f"behavior {case.id} repeat {repeat}: fixture fidelity {fidelity}")
+                fixture_warnings.append(
+                    f"behavior {behavior_case.id} repeat {repeat}: fixture fidelity {fidelity}"
+                )
             behavior_jobs.append(
                 {
-                    "case": case,
+                    "case": behavior_case,
                     "repeat": repeat,
                     "root": case_root,
                     "template": template,
@@ -434,16 +431,18 @@ def run_evaluation(args: argparse.Namespace) -> tuple[dict[str, Any], Path]:
             )
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as executor:
-        futures = {}
+        behavior_futures: dict[
+            concurrent.futures.Future[dict[str, Any]], tuple[dict[str, Any], str]
+        ] = {}
         for job in behavior_jobs:
-            case = job["case"]
+            behavior_case = job["case"]
             repeat = job["repeat"]
             fidelity = job["fidelity"]
             for condition in ("skill", "baseline"):
                 run_dir = job["root"] / condition
                 if fidelity in {"missing", "setup-failed"}:
                     job[f"{condition}_run"] = _fixture_error_run(
-                        case_id=case.id,
+                        case_id=behavior_case.id,
                         repeat=repeat,
                         condition=condition,
                         run_dir=run_dir,
@@ -452,51 +451,51 @@ def run_evaluation(args: argparse.Namespace) -> tuple[dict[str, Any], Path]:
                     continue
                 future = executor.submit(
                     _safe_call,
-                    lambda c=case, r=repeat, d=run_dir, cond=condition, t=job["template"]: runner.run_task(
-                        run_dir=d,
-                        workspace_template=t,
-                        prompt=_behavior_prompt(c),
+                    partial(
+                        runner.run_task,
+                        run_dir=run_dir,
+                        workspace_template=job["template"],
+                        prompt=_behavior_prompt(behavior_case),
                         case_type="behavior",
-                        case_id=c.id,
-                        repeat=r,
-                        condition=cond,
+                        case_id=behavior_case.id,
+                        repeat=repeat,
+                        condition=condition,
                     ),
                     case_type="behavior",
-                    case_id=case.id,
+                    case_id=behavior_case.id,
                     repeat=repeat,
                     condition=condition,
                     run_dir=run_dir,
                 )
-                futures[future] = (job, condition)
-        for future in concurrent.futures.as_completed(futures):
-            job, condition = futures[future]
+                behavior_futures[future] = (job, condition)
+        for future in concurrent.futures.as_completed(behavior_futures):
+            job, condition = behavior_futures[future]
             run = future.result()
             job[f"{condition}_run"] = run
             print(
-                f"behavior {job['case'].id} repeat {job['repeat']} {condition}: "
-                f"{run['status']}",
+                f"behavior {job['case'].id} repeat {job['repeat']} {condition}: {run['status']}",
                 flush=True,
             )
 
     behavior_results: list[dict[str, Any]] = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as executor:
-        futures = {}
+        judge_futures: dict[concurrent.futures.Future[dict[str, Any]], dict[str, Any]] = {}
         for job in behavior_jobs:
-            case = job["case"]
+            behavior_case = job["case"]
             skill_run = job["skill_run"]
             baseline_run = job["baseline_run"]
             if skill_run["status"] == "fixture_error" or baseline_run["status"] == "fixture_error":
                 result = {
-                    "case_id": case.id,
+                    "case_id": behavior_case.id,
                     "repeat": job["repeat"],
-                    "prompt": case.prompt,
-                    "expected_behavior": case.expected_behavior,
-                    "checks": list(case.checks),
+                    "prompt": behavior_case.prompt,
+                    "expected_behavior": behavior_case.expected_behavior,
+                    "checks": list(behavior_case.checks),
                     "fixture_fidelity": job["fidelity"],
                     "fixture": job["fixture"],
                     "skill_run": skill_run,
                     "baseline_run": baseline_run,
-                    "grades": _unknown_grades(case, "Fixture preparation failed"),
+                    "grades": _unknown_grades(behavior_case, "Fixture preparation failed"),
                     "judge": {"status": "not-run"},
                 }
                 behavior_results.append(result)
@@ -505,31 +504,31 @@ def run_evaluation(args: argparse.Namespace) -> tuple[dict[str, Any], Path]:
             future = executor.submit(
                 runner.grade_pair,
                 grade_dir=grade_dir,
-                behavior_case=case,
+                behavior_case=behavior_case,
                 repeat=job["repeat"],
                 skill_run=skill_run,
                 baseline_run=baseline_run,
             )
-            futures[future] = job
-        for future in concurrent.futures.as_completed(futures):
-            job = futures[future]
-            case = job["case"]
+            judge_futures[future] = job
+        for future in concurrent.futures.as_completed(judge_futures):
+            job = judge_futures[future]
+            behavior_case = job["case"]
             try:
                 judge = future.result()
                 grades = (
                     judge["grades"]
                     if judge.get("status") == "completed"
-                    else _unknown_grades(case, "Paired judgment was invalid or incomplete")
+                    else _unknown_grades(behavior_case, "Paired judgment was invalid or incomplete")
                 )
             except Exception as exc:
                 judge = {"status": "framework_error", "error": f"{type(exc).__name__}: {exc}"}
-                grades = _unknown_grades(case, "Paired judge failed")
+                grades = _unknown_grades(behavior_case, "Paired judge failed")
             result = {
-                "case_id": case.id,
+                "case_id": behavior_case.id,
                 "repeat": job["repeat"],
-                "prompt": case.prompt,
-                "expected_behavior": case.expected_behavior,
-                "checks": list(case.checks),
+                "prompt": behavior_case.prompt,
+                "expected_behavior": behavior_case.expected_behavior,
+                "checks": list(behavior_case.checks),
                 "fixture_fidelity": job["fidelity"],
                 "fixture": job["fixture"],
                 "skill_run": job["skill_run"],
@@ -539,16 +538,14 @@ def run_evaluation(args: argparse.Namespace) -> tuple[dict[str, Any], Path]:
             }
             behavior_results.append(result)
             print(
-                f"judge behavior {case.id} repeat {job['repeat']}: {judge['status']}",
+                f"judge behavior {behavior_case.id} repeat {job['repeat']}: {judge['status']}",
                 flush=True,
             )
 
     trigger_runs.sort(key=lambda run: (run["case_id"], run["repeat"]))
     behavior_results.sort(key=lambda item: (item["case_id"], item["repeat"]))
     trigger_summary = (
-        summarize_trigger_results(
-            trigger_cases, trigger_runs, threshold=args.activation_threshold
-        )
+        summarize_trigger_results(trigger_cases, trigger_runs, threshold=args.activation_threshold)
         if trigger_cases
         else None
     )
@@ -560,9 +557,7 @@ def run_evaluation(args: argparse.Namespace) -> tuple[dict[str, Any], Path]:
         warnings.append("Trigger cases ran once; activation reliability is not measured")
     if behavior_cases and args.behavior_repeats < 2:
         warnings.append("Behavior cases ran once; stochastic variance is not measured")
-    if any(
-        result.get("judge", {}).get("status") != "completed" for result in behavior_results
-    ):
+    if any(result.get("judge", {}).get("status") != "completed" for result in behavior_results):
         warnings.append("One or more paired judgments were unavailable or invalid")
     if args.sandbox == "danger-full-access":
         warnings.append("Behavior runs used danger-full-access sandboxing")
@@ -590,9 +585,7 @@ def run_evaluation(args: argparse.Namespace) -> tuple[dict[str, Any], Path]:
         args.skill_universe,
         "--sandbox",
         args.sandbox,
-        "--allow-fixture-scripts"
-        if args.allow_fixture_scripts
-        else "--no-allow-fixture-scripts",
+        "--allow-fixture-scripts" if args.allow_fixture_scripts else "--no-allow-fixture-scripts",
         "--output-root",
         str(args.output_root),
     ]

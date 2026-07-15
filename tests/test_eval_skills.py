@@ -1,5 +1,5 @@
-import importlib.util
 import contextlib
+import importlib.util
 import io
 import json
 import os
@@ -12,7 +12,6 @@ import textwrap
 import unittest
 from pathlib import Path
 from unittest import mock
-
 
 REPO_DIR = Path(__file__).resolve().parents[1]
 SCRIPT_PATH = REPO_DIR / "scripts" / "eval_skills.py"
@@ -29,9 +28,9 @@ from skill_eval.core import (  # noqa: E402
     TriggerCase,
     discover_repository_skills,
     git_observations,
+    initialize_fixture_repository,
     load_eval_spec,
     materialize_fixtures,
-    initialize_fixture_repository,
     run_fixture_setups,
     sanitized_skill_copy,
     snapshot_workspace,
@@ -148,10 +147,7 @@ class EvalCoreTests(unittest.TestCase):
 
             discovered = discover_repository_skills(repo)
 
-            self.assertEqual(
-                set(discovered),
-                {canonical.resolve(), codex_peer.resolve()},
-            )
+            self.assertEqual(set(discovered), {canonical.resolve(), codex_peer.resolve()})
             self.assertNotIn(embedded.resolve(), discovered)
             self.assertNotIn(other_peer.resolve(), discovered)
 
@@ -200,9 +196,7 @@ class EvalCoreTests(unittest.TestCase):
             (source / "references").mkdir()
             (source / "SKILL.md").write_text("# Skill\n", encoding="utf-8")
             (source / "evals" / "answer.md").write_text("secret\n", encoding="utf-8")
-            (source / "references" / "answer.md").symlink_to(
-                source / "evals" / "answer.md"
-            )
+            (source / "references" / "answer.md").symlink_to(source / "evals" / "answer.md")
 
             destination = root / "installed"
             with self.assertRaisesRegex(EvalError, "may not contain symlinks"):
@@ -241,9 +235,7 @@ class EvalCoreTests(unittest.TestCase):
                 skill, ("state",), workspace, allow_setup_scripts=True
             )
 
-            copied = (workspace / ".eval" / "fixtures" / "state.md").read_text(
-                encoding="utf-8"
-            )
+            copied = (workspace / ".eval" / "fixtures" / "state.md").read_text(encoding="utf-8")
             self.assertIn("dirty file", copied)
             self.assertNotIn("Commit it", copied)
             self.assertEqual(records[0]["mode"], "description_only")
@@ -261,9 +253,7 @@ class EvalCoreTests(unittest.TestCase):
             (skill / "evals" / "state.md").symlink_to(outside)
 
             with self.assertRaisesRegex(EvalError, "may not be symlinks"):
-                materialize_fixtures(
-                    skill, ("state",), workspace, allow_setup_scripts=False
-                )
+                materialize_fixtures(skill, ("state",), workspace, allow_setup_scripts=False)
 
     def test_markdown_recipe_withholds_plain_expected_behavior_label(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -278,13 +268,9 @@ class EvalCoreTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            materialize_fixtures(
-                skill, ("state",), workspace, allow_setup_scripts=True
-            )
+            materialize_fixtures(skill, ("state",), workspace, allow_setup_scripts=True)
 
-            copied = (workspace / ".eval" / "fixtures" / "state.md").read_text(
-                encoding="utf-8"
-            )
+            copied = (workspace / ".eval" / "fixtures" / "state.md").read_text(encoding="utf-8")
             self.assertIn("dirty file", copied)
             self.assertNotIn("Expected behavior", copied)
             self.assertNotIn("expected subject", copied)
@@ -296,17 +282,12 @@ class EvalCoreTests(unittest.TestCase):
             fixture = skill / "evals" / "fixtures" / "repository"
             (fixture / "scripts").mkdir(parents=True)
             (fixture / "setup.sh").write_text("true\n", encoding="utf-8")
-            (fixture / "scripts" / "setup.sh").write_text(
-                "repository content\n", encoding="utf-8"
-            )
+            (fixture / "scripts" / "setup.sh").write_text("repository content\n", encoding="utf-8")
 
             enabled_workspace = root / "enabled"
             enabled_workspace.mkdir()
             enabled_records, enabled_scripts = materialize_fixtures(
-                skill,
-                ("repository",),
-                enabled_workspace,
-                allow_setup_scripts=True,
+                skill, ("repository",), enabled_workspace, allow_setup_scripts=True
             )
             self.assertEqual(enabled_scripts, [fixture / "setup.sh"])
             self.assertTrue((enabled_workspace / "scripts" / "setup.sh").is_file())
@@ -315,10 +296,7 @@ class EvalCoreTests(unittest.TestCase):
             disabled_workspace = root / "disabled"
             disabled_workspace.mkdir()
             disabled_records, disabled_scripts = materialize_fixtures(
-                skill,
-                ("repository",),
-                disabled_workspace,
-                allow_setup_scripts=False,
+                skill, ("repository",), disabled_workspace, allow_setup_scripts=False
             )
             self.assertEqual(disabled_scripts, [])
             self.assertEqual(disabled_records[0]["status"], "degraded")
@@ -333,10 +311,7 @@ class EvalCoreTests(unittest.TestCase):
                 repository = initialize_fixture_repository(workspace)
 
             self.assertFalse(repository["ok"])
-            self.assertEqual(
-                eval_skills._fixture_fidelity([], [], repository),
-                "setup-failed",
-            )
+            self.assertEqual(eval_skills._fixture_fidelity([], [], repository), "setup-failed")
 
     def test_evidence_scrubbing_preserves_skill_name_vocabulary(self) -> None:
         value = "git commit -m 'fix' in /tmp/eval/workspace"
@@ -447,6 +422,81 @@ class EvalCoreTests(unittest.TestCase):
             )
             self.assertEqual(bundle["final_response"], "Created a commit.")
 
+    def test_artifact_skill_instruction_copy_is_redacted(self) -> None:
+        runner = object.__new__(CodexRunner)
+        runner.runtime_skill_names = {"commit"}
+        runner.runtime_instruction_texts = (
+            "# Commit workflow\nAlways inspect the repository before creating a commit.\n",
+        )
+        runner.skill_dir = Path("/skills/commit")
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            events_path = root / "events.jsonl"
+            events_path.write_text("", encoding="utf-8")
+            run = {
+                "events_path": str(events_path),
+                "workspace": str(workspace),
+                "runtime_home": "/tmp/private",
+                "final_response": "Done.",
+                "status": "completed",
+                "artifact_delta": {
+                    "created": [
+                        {
+                            "path": "copied.md",
+                            "text": (
+                                "# Commit workflow\n"
+                                "Always inspect the repository before creating a commit.\n"
+                            ),
+                        }
+                    ],
+                    "modified": [],
+                    "deleted": [],
+                },
+                "git": {"available": False},
+                "duration_seconds": 1.0,
+                "usage": {},
+                "tool_calls": 1,
+            }
+
+            bundle = runner._evidence_bundle(run)
+
+        artifact = bundle["artifact_delta"]["created"][0]
+        self.assertTrue(artifact["text_redacted"])
+        self.assertNotIn("Always inspect", json.dumps(bundle))
+
+    def test_task_workspace_is_preserved_after_external_execution(self) -> None:
+        runner = object.__new__(CodexRunner)
+        runner.sandbox = "workspace-write"
+        runner.model = None
+        with tempfile.TemporaryDirectory() as temp_dir:
+            run_dir = Path(temp_dir) / "run"
+
+            def fake_execute(**kwargs):
+                workspace = kwargs["workspace"]
+                (workspace / "deliverable.bin").write_bytes(bytes(range(256)) * 64)
+                return {
+                    "status": "completed",
+                    "events_path": str(run_dir / "events.jsonl"),
+                }
+
+            with mock.patch.object(runner, "_execute", side_effect=fake_execute):
+                run = runner.run_task(
+                    run_dir=run_dir,
+                    workspace_template=None,
+                    prompt="create a binary deliverable",
+                    case_type="behavior",
+                    case_id="binary",
+                    repeat=1,
+                    condition="baseline",
+                )
+
+            preserved = Path(run["workspace"])
+            executed = Path(run["execution_workspace"])
+            self.assertEqual((preserved / "deliverable.bin").read_bytes(), bytes(range(256)) * 64)
+            self.assertFalse(executed.exists())
+
     def test_shell_expanded_skill_read_redacts_command_output(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -459,9 +509,7 @@ class EvalCoreTests(unittest.TestCase):
                         "type": "item.completed",
                         "item": {
                             "type": "command_execution",
-                            "command": (
-                                "cat $(find /tmp/private/.agents/skills -name SKILL.md)"
-                            ),
+                            "command": "cat $(find /tmp/private/.agents/skills -name SKILL.md)",
                             "exit_code": 0,
                             "status": "completed",
                             "aggregated_output": "private skill instructions\n",
@@ -540,83 +588,6 @@ class EvalCoreTests(unittest.TestCase):
                 "name: pdf-processing\nportable: true\n",
             )
 
-    def test_artifact_skill_instruction_copy_is_redacted(self) -> None:
-        runner = object.__new__(CodexRunner)
-        runner.runtime_skill_names = {"commit"}
-        runner.runtime_instruction_texts = (
-            "# Commit workflow\nAlways inspect the repository before creating a commit.\n",
-        )
-        runner.skill_dir = Path("/skills/commit")
-        with tempfile.TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
-            workspace = root / "workspace"
-            workspace.mkdir()
-            events_path = root / "events.jsonl"
-            events_path.write_text("", encoding="utf-8")
-            run = {
-                "events_path": str(events_path),
-                "workspace": str(workspace),
-                "runtime_home": "/tmp/private",
-                "final_response": "Done.",
-                "status": "completed",
-                "artifact_delta": {
-                    "created": [
-                        {
-                            "path": "copied.md",
-                            "text": (
-                                "# Commit workflow\n"
-                                "Always inspect the repository before creating a commit.\n"
-                            ),
-                        }
-                    ],
-                    "modified": [],
-                    "deleted": [],
-                },
-                "git": {"available": False},
-                "duration_seconds": 1.0,
-                "usage": {},
-                "tool_calls": 1,
-            }
-
-            bundle = runner._evidence_bundle(run)
-
-        artifact = bundle["artifact_delta"]["created"][0]
-        self.assertTrue(artifact["text_redacted"])
-        self.assertNotIn("Always inspect", json.dumps(bundle))
-
-    def test_task_workspace_is_preserved_after_external_execution(self) -> None:
-        runner = object.__new__(CodexRunner)
-        runner.sandbox = "workspace-write"
-        runner.model = None
-        with tempfile.TemporaryDirectory() as temp_dir:
-            run_dir = Path(temp_dir) / "run"
-
-            def fake_execute(**kwargs):
-                workspace = kwargs["workspace"]
-                (workspace / "deliverable.bin").write_bytes(bytes(range(256)) * 64)
-                return {
-                    "status": "completed",
-                    "events_path": str(run_dir / "events.jsonl"),
-                }
-
-            with mock.patch.object(runner, "_execute", side_effect=fake_execute):
-                run = runner.run_task(
-                    run_dir=run_dir,
-                    workspace_template=None,
-                    prompt="create a binary deliverable",
-                    case_type="behavior",
-                    case_id="binary",
-                    repeat=1,
-                    condition="baseline",
-                )
-
-            preserved = Path(run["workspace"])
-            executed = Path(run["execution_workspace"])
-            self.assertEqual(
-                (preserved / "deliverable.bin").read_bytes(), bytes(range(256)) * 64
-            )
-            self.assertFalse(executed.exists())
-
     def test_git_observations_include_head_commit_files(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             workspace = Path(temp_dir)
@@ -670,7 +641,7 @@ class EvalCoreTests(unittest.TestCase):
             (fixture / "README.md").write_text("baseline\n", encoding="utf-8")
             (fixture / "setup.sh").write_text(
                 "printf 'changed\\n' > \"$EVAL_WORKSPACE/README.md\"\n"
-                "git -C \"$EVAL_WORKSPACE\" add README.md\n",
+                'git -C "$EVAL_WORKSPACE" add README.md\n',
                 encoding="utf-8",
             )
 
@@ -719,7 +690,7 @@ class EvalCliIntegrationTests(unittest.TestCase):
         executable = root / "fake-codex"
         executable.write_text(
             textwrap.dedent(
-                r'''
+                r"""
                 #!/usr/bin/env python3
                 import json
                 import os
@@ -827,8 +798,8 @@ class EvalCliIntegrationTests(unittest.TestCase):
                         }
                     )
                 )
-                ''')
-            .lstrip(),
+                """
+            ).lstrip(),
             encoding="utf-8",
         )
         executable.chmod(0o755)
@@ -934,9 +905,7 @@ class EvalCliIntegrationTests(unittest.TestCase):
             )
             self.assertFalse(Path(behavior["skill_run"]["execution_workspace"]).exists())
             self.assertTrue(Path(behavior["skill_run"]["workspace"]).is_dir())
-            self.assertTrue(
-                Path(behavior["skill_run"]["workspace"]).is_relative_to(output_root)
-            )
+            self.assertTrue(Path(behavior["skill_run"]["workspace"]).is_relative_to(output_root))
             self.assertTrue((result_paths[0].parent / "report.md").is_file())
             self.assertTrue((result_paths[0].parent / "report.html").is_file())
             self.assertEqual(list(result_paths[0].parent.glob("**/codex-home")), [])

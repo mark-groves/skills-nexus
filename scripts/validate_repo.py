@@ -11,7 +11,6 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-
 REPO_DIR = Path(__file__).resolve().parents[1]
 SKILLS_DIR = REPO_DIR / "skills"
 PORTABLE_SKILLS_DIR = SKILLS_DIR / "portable"
@@ -381,7 +380,9 @@ def parse_yaml_string_map(frontmatter_text: str, rel: str) -> dict[str, Frontmat
                 fail(f"Frontmatter value must be a YAML string in {rel}: {key}")
                 return None
 
-            metadata_payload, next_index = parse_indented_yaml_string_map(lines, index + 1, rel, key)
+            metadata_payload, next_index = parse_indented_yaml_string_map(
+                lines, index + 1, rel, key
+            )
             if metadata_payload is None or next_index is None:
                 return None
             payload[key] = metadata_payload
@@ -413,7 +414,11 @@ def parse_yaml_string_map(frontmatter_text: str, rel: str) -> dict[str, Frontmat
                 fail(f"Frontmatter block scalar is missing content in {rel}: {key}")
                 return None
 
-            value = fold_yaml_lines(block_lines) if value_text.startswith(">") else "\n".join(block_lines)
+            value = (
+                fold_yaml_lines(block_lines)
+                if value_text.startswith(">")
+                else "\n".join(block_lines)
+            )
             if not value_text.endswith("+"):
                 value = value.rstrip("\n")
             payload[key] = value
@@ -428,10 +433,7 @@ def parse_yaml_string_map(frontmatter_text: str, rel: str) -> dict[str, Frontmat
                 fail(f"Frontmatter value must be a YAML string in {rel}: {key}")
                 return None
             if ": " in value_text:
-                fail(
-                    f"Frontmatter plain scalar must quote values containing ': ' "
-                    f"in {rel}: {key}"
-                )
+                fail(f"Frontmatter plain scalar must quote values containing ': ' in {rel}: {key}")
                 return None
             parsed = value_text
 
@@ -598,14 +600,9 @@ def validate_frontmatter(skill_dir: Path, skill_md: Path) -> None:
 
     compatibility_value = frontmatter.get("compatibility")
     if compatibility_value is not None:
-        compatibility = (
-            compatibility_value.strip() if isinstance(compatibility_value, str) else ""
-        )
+        compatibility = compatibility_value.strip() if isinstance(compatibility_value, str) else ""
         if not compatibility:
-            fail(
-                f"Empty optional frontmatter field 'compatibility' in "
-                f"{repo_relative(skill_md)}"
-            )
+            fail(f"Empty optional frontmatter field 'compatibility' in {repo_relative(skill_md)}")
         elif len(compatibility) > 500:
             fail(f"Compatibility is too long in {repo_relative(skill_md)}")
 
@@ -613,10 +610,7 @@ def validate_frontmatter(skill_dir: Path, skill_md: Path) -> None:
     if allowed_tools_value is not None and (
         not isinstance(allowed_tools_value, str) or not allowed_tools_value.strip()
     ):
-        fail(
-            f"Empty optional frontmatter field 'allowed-tools' in "
-            f"{repo_relative(skill_md)}"
-        )
+        fail(f"Empty optional frontmatter field 'allowed-tools' in {repo_relative(skill_md)}")
 
     metadata = frontmatter.get("metadata")
     if metadata is None:
@@ -630,9 +624,7 @@ def validate_frontmatter(skill_dir: Path, skill_md: Path) -> None:
         return
     for metadata_key, metadata_value in metadata.items():
         if not metadata_value.strip():
-            fail(
-                f"Empty metadata value {metadata_key!r} in {repo_relative(skill_md)}"
-            )
+            fail(f"Empty metadata value {metadata_key!r} in {repo_relative(skill_md)}")
 
 
 def validate_codex_harness_frontmatter(skill_dir: Path, skill_md: Path) -> None:
@@ -788,10 +780,7 @@ def validate_evals(skill_dir: Path) -> None:
                         or not fixture_path.parts
                         or (
                             fixture_path.parts[0] == "evals"
-                            and (
-                                len(fixture_path.parts) < 3
-                                or fixture_path.parts[1] != "fixtures"
-                            )
+                            and (len(fixture_path.parts) < 3 or fixture_path.parts[1] != "fixtures")
                         )
                     ):
                         fail(
@@ -839,7 +828,9 @@ def validate_skills_root() -> list[str]:
                 fail(f"Unexpected file directly under skills/portable: {repo_relative(skill_dir)}")
                 continue
             if not (skill_dir / "SKILL.md").is_file():
-                fail(f"Immediate child of skills/portable is not a valid skill: {repo_relative(skill_dir)}")
+                fail(
+                    f"Immediate child of skills/portable is not a valid skill: {repo_relative(skill_dir)}"
+                )
                 continue
             skill_id_value = skill_id(skill_dir)
             install_name = skill_install_name(skill_id_value)
@@ -862,10 +853,14 @@ def validate_skills_root() -> list[str]:
                 fail(f"Unknown harness-specific skill namespace: {repo_relative(harness_dir)}")
             for skill_dir in sorted(harness_dir.iterdir(), key=lambda path: path.name):
                 if not skill_dir.is_dir():
-                    fail(f"Unexpected file directly under {repo_relative(harness_dir)}: {repo_relative(skill_dir)}")
+                    fail(
+                        f"Unexpected file directly under {repo_relative(harness_dir)}: {repo_relative(skill_dir)}"
+                    )
                     continue
                 if not (skill_dir / "SKILL.md").is_file():
-                    fail(f"Immediate child of {repo_relative(harness_dir)} is not a valid skill: {repo_relative(skill_dir)}")
+                    fail(
+                        f"Immediate child of {repo_relative(harness_dir)} is not a valid skill: {repo_relative(skill_dir)}"
+                    )
                     continue
                 skill_id_value = skill_id(skill_dir)
                 install_name = skill_install_name(skill_id_value)
@@ -1039,9 +1034,7 @@ def validate_deploy_script(
         codex_install_name = skill_install_name(codex_portable_skill)
         with tempfile.TemporaryDirectory() as temp_dir:
             project_root = Path(temp_dir)
-            destination = (
-                project_root / codex_manifest["project_install_root"] / codex_install_name
-            )
+            destination = project_root / codex_manifest["project_install_root"] / codex_install_name
 
             run_command(
                 "bash",
@@ -1216,10 +1209,15 @@ def validate_deploy_script(
         )
         if f"remove symlink {symlink_destination}" not in dry_run_symlink_redeploy.stdout:
             fail("Symlink-mode dry-run did not announce removal of an existing symlink")
-        if f"ln -s {explicit_skill_src} {symlink_destination}" not in dry_run_symlink_redeploy.stdout:
+        if (
+            f"ln -s {explicit_skill_src} {symlink_destination}"
+            not in dry_run_symlink_redeploy.stdout
+        ):
             fail("Symlink-mode dry-run did not announce relinking after symlink replacement")
         if "skip existing non-symlink" in dry_run_symlink_redeploy.stderr.lower():
-            fail("Symlink-mode dry-run incorrectly reported an existing symlink as a non-symlink collision")
+            fail(
+                "Symlink-mode dry-run incorrectly reported an existing symlink as a non-symlink collision"
+            )
         if not symlink_destination.is_symlink():
             fail("Symlink-mode dry-run should not mutate the existing symlink")
 
