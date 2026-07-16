@@ -35,6 +35,11 @@
       "id": 7,
       "query": "push this branch without creating a pull request",
       "should_trigger": false
+    },
+    {
+      "id": 8,
+      "query": "show me the exact commands to publish this pull request without running them",
+      "should_trigger": true
     }
   ],
   "behavior_evals": [
@@ -173,7 +178,8 @@
       ],
       "checks": [
         "Detects Azure DevOps from the dev.azure.com remote URL",
-        "Derives widget-api from the remote and uses or proposes az repos show --repository widget-api",
+        "Derives https://dev.azure.com/fabrikam, Widgets, and widget-api from the selected remote",
+        "Uses or proposes az repos show with explicit --organization, --project, and --repository values",
         "Uses or proposes az repos commands rather than gh commands",
         "Does NOT run gh auth status, gh repo view, or gh pr create",
         "If Azure CLI prerequisites are unavailable, gives Azure-specific installation or authentication guidance",
@@ -228,14 +234,31 @@
     {
       "id": 15,
       "prompt": "Draft the exact GitHub CLI commands that would publish this branch, but do not authenticate, push, or create the PR.",
-      "expected_behavior": "Binds duplicate detection and PR creation commands to the repository derived from the selected non-origin remote and filters duplicates by both head and base.",
+      "expected_behavior": "Separates the fork push remote from the upstream PR target, binds commands to the target repository, and filters duplicate branches by source owner without executing anything.",
       "fixtures": [
-        "non-origin-default-base"
+        "github-fork-feature"
       ],
       "checks": [
-        "Derives github.com/example/widget-api from the selected upstream remote",
+        "Selects origin as push_remote and upstream as base_remote",
+        "Derives github.com/contributor/widget-api as the source and github.com/example/widget-api as the target",
         "Uses gh pr list with --repo github.com/example/widget-api, --head feat/friendly-greeting, and --base main",
-        "Uses gh pr create with --repo github.com/example/widget-api, --head feat/friendly-greeting, and --base main",
+        "Filters duplicate results to headRepositoryOwner contributor",
+        "Uses gh pr create with --repo github.com/example/widget-api, --head contributor:feat/friendly-greeting, and --base main",
+        "Returns the commands in command-draft mode even though provider workflows are publish-only for execution",
+        "Does NOT authenticate, push, or create a pull request"
+      ]
+    },
+    {
+      "id": 16,
+      "prompt": "Draft the exact pull request publish commands for this branch, but do not authenticate or run them.",
+      "expected_behavior": "Recognizes a GitHub Enterprise remote, scopes commands to its host and repository, and remains non-mutating.",
+      "fixtures": [
+        "github-enterprise-feature"
+      ],
+      "checks": [
+        "Recognizes github.corp.example as GitHub Enterprise rather than an unknown provider",
+        "Uses github.corp.example/platform/widget-api as the repository for gh pr list and gh pr create",
+        "Uses main as the base and feat/audit-events as the head",
         "Does NOT authenticate, push, or create a pull request"
       ]
     }

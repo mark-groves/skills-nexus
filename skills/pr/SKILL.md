@@ -1,6 +1,6 @@
 ---
 name: pr
-description: Draft or publish a pull request from the current Git branch on GitHub or Azure DevOps, including provider detection, safe push handling, a structured summary, and validation evidence. Use when the user asks to write, create, open, submit, or publish a PR, including Azure Repos pull requests.
+description: Draft pull request text or publish commands, or publish a pull request from the current Git branch on GitHub or Azure DevOps, including provider detection, safe push handling, a structured summary, and validation evidence. Use when the user asks to write, preview, create, open, submit, or publish a PR, including Azure Repos pull requests.
 ---
 
 # Pull request workflow
@@ -18,6 +18,11 @@ permission error.
 
 Treat requests to write, format, or preview PR text as **draft-only**. Do not
 push, authenticate to a provider, or create a PR in this mode.
+
+Treat requests to show or draft the exact publish commands without executing
+them as **command-draft**. Inspect local state and read the detected provider
+workflow so the commands are complete, but do not authenticate, push, or
+create a PR.
 
 Treat requests to create, open, submit, or publish a PR as **publish**. The
 request authorizes the required branch push and PR creation after all safety,
@@ -39,7 +44,7 @@ possible:
 Stop if HEAD is detached. If the working tree is dirty, suggest committing
 first and stop unless the user explicitly asks to continue with the dirty tree.
 
-Select the remote that represents the branch's publish destination:
+Select `push_remote`, the destination for the current branch:
 
 1. Use the upstream remote when one exists.
 2. Otherwise prefer `branch.<current-branch>.pushRemote`.
@@ -49,17 +54,40 @@ Select the remote that represents the branch's publish destination:
 6. If several remotes remain possible, ask the user to choose; do not assume
    `origin`.
 
-Read its URL with `git remote get-url <remote>`. Prefer an explicit provider
-named by the user; otherwise detect it from the URL:
+Select `base_remote`, the repository that owns the PR target, independently:
 
-- GitHub: `github.com`
+1. If the user supplies `<remote>/<branch>` and `<remote>` is configured, use
+   that remote and strip only the remote prefix when setting `base`.
+2. Otherwise use a target remote or repository explicitly named by the user.
+3. Otherwise prefer a configured remote named `upstream` when it differs from
+   `push_remote`; this is the conventional target in a fork checkout.
+4. Otherwise use the only configured remote.
+5. Otherwise use `push_remote` only when it is the sole remote containing the
+   requested base or the only remote with a symbolic default ref.
+6. If several target remotes remain plausible, ask the user to choose. Do not
+   reuse the push remote merely because the branch tracks it.
+
+This separation is required in fork workflows: a branch may push to `origin`
+while its PR targets `upstream/main`.
+
+Read both URLs with `git remote get-url`. Detect the PR provider from the
+`base_remote` URL, preferring an explicit provider named by the user:
+
+- GitHub: `github.com`, a host beginning with `github.`, or a host already
+  configured for GitHub CLI
 - Azure DevOps: `dev.azure.com`, `ssh.dev.azure.com`,
   `vs-ssh.visualstudio.com`, or an organization host ending in
   `.visualstudio.com`
 
-Do not interpret an unfamiliar host as GitHub. Draft-only mode may continue if
-the base can be resolved locally. Publish mode must stop and ask which provider
-and publishing tool to use.
+For an otherwise unfamiliar host in publish mode, `gh auth status --hostname
+<host>` may be used as a provider probe: a host configured for GitHub CLI is a
+GitHub Enterprise host. Do not interpret an arbitrary unknown host as GitHub.
+Non-publish modes may continue only when the provider is explicit or locally
+recognizable. Otherwise ask which provider and publishing tool to use.
+
+Stop if the push and base remotes resolve to incompatible providers or hosts.
+GitHub fork PRs must remain on one GitHub host. Azure Repos PRs must use the
+same organization, project, and repository for source and target branches.
 
 ## 3. Resolve target and comparison branches
 
@@ -70,22 +98,22 @@ Track three distinct values:
 - `base`: the provider-facing PR target branch name. Use the user-supplied
   branch when present; otherwise use `default_branch`.
 - `base_ref`: the locally available ref used by `git log` and `git diff`.
-  Prefer the selected remote's tracking ref so comparisons do not depend on a
+  Prefer `base_remote`'s tracking ref so comparisons do not depend on a
   stale or missing local branch.
 
 First try the selected remote's symbolic default ref:
 
 ```bash
-git symbolic-ref --quiet --short refs/remotes/<remote>/HEAD
+git symbolic-ref --quiet --short refs/remotes/<base_remote>/HEAD
 ```
 
 Keep the full result, such as `upstream/main`, as the default comparison ref
 and strip only the `<remote>/` prefix when setting `default_branch`.
 
-In draft-only mode, never fall back to a provider CLI. If no base was supplied
-and the remote symbolic ref is unavailable, ask the user for a locally
-available base branch. A supplied base is sufficient for drafting, so
-`default_branch` does not need to be resolved in this mode.
+In draft-only and command-draft modes, never fall back to a provider CLI. If no
+base was supplied and the remote symbolic ref is unavailable, ask the user for
+a locally available base branch. A supplied base is sufficient for drafting,
+so `default_branch` does not need to be resolved in these modes.
 
 In publish mode, resolve `default_branch` even when the user supplied another
 base, because it is required for source-branch safety. If the remote symbolic
@@ -94,7 +122,8 @@ ref is absent, use only the detected provider's default-branch command from
 
 After selecting `base`, resolve `base_ref` without stripping remote context:
 
-1. Use `<remote>/<base>` when `refs/remotes/<remote>/<base>` exists.
+1. Use `<base_remote>/<base>` when
+   `refs/remotes/<base_remote>/<base>` exists.
 2. Otherwise use `<base>` when `refs/heads/<base>` exists locally.
 3. Otherwise stop and ask the user to fetch the base or name a locally
    available ref; do not compare against a guessed branch.
@@ -106,8 +135,8 @@ as `base_ref`.
 
 In publish mode, stop if the current branch is `main`, `master`, or the
 resolved `default_branch`. Never push or create a PR from the default branch.
-Draft-only mode may describe changes from any branch because it does not push
-or create a PR.
+Draft-only and command-draft modes may inspect changes from any branch because
+they do not push or create a PR.
 
 Warn, but allow the user to continue, when the branch lacks a conventional
 prefix such as `feat/`, `fix/`, `chore/`, `refactor/`, `docs/`, `test/`, or
@@ -125,9 +154,10 @@ git diff <base_ref>...HEAD
 
 Stop if there are no commits ahead of the base.
 
-In publish mode, determine push state locally before provider authentication:
+In publish and command-draft modes, determine push state locally before any
+provider authentication:
 
-- No upstream: push with `git push -u <remote> <current-branch>`.
+- No upstream: push with `git push -u <push_remote> <current-branch>`.
 - Upstream exists and local is ahead: push with `git push`.
 - Upstream is current: no push is needed.
 - Upstream is ahead or diverged: stop and ask the user to reconcile it.
@@ -176,6 +206,12 @@ Apply these formatting rules:
 
 For draft-only mode, return the provider (if known), base/head branches, title,
 and body. Do not publish it.
+
+For command-draft mode, read only the detected provider section in
+[provider workflows](references/providers.md) and return the exact ordered
+duplicate-check, push, and create commands with all derived remote, repository,
+branch, organization, and project values filled in. Clearly label them as not
+executed. Do not run provider authentication or any mutating command.
 
 For publish mode, read [provider workflows](references/providers.md) and run
 only the prerequisite checks for the detected provider after the local draft
