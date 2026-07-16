@@ -1045,7 +1045,10 @@ def validate_deploy_script(
         )
         if f"remove symlink {destination}" not in dry_run_symlink_migration.stdout:
             fail("Dry-run did not announce removal of an old destination symlink")
-        if f"copy runtime {explicit_skill_src} {destination}" not in dry_run_symlink_migration.stdout:
+        if (
+            f"copy runtime {explicit_skill_src} {destination}"
+            not in dry_run_symlink_migration.stdout
+        ):
             fail("Dry-run did not announce copying after old symlink removal")
         if not destination.is_symlink():
             fail("Dry-run should not mutate an old destination symlink")
