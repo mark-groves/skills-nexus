@@ -1,13 +1,12 @@
 ---
 name: commit
-description: Stage and commit git changes using conventional commit messages. Use when the user asks to commit current work, make a git commit, or split staged and unstaged changes into intentional commits.
+description: Draft, stage, and commit Git changes using Conventional Commit messages. Use when the user asks to write or improve a commit message, commit current work, or split staged and unstaged changes into intentional commits.
 ---
 
 # Instructions
 
-You are a git commit assistant. Your job is to stage and commit changes
-following strict conventions. Never use tools other than Bash with git
-commands.
+You are a Git commit assistant. Draft and, when requested, create intentional
+commits with shell-based Git commands.
 
 ## Sandbox execution rule
 
@@ -15,10 +14,9 @@ Run read-only inspection commands without escalation unless they fail with
 an error that could be caused by sandbox filesystem or host permission
 restrictions.
 
-Run Git commands that mutate repository state with escalated permissions
-from the start. This includes branch creation or switching, staging, and
-committing. Do not first try a different branch name, a different staging
-strategy, or a workaround for a sandbox-looking error.
+Before Git commands that mutate repository state, request or use the
+permissions required by the active harness. Do not first try a different
+branch name, staging strategy, or workaround for a sandbox-looking error.
 
 Treat these as sandbox-suspect errors:
 
@@ -28,13 +26,24 @@ Treat these as sandbox-suspect errors:
 - `Bad owner or permissions on /etc/ssh/`
 - `Could not read from remote repository`
 
-If a read-only command fails with one of those errors, retry the same
-command once with escalated permissions before changing strategy or
-diagnosing a real Git problem.
+If a read-only command fails with one of those errors, retry the same command
+once with the required host permissions when the harness permits it before
+changing strategy or diagnosing a real Git problem.
 
-If an escalated mutating command still fails, treat the remaining error as
-real. Do not retry `git commit` automatically after a hook failure; follow
-the pre-commit hook rule below instead.
+If a permitted mutating command still fails, treat the remaining error as real.
+Do not retry `git commit` automatically after a hook failure; follow the
+pre-commit hook rule below instead.
+
+## Step 0 — Determine the requested mode
+
+Decide the mode before applying branch or sequencer safety gates.
+
+- **Draft-only:** the user explicitly asks only to draft, review, or improve a
+  commit message. Inspect the changes and return text, but never stage or
+  commit. Default-branch, detached-HEAD, sequencer, and branch-relevance gates
+  protect mutations and do not block this mode.
+- **Commit:** the user asks to create one or more commits. Apply every safety,
+  staging, and branch-relevance rule below.
 
 ## Step 1 — Gather context
 
@@ -57,9 +66,11 @@ invocation with clearly labeled output.
 Only run an extra branch command if the status output is insufficient.
 When branch identity matters, use `git symbolic-ref --quiet --short HEAD`.
 
-Stop immediately if any of these are true:
+Stop in either mode if `git status` shows no changes from which to draft or
+create a commit.
 
-- `git status` shows no changes to commit.
+In commit mode, stop immediately if any of these are true:
+
 - The repo is in a detached HEAD state.
 - There are unmerged or conflicted paths.
 - Any sequencer sentinel indicates a merge, rebase, cherry-pick, or
@@ -69,12 +80,12 @@ Stop immediately if any of these are true:
 Tell the user what must be resolved first. Do not stage or commit
 anything in these states.
 
-If the current branch is `main` or `master`, warn the user and suggest
+In commit mode, if the current branch is `main` or `master`, warn the user and suggest
 creating a feature branch first (using a conventional prefix like
 `feat/`, `fix/`, etc.). Do not proceed until the user is on a
 non-default branch or explicitly overrides.
 
-If the current branch is already a non-default feature branch, evaluate
+In commit mode, if the current branch is already a non-default feature branch, evaluate
 whether its name appears to match the primary change being committed.
 Use the same primary-change priorities described below. Make an educated
 judgment from the branch name, the diff, and recent history.
@@ -119,59 +130,54 @@ to stage.
 
 If the working tree contains **logically independent** groups of
 changes (e.g., a new feature and an unrelated config cleanup),
-propose separate commits only when the groups map cleanly to whole
+create separate commits only when the groups map cleanly to whole
 files or to hunks the user has already staged intentionally.
 
 If unrelated changes are mixed inside the same unstaged file, do not
 auto-split them or claim you can infer logical hunk boundaries. Tell the
 user to pre-stage the intended hunks or accept a single commit.
 
-When separate groups are safe, present all groups with their proposed
-commit messages for the user to approve, reject, or modify. Then
-execute approved groups sequentially: stage the files for the first
-group, commit, then move to the next. Rejected groups remain in the
-working tree untouched.
+When separate groups are safe and the user asked to commit or split the work,
+execute them sequentially without a message-review pause: stage the files for
+the first group, commit, then move to the next. Leave any ambiguous group in the
+working tree and explain why it was not committed.
 
 ## Step 2 — Draft the commit message
 
 Analyze the changes to be committed and draft a message:
 
-- **Subject line:** conventional commit prefix (`feat:`, `fix:`,
-  `chore:`, `refactor:`, `docs:`, `test:`, `ci:`, `style:`,
-  `perf:`, `build:`), under 72 characters total.
-- **Body:** 1-2 sentences explaining *why* the change was made, not
-  *what* changed. Hard-wrap at 72 characters. No bullet lists.
-  Omit the body entirely when the subject line is self-explanatory
-  — typo fixes, version bumps, and simple renames don't need a
-  body restating the obvious.
+- **Subject line:** use `<type>(<optional-scope>): <description>` with one of
+  `feat`, `fix`, `chore`, `refactor`, `docs`, `test`, `ci`, `style`, `perf`, or
+  `build`. Add a short, stable scope only when it improves meaning; do not use a
+  filename as a scope. Keep the complete subject under 72 characters, use
+  imperative wording, and omit the trailing period.
+- **Body:** after one blank line, use 1–2 sentences that explain motivation,
+  relevant behavior, or an important tradeoff. Do not merely inventory files
+  or repeat the subject. Hard-wrap at 72 characters and do not use bullet
+  lists. Omit the body for self-explanatory typo fixes, version bumps, and
+  simple renames.
+- **Breaking changes and references:** mark a breaking API or behavior with
+  `!` before the colon and add a `BREAKING CHANGE: ...` footer after a blank
+  line. Add issue or work-item footers only when the user or repository context
+  supplies them; never invent an identifier.
 
 If the user provided an argument hint (e.g., `/commit fix: handle
 null input`), incorporate it into the subject line.
 
-## Step 3 — Present or fast-path
+## Step 3 — Draft or execute
 
-**Fast-path:** If the user provided an explicit hint and the diff is
-small, clearly matches the hint, and represents one obvious logical
-change, skip conversational approval and go straight to staging and
-committing.
+If the user explicitly asks only to draft, review, or improve a commit message,
+return the complete message in a `text` code block and do not mutate the
+repository.
 
-Do not fast-path if there is any ambiguity about what should be
-committed, if the repo is on `main` or `master`, if the repo is on
-detached HEAD, if any sequencer sentinel exists, if there are mixed
-staged and unstaged changes that need interpretation, or if any
-secret-like files are involved.
+Otherwise, the request to commit authorizes the files selected by the rules
+above and the generated message. Do not pause for message or file-list review.
+Proceed directly to staging and committing once scope, branch relevance, and
+safety checks are unambiguous.
 
-The tool permission prompt already acts as a gate, so do not add a
-second approval step when the fast-path is clearly safe.
-
-**Standard path:** Otherwise, show the user:
-
-1. The list of files that will be staged or committed.
-2. The draft commit message.
-3. Any branch mismatch or branch-ambiguity concern that needs the
-   user's decision before committing.
-
-Wait for the user to approve, request changes, or cancel.
+Do not execute when any earlier stop condition applies, when unrelated changes
+cannot be separated safely, or when secret-like files are involved. These are
+safety or ambiguity stops, not review gates.
 
 ## Step 4 — Stage and commit
 

@@ -25,13 +25,23 @@
       "id": 5,
       "query": "show the git diff without committing anything",
       "should_trigger": false
+    },
+    {
+      "id": 6,
+      "query": "draft a conventional commit message for my current diff",
+      "should_trigger": true
+    },
+    {
+      "id": 7,
+      "query": "improve the title and description for my pull request",
+      "should_trigger": false
     }
   ],
   "behavior_evals": [
     {
       "id": 1,
       "prompt": "/commit fix: typo in readme",
-      "expected_behavior": "Fast-path commits a single obvious README change without conversational approval using a subject-only conventional commit message.",
+      "expected_behavior": "Commits a single obvious README change without conversational approval using a subject-only Conventional Commit message.",
       "fixtures": [
         "single-readme-fix-on-feature-branch"
       ],
@@ -45,29 +55,30 @@
     {
       "id": 2,
       "prompt": "commit my changes",
-      "expected_behavior": "Commits only the intentionally staged files and mentions unstaged files as an FYI without staging them.",
+      "expected_behavior": "Commits the intentionally staged files immediately with a Conventional Commit message while preserving and reporting other unstaged work.",
       "fixtures": [
         "pre-staged-files-with-extra-unstaged-files"
       ],
       "checks": [
-        "Only the 2 pre-staged files (src/auth.py and src/auth_test.py) are committed",
+        "Commits only src/auth.py and src/auth_test.py",
         "Unstaged files (config.yaml, docs/setup.md, src/utils.py) are NOT staged or committed",
         "Mentions the unstaged files as an FYI to the user",
-        "Commit message uses a conventional commit prefix"
+        "Created commit message uses a conventional commit prefix",
+        "Does NOT ask the user to approve the files or commit message"
       ]
     },
     {
       "id": 3,
       "prompt": "split these changes into two commits",
-      "expected_behavior": "Proposes multiple separate commits only when the unrelated changes map cleanly to separate files or already-staged hunks, and presents all groups before executing anything.",
+      "expected_behavior": "Creates separate commits without a review pause when unrelated changes map cleanly to separate whole files.",
       "fixtures": [
         "safe-multi-file-split"
       ],
       "checks": [
-        "Proposes at least 2 separate commits for the unrelated changes",
-        "Presents all proposed groups to the user BEFORE executing any commits",
-        "Each proposed commit has an appropriate conventional commit prefix",
-        "Does not bundle all changes into a single commit"
+        "Creates at least 2 separate commits for the unrelated changes",
+        "Does NOT ask the user to approve the groups or commit messages",
+        "Each created commit has an appropriate conventional commit prefix",
+        "Does not bundle all changes into a single commit and leaves the working tree clean"
       ]
     },
     {
@@ -163,6 +174,36 @@
         "Checks git-dir sentinel paths for merge, cherry-pick, revert, and rebase state before mutating",
         "Uses git symbolic-ref --quiet --short HEAD when branch identity is needed",
         "Keeps staging, committing, and verification as separate mutating steps"
+      ]
+    },
+    {
+      "id": 11,
+      "prompt": "Draft the commit message for these changes, but do not stage or commit anything.",
+      "expected_behavior": "Produces a reviewable Conventional Commit message whose formatting communicates the primary change and motivation without mutating the repository.",
+      "fixtures": [
+        "commit-message-format"
+      ],
+      "checks": [
+        "Does NOT stage files or create a commit",
+        "Presents the complete message in a text code block",
+        "Uses a valid Conventional Commit type and keeps the subject under 72 characters with no trailing period",
+        "Separates the subject and body with a blank line",
+        "Uses a concise prose body that explains motivation or behavioral impact rather than listing files",
+        "Does not invent an issue identifier or breaking-change footer"
+      ]
+    },
+    {
+      "id": 12,
+      "prompt": "Draft a Conventional Commit message for these changes, but do not stage or commit anything.",
+      "expected_behavior": "Drafts a commit message from a default-branch worktree without applying mutation-only branch gates.",
+      "fixtures": [
+        "draft-message-on-default-branch"
+      ],
+      "checks": [
+        "Inspects the working-tree diff while on main",
+        "Does NOT require a feature branch or ask whether the branch matches the change",
+        "Does NOT stage files or create a commit",
+        "Returns a valid Conventional Commit message in a text code block"
       ]
     }
   ]

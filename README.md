@@ -14,7 +14,7 @@ presentation, hooks, and plugin packaging belong in target integrations.
 - `cloud-diagram` — create AWS, Azure, GCP, and multi-cloud draw.io diagrams
 - `commit` — prepare intentional Git commits with conventional messages
 - `drawio-shapes` — refresh and inspect draw.io cloud shape catalogs
-- `pr` — push a branch and open a structured GitHub pull request
+- `pr` — draft or publish structured GitHub and Azure DevOps pull requests
 - `skill-architect` — design and improve reusable Agent Skills
 
 ## Install a skill
