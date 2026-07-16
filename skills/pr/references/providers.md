@@ -68,10 +68,12 @@ az extension show --name azure-devops
 az repos show --repository "$repository" --detect true --query id -o tsv
 ```
 
-If `az` or the extension is absent, tell the user what to install; do not
-install it automatically. If repository access fails, ask the user to
-authenticate with `az login` or `az devops login --organization <url>`, or to
-configure the correct organization/project. Do not request or expose a PAT.
+If `az` or the extension is absent, tell the user what to install and include
+the exact repository-scoped `az repos show --repository "$repository" ...`
+access check to run afterward; do not install anything automatically. If
+repository access fails, ask the user to authenticate with `az login` or
+`az devops login --organization <url>`, or to configure the correct
+organization/project. Do not request or expose a PAT.
 
 Resolve the default branch when the remote-tracking symbolic ref is absent:
 

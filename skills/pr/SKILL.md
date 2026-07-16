@@ -113,11 +113,6 @@ Warn, but allow the user to continue, when the branch lacks a conventional
 prefix such as `feat/`, `fix/`, `chore/`, `refactor/`, `docs/`, `test/`, or
 `ci/`.
 
-For publish mode, read
-[provider workflows](references/providers.md) and run only the prerequisite
-checks for the detected provider. A failed GitHub check is not evidence that an
-Azure DevOps repository is misconfigured, or vice versa.
-
 ## 5. Gather the complete change
 
 Inspect all branch work, not only the latest commit:
@@ -130,10 +125,7 @@ git diff <base_ref>...HEAD
 
 Stop if there are no commits ahead of the base.
 
-In publish mode, use the provider workflow to check for an existing active PR
-from this source branch to `base`. Return its web URL and stop if one exists.
-
-Determine push state:
+In publish mode, determine push state locally before provider authentication:
 
 - No upstream: push with `git push -u <remote> <current-branch>`.
 - Upstream exists and local is ahead: push with `git push`.
@@ -185,11 +177,19 @@ Apply these formatting rules:
 For draft-only mode, return the provider (if known), base/head branches, title,
 and body. Do not publish it.
 
-For publish mode, do not stop to preview the title, body, file list, or push
+For publish mode, read [provider workflows](references/providers.md) and run
+only the prerequisite checks for the detected provider after the local draft
+and push state are known. A failed GitHub check is not evidence that an Azure
+DevOps repository is misconfigured, or vice versa. If a prerequisite fails,
+return the useful local draft, push state, and provider-specific remediation;
+do not push or create a PR.
+
+After prerequisites pass, use the provider workflow to check for an existing
+active PR from this source branch to `base`. Return its web URL and stop if one
+exists. Otherwise, do not stop to preview the title, body, file list, or push
 command. Push when needed, then immediately use the provider-specific create
-command from [provider workflows](references/providers.md). Preserve the
-generated Markdown exactly; do not flatten newlines or rewrite it during
-submission.
+command. Preserve the generated Markdown exactly; do not flatten newlines or
+rewrite it during submission.
 
 Return the human-facing PR URL, provider, base/head branches, title, body, and
 push result.

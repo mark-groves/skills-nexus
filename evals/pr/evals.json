@@ -54,18 +54,16 @@
     },
     {
       "id": 2,
-      "prompt": "/pr release/2026-04",
-      "expected_behavior": "Uses the supplied base branch, checks the branch state and diff, and reports whether a push is needed before PR creation.",
+      "prompt": "Draft the PR title and description against release/2026-04, but do not authenticate, push, or publish.",
+      "expected_behavior": "Uses the supplied target branch and its remote-tracking ref for a local-only draft instead of replacing it with the repository default.",
       "fixtures": [
         "explicit-release-base"
       ],
       "checks": [
         "Uses release/2026-04 as the base branch",
-        "Passes release/2026-04 to gh pr create with --base",
-        "Still resolves the default branch for current-branch safety checks",
-        "Checks git status, branch identity, gh availability, and gh auth before proceeding",
         "Inspects commits and diff against origin/release/2026-04 rather than silently replacing it with the default branch",
-        "Reports whether a push is needed before PR creation"
+        "Does NOT authenticate, push, or create a pull request",
+        "Returns a structured title and body based only on changes after release/2026-04"
       ]
     },
     {
@@ -174,7 +172,7 @@
       ],
       "checks": [
         "Detects Azure DevOps from the dev.azure.com remote URL",
-        "Derives widget-api from the remote and passes it with --repository to az repos show",
+        "Derives widget-api from the remote and uses or proposes az repos show --repository widget-api",
         "Uses or proposes az repos commands rather than gh commands",
         "Does NOT run gh auth status, gh repo view, or gh pr create",
         "If Azure CLI prerequisites are unavailable, gives Azure-specific installation or authentication guidance",
