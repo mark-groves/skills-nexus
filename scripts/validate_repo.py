@@ -824,8 +824,6 @@ def validate_deploy_script(
                 expect_success=True,
                 label=f"deploy dry-run for {harness} with explicit skill",
             )
-            if "Mode: copy" not in dry_run_explicit.stdout:
-                fail(f"Default project deploy mode must be copy for {harness}")
             if "copy runtime" not in dry_run_explicit.stdout:
                 fail(f"Project dry-run deploy should announce copying for {harness}")
 
@@ -843,10 +841,8 @@ def validate_deploy_script(
                 label=f"deploy dry-run for {harness} with user scope",
                 env=user_env,
             )
-            if "Mode: symlink" not in dry_run_user.stdout:
-                fail(f"Default user deploy mode must be symlink for {harness}")
-            if "ln -s" not in dry_run_user.stdout:
-                fail(f"User dry-run deploy should announce symlink creation for {harness}")
+            if "copy runtime" not in dry_run_user.stdout:
+                fail(f"User dry-run deploy should announce copying for {harness}")
 
             run_command(
                 "bash",
@@ -862,6 +858,32 @@ def validate_deploy_script(
                 expect_success=True,
                 label=f"deploy dry-run for {harness} with --all",
             )
+
+    deploy_help = run_command(
+        "bash",
+        "scripts/deploy-skills.sh",
+        "--help",
+        expect_success=True,
+        label="deploy help check",
+    )
+    if "--mode" in deploy_help.stdout or "symlink" in deploy_help.stdout.lower():
+        fail("Deploy help must not advertise deployment modes or symlinking")
+
+    removed_mode = run_command(
+        "bash",
+        "scripts/deploy-skills.sh",
+        "--harness",
+        harnesses[0],
+        "--skill",
+        explicit_skill,
+        "--mode",
+        "symlink",
+        "--dry-run",
+        expect_success=False,
+        label="removed symlink mode check",
+    )
+    if "unknown argument: --mode" not in removed_mode.stderr.lower():
+        fail("Deploy script still appears to accept a deployment mode")
 
     unknown_harness = run_command(
         "bash",
@@ -901,6 +923,28 @@ def validate_deploy_script(
         project_root = Path(temp_dir)
         destination = project_root / project_install_root / explicit_install_name
 
+        user_home = project_root / "home"
+        user_home.mkdir()
+        user_env = os.environ.copy()
+        user_env["HOME"] = str(user_home)
+        user_destination = user_home / ".agents" / "skills" / explicit_install_name
+
+        run_command(
+            "bash",
+            "scripts/deploy-skills.sh",
+            "--harness",
+            "agents",
+            "--scope",
+            "user",
+            "--skill",
+            explicit_skill,
+            expect_success=True,
+            label="user-scope deploy",
+            env=user_env,
+        )
+        if not user_destination.is_dir() or user_destination.is_symlink():
+            fail("User-scope deployment did not create a copied skill directory")
+
         run_command(
             "bash",
             "scripts/deploy-skills.sh",
@@ -910,17 +954,15 @@ def validate_deploy_script(
             "project",
             "--project-root",
             str(project_root),
-            "--mode",
-            "copy",
             "--skill",
             explicit_skill,
             expect_success=True,
-            label="copy-mode initial deploy",
+            label="initial deploy",
         )
         if not destination.is_dir():
-            fail("Copy-mode initial deploy did not create the skill directory")
+            fail("Initial deploy did not create the skill directory")
         if (destination / "evals").exists():
-            fail("Copy-mode deployment included repository-only evals")
+            fail("Deployment included repository-only evals")
 
         sentinel = destination / "stale.txt"
         sentinel.write_text("stale\n", encoding="utf-8")
@@ -934,18 +976,16 @@ def validate_deploy_script(
             "project",
             "--project-root",
             str(project_root),
-            "--mode",
-            "copy",
             "--skill",
             explicit_skill,
             "--dry-run",
             expect_success=True,
-            label="copy-mode redeploy dry-run",
+            label="redeploy dry-run",
         )
         if f"remove directory {destination}" not in dry_run_redeploy.stdout:
-            fail("Copy-mode dry-run did not announce removal of an existing destination directory")
+            fail("Dry-run did not announce removal of an existing destination directory")
         if f"copy runtime {explicit_skill_src} {destination}" not in dry_run_redeploy.stdout:
-            fail("Copy-mode dry-run did not announce copying after directory replacement")
+            fail("Dry-run did not announce copying after directory replacement")
 
         run_command(
             "bash",
@@ -956,15 +996,13 @@ def validate_deploy_script(
             "project",
             "--project-root",
             str(project_root),
-            "--mode",
-            "copy",
             "--skill",
             explicit_skill,
             expect_success=True,
-            label="copy-mode redeploy",
+            label="redeploy",
         )
         if sentinel.exists():
-            fail("Copy-mode redeploy left stale copied content in place")
+            fail("Redeploy left stale copied content in place")
 
         shutil.rmtree(destination)
         destination.write_text("collision\n", encoding="utf-8")
@@ -977,18 +1015,44 @@ def validate_deploy_script(
             "project",
             "--project-root",
             str(project_root),
-            "--mode",
-            "copy",
             "--skill",
             explicit_skill,
             expect_success=False,
-            label="copy-mode file collision check",
+            label="file collision check",
         )
-        if "existing non-directory path blocks copy mode" not in file_collision.stderr.lower():
-            fail("Copy-mode file collision error message changed unexpectedly")
+        if "existing non-directory path blocks deployment" not in file_collision.stderr.lower():
+            fail("File collision error message changed unexpectedly")
 
-        symlink_destination = project_root / project_install_root / explicit_install_name
-        symlink_destination.unlink()
+        destination.unlink()
+        source_skill_md = explicit_skill_src / "SKILL.md"
+        source_skill_content = source_skill_md.read_bytes()
+        destination.symlink_to(explicit_skill_src, target_is_directory=True)
+
+        dry_run_symlink_migration = run_command(
+            "bash",
+            "scripts/deploy-skills.sh",
+            "--harness",
+            "agents",
+            "--scope",
+            "project",
+            "--project-root",
+            str(project_root),
+            "--skill",
+            explicit_skill,
+            "--dry-run",
+            expect_success=True,
+            label="old symlink migration dry-run",
+        )
+        if f"remove symlink {destination}" not in dry_run_symlink_migration.stdout:
+            fail("Dry-run did not announce removal of an old destination symlink")
+        if (
+            f"copy runtime {explicit_skill_src} {destination}"
+            not in dry_run_symlink_migration.stdout
+        ):
+            fail("Dry-run did not announce copying after old symlink removal")
+        if not destination.is_symlink():
+            fail("Dry-run should not mutate an old destination symlink")
+
         run_command(
             "bash",
             "scripts/deploy-skills.sh",
@@ -998,46 +1062,15 @@ def validate_deploy_script(
             "project",
             "--project-root",
             str(project_root),
-            "--mode",
-            "symlink",
             "--skill",
             explicit_skill,
             expect_success=True,
-            label="symlink-mode initial deploy",
+            label="old symlink migration",
         )
-        if not symlink_destination.is_symlink():
-            fail("Symlink-mode initial deploy did not create a symlink")
-
-        dry_run_symlink_redeploy = run_command(
-            "bash",
-            "scripts/deploy-skills.sh",
-            "--harness",
-            "agents",
-            "--scope",
-            "project",
-            "--project-root",
-            str(project_root),
-            "--mode",
-            "symlink",
-            "--skill",
-            explicit_skill,
-            "--dry-run",
-            expect_success=True,
-            label="symlink-mode redeploy dry-run",
-        )
-        if f"remove symlink {symlink_destination}" not in dry_run_symlink_redeploy.stdout:
-            fail("Symlink-mode dry-run did not announce removal of an existing symlink")
-        if (
-            f"ln -s {explicit_skill_src} {symlink_destination}"
-            not in dry_run_symlink_redeploy.stdout
-        ):
-            fail("Symlink-mode dry-run did not announce relinking after symlink replacement")
-        if "skip existing non-symlink" in dry_run_symlink_redeploy.stderr.lower():
-            fail(
-                "Symlink-mode dry-run incorrectly reported an existing symlink as a non-symlink collision"
-            )
-        if not symlink_destination.is_symlink():
-            fail("Symlink-mode dry-run should not mutate the existing symlink")
+        if not destination.is_dir() or destination.is_symlink():
+            fail("Deployment did not replace an old destination symlink with a copied directory")
+        if source_skill_md.read_bytes() != source_skill_content:
+            fail("Deployment modified the canonical target of an old destination symlink")
 
 
 def validate_handoff_smoke_tests() -> None:

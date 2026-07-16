@@ -41,8 +41,8 @@ bash scripts/deploy-skills.sh --harness codex --all
 ```
 
 Supported local deployment targets are `agents`, `claude-code`, `codex`,
-`copilot`, `cursor`, and `kiro`. User-level symlinks are the default; project
-installs use clean runtime copies. See [Deployment](docs/deployment.md).
+`copilot`, `cursor`, and `kiro`. All local deployments install clean runtime
+copies. See [Deployment](docs/deployment.md).
 
 ## Evaluate and improve skills
 

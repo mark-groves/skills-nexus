@@ -60,6 +60,20 @@ class PackageSkillTests(unittest.TestCase):
             self.assertTrue((destination / "SKILL.md").is_file())
             self.assertEqual(sentinel.read_text(encoding="utf-8"), "keep\n")
 
+    def test_destination_symlink_to_source_is_replaced_with_copy(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = self.write_skill(root / "source-root")
+            destination = root / "installed"
+            destination.symlink_to(source, target_is_directory=True)
+
+            status = package_skill.main([str(source), str(destination)])
+
+            self.assertEqual(status, 0)
+            self.assertFalse(destination.is_symlink())
+            self.assertTrue((destination / "SKILL.md").is_file())
+            self.assertTrue((source / "SKILL.md").is_file())
+
     def test_source_and_destination_may_not_overlap(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

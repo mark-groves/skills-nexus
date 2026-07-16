@@ -1,7 +1,7 @@
 # Authoring skills
 
 Canonical runtime skills live under `skills/<name>/`. Each directory is a
-self-contained package that can be copied, symlinked, or installed by a
+self-contained package that can be copied, packaged, or installed by a
 compatible agent client.
 
 Skills Nexus follows the common Agent Skills package shape and authoring
