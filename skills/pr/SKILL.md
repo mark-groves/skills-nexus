@@ -23,8 +23,8 @@ Treat requests to create, open, submit, or publish a PR as **publish**. The
 request authorizes the required branch push and PR creation after all safety,
 provider, and repository checks pass; do not pause for draft approval.
 
-Use a user-supplied branch argument as the base branch. Otherwise resolve the
-default branch later; never silently assume `main`.
+Use a user-supplied branch argument as the PR target branch. Otherwise resolve
+the repository default branch later; never silently assume `main`.
 
 ## 2. Inspect local state
 
@@ -61,25 +61,53 @@ Do not interpret an unfamiliar host as GitHub. Draft-only mode may continue if
 the base can be resolved locally. Publish mode must stop and ask which provider
 and publishing tool to use.
 
-## 3. Resolve the base branch
+## 3. Resolve target and comparison branches
 
-First try the selected remote's symbolic default:
+Track three distinct values:
+
+- `default_branch`: the repository default branch name, used for publish-mode
+  source-branch safety.
+- `base`: the provider-facing PR target branch name. Use the user-supplied
+  branch when present; otherwise use `default_branch`.
+- `base_ref`: the locally available ref used by `git log` and `git diff`.
+  Prefer the selected remote's tracking ref so comparisons do not depend on a
+  stale or missing local branch.
+
+First try the selected remote's symbolic default ref:
 
 ```bash
 git symbolic-ref --quiet --short refs/remotes/<remote>/HEAD
 ```
 
-Strip the `<remote>/` prefix. If that fails, use the detected provider's
-default-branch command from [provider workflows](references/providers.md).
-Stop and ask for a base branch if neither method succeeds.
+Keep the full result, such as `upstream/main`, as the default comparison ref
+and strip only the `<remote>/` prefix when setting `default_branch`.
 
-Even when the user supplied a different base, still resolve the default branch
-for source-branch safety checks.
+In draft-only mode, never fall back to a provider CLI. If no base was supplied
+and the remote symbolic ref is unavailable, ask the user for a locally
+available base branch. A supplied base is sufficient for drafting, so
+`default_branch` does not need to be resolved in this mode.
+
+In publish mode, resolve `default_branch` even when the user supplied another
+base, because it is required for source-branch safety. If the remote symbolic
+ref is absent, use only the detected provider's default-branch command from
+[provider workflows](references/providers.md). Stop if it cannot be resolved.
+
+After selecting `base`, resolve `base_ref` without stripping remote context:
+
+1. Use `<remote>/<base>` when `refs/remotes/<remote>/<base>` exists.
+2. Otherwise use `<base>` when `refs/heads/<base>` exists locally.
+3. Otherwise stop and ask the user to fetch the base or name a locally
+   available ref; do not compare against a guessed branch.
+
+When the remote symbolic default was selected as the base, reuse its full ref
+as `base_ref`.
 
 ## 4. Validate the branch and provider
 
-Stop if the current branch is `main`, `master`, or the resolved default branch.
-Never push or create a PR from the default branch.
+In publish mode, stop if the current branch is `main`, `master`, or the
+resolved `default_branch`. Never push or create a PR from the default branch.
+Draft-only mode may describe changes from any branch because it does not push
+or create a PR.
 
 Warn, but allow the user to continue, when the branch lacks a conventional
 prefix such as `feat/`, `fix/`, `chore/`, `refactor/`, `docs/`, `test/`, or
@@ -95,16 +123,15 @@ Azure DevOps repository is misconfigured, or vice versa.
 Inspect all branch work, not only the latest commit:
 
 ```bash
-git log --oneline <base>..HEAD
-git diff --stat <base>...HEAD
-git diff <base>...HEAD
+git log --oneline <base_ref>..HEAD
+git diff --stat <base_ref>...HEAD
+git diff <base_ref>...HEAD
 ```
 
 Stop if there are no commits ahead of the base.
 
 In publish mode, use the provider workflow to check for an existing active PR
-from this source branch to the selected base. Return its web URL and stop if one
-exists.
+from this source branch to `base`. Return its web URL and stop if one exists.
 
 Determine push state:
 

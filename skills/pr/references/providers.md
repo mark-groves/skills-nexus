@@ -50,15 +50,22 @@ created despite the error; otherwise report the original error and stop.
 ## Azure DevOps
 
 Use the Azure CLI with the `azure-devops` extension only for an Azure Repos
-remote. Azure DevOps auto-detects organization, project, and repository from
-the current Git checkout by default.
+remote. Azure DevOps may auto-detect the organization and project from the
+current Git checkout; pass the repository explicitly.
+
+Derive `repository` from the selected remote URL before running repository
+commands. For HTTPS URLs containing `/_git/`, use the path segment after
+`/_git/`. For Azure SSH `v3/<organization>/<project>/<repository>` URLs, use
+the final path segment. Strip a trailing `.git`. If the repository name or ID
+cannot be derived unambiguously, ask the user for it and stop rather than
+querying an arbitrary repository.
 
 Prerequisites:
 
 ```bash
 az --version
 az extension show --name azure-devops
-az repos show --detect true --query id -o tsv
+az repos show --repository "$repository" --detect true --query id -o tsv
 ```
 
 If `az` or the extension is absent, tell the user what to install; do not
@@ -69,7 +76,7 @@ configure the correct organization/project. Do not request or expose a PAT.
 Resolve the default branch when the remote-tracking symbolic ref is absent:
 
 ```bash
-az repos show --detect true --query defaultBranch -o tsv
+az repos show --repository "$repository" --detect true --query defaultBranch -o tsv
 ```
 
 Strip `refs/heads/` from the result.
@@ -79,6 +86,7 @@ Check for an existing active PR from the current branch to the selected base:
 ```bash
 az repos pr list \
   --detect true \
+  --repository "$repository" \
   --source-branch "$current" \
   --target-branch "$base" \
   --status active \
@@ -105,6 +113,7 @@ EOF
 )
 az repos pr create \
   --detect true \
+  --repository "$repository" \
   --source-branch "$current" \
   --target-branch "$base" \
   --title "$title" \

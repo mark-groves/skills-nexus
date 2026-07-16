@@ -56,13 +56,15 @@
       "id": 2,
       "prompt": "/pr release/2026-04",
       "expected_behavior": "Uses the supplied base branch, checks the branch state and diff, and reports whether a push is needed before PR creation.",
-      "fixtures": [],
+      "fixtures": [
+        "explicit-release-base"
+      ],
       "checks": [
         "Uses release/2026-04 as the base branch",
         "Passes release/2026-04 to gh pr create with --base",
         "Still resolves the default branch for current-branch safety checks",
         "Checks git status, branch identity, gh availability, and gh auth before proceeding",
-        "Inspects commits and diff against the requested base branch",
+        "Inspects commits and diff against origin/release/2026-04 rather than silently replacing it with the default branch",
         "Reports whether a push is needed before PR creation"
       ]
     },
@@ -172,6 +174,7 @@
       ],
       "checks": [
         "Detects Azure DevOps from the dev.azure.com remote URL",
+        "Derives widget-api from the remote and passes it with --repository to az repos show",
         "Uses or proposes az repos commands rather than gh commands",
         "Does NOT run gh auth status, gh repo view, or gh pr create",
         "If Azure CLI prerequisites are unavailable, gives Azure-specific installation or authentication guidance",
@@ -193,6 +196,34 @@
         "Keeps Summary to 1-3 outcome-focused bullets without a file inventory or title repetition",
         "Records `python3 -m unittest` as passed and does not invent other validation",
         "Omits empty Notes, placeholder text, and an approval request to publish"
+      ]
+    },
+    {
+      "id": 13,
+      "prompt": "Draft the PR title and description against main, but do not authenticate, push, or publish.",
+      "expected_behavior": "Uses the supplied local base to draft PR text even when the remote default symbolic ref is absent, without consulting a provider CLI.",
+      "fixtures": [
+        "draft-pr-without-remote-head"
+      ],
+      "checks": [
+        "Uses main as the PR target and local comparison ref",
+        "Does NOT run gh auth status, gh repo view, or any other provider lookup",
+        "Does NOT push or create a pull request",
+        "Returns a structured title and body based on the complete local diff"
+      ]
+    },
+    {
+      "id": 14,
+      "prompt": "Draft the PR title and description for this branch, but do not push or publish it.",
+      "expected_behavior": "Keeps the selected non-origin remote-tracking ref for local diff inspection while reporting the stripped branch name as the PR target.",
+      "fixtures": [
+        "non-origin-default-base"
+      ],
+      "checks": [
+        "Selects upstream from branch.feat/friendly-greeting.pushRemote",
+        "Reports main as the PR target branch",
+        "Uses upstream/main rather than local main for git log and git diff",
+        "Does NOT authenticate, push, or create a pull request"
       ]
     }
   ]

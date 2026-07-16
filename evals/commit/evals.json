@@ -191,6 +191,20 @@
         "Uses a concise prose body that explains motivation or behavioral impact rather than listing files",
         "Does not invent an issue identifier or breaking-change footer"
       ]
+    },
+    {
+      "id": 12,
+      "prompt": "Draft a Conventional Commit message for these changes, but do not stage or commit anything.",
+      "expected_behavior": "Drafts a commit message from a default-branch worktree without applying mutation-only branch gates.",
+      "fixtures": [
+        "draft-message-on-default-branch"
+      ],
+      "checks": [
+        "Inspects the working-tree diff while on main",
+        "Does NOT require a feature branch or ask whether the branch matches the change",
+        "Does NOT stage files or create a commit",
+        "Returns a valid Conventional Commit message in a text code block"
+      ]
     }
   ]
 }

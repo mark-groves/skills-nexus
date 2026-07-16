@@ -34,6 +34,17 @@ If a permitted mutating command still fails, treat the remaining error as real.
 Do not retry `git commit` automatically after a hook failure; follow the
 pre-commit hook rule below instead.
 
+## Step 0 — Determine the requested mode
+
+Decide the mode before applying branch or sequencer safety gates.
+
+- **Draft-only:** the user explicitly asks only to draft, review, or improve a
+  commit message. Inspect the changes and return text, but never stage or
+  commit. Default-branch, detached-HEAD, sequencer, and branch-relevance gates
+  protect mutations and do not block this mode.
+- **Commit:** the user asks to create one or more commits. Apply every safety,
+  staging, and branch-relevance rule below.
+
 ## Step 1 — Gather context
 
 Minimize tool-call count. For read-only inspection, prefer a single Bash
@@ -55,9 +66,11 @@ invocation with clearly labeled output.
 Only run an extra branch command if the status output is insufficient.
 When branch identity matters, use `git symbolic-ref --quiet --short HEAD`.
 
-Stop immediately if any of these are true:
+Stop in either mode if `git status` shows no changes from which to draft or
+create a commit.
 
-- `git status` shows no changes to commit.
+In commit mode, stop immediately if any of these are true:
+
 - The repo is in a detached HEAD state.
 - There are unmerged or conflicted paths.
 - Any sequencer sentinel indicates a merge, rebase, cherry-pick, or
@@ -67,12 +80,12 @@ Stop immediately if any of these are true:
 Tell the user what must be resolved first. Do not stage or commit
 anything in these states.
 
-If the current branch is `main` or `master`, warn the user and suggest
+In commit mode, if the current branch is `main` or `master`, warn the user and suggest
 creating a feature branch first (using a conventional prefix like
 `feat/`, `fix/`, etc.). Do not proceed until the user is on a
 non-default branch or explicitly overrides.
 
-If the current branch is already a non-default feature branch, evaluate
+In commit mode, if the current branch is already a non-default feature branch, evaluate
 whether its name appears to match the primary change being committed.
 Use the same primary-change priorities described below. Make an educated
 judgment from the branch name, the diff, and recent history.
