@@ -253,7 +253,9 @@ command. Preserve the generated Markdown exactly; do not flatten newlines or
 rewrite it during submission.
 
 Return the human-facing PR URL, provider, base/head branches, title, body, and
-push result.
+push result. Report `base` as the branch-only provider target (for example,
+`main`), never as `<base_remote>/<base>`. If local comparison context is useful,
+label the remote-tracking value separately as `base_ref`.
 
 ## Safety
 

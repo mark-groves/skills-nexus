@@ -10,12 +10,14 @@ for GitHub CLI.
 Derive these values locally before running repository-scoped commands:
 
 - `github_host` from `base_remote`.
-- `github_target_repository` as `[HOST/]OWNER/REPO` from `base_remote`.
+- `github_target_repository` as `HOST/OWNER/REPO` from `base_remote`.
 - `github_source_repository` and `github_source_owner` from `push_remote`.
 
 Normalize HTTPS, SCP-style SSH, and `ssh://` URLs, and strip a trailing `.git`.
 For example, `git@github.com:acme/widget.git` becomes
-`github.com/acme/widget`. Stop if any host, owner, or repository is ambiguous,
+`github.com/acme/widget`. Keep the host even when it is `github.com`; do not
+shorten the value to `OWNER/REPO` in commands or command drafts. Stop if any
+host, owner, or repository is ambiguous,
 if a derived owner or repository contains characters outside GitHub slug
 syntax, or if source and target use different hosts.
 
