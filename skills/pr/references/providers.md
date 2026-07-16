@@ -6,26 +6,48 @@ Read only the section for the detected provider.
 
 Use `gh` only for a GitHub remote.
 
+Derive `github_host` and `github_repository` from the selected remote URL
+before running repository-scoped commands. Normalize HTTPS, SCP-style SSH, and
+`ssh://` URLs into `[HOST/]OWNER/REPO`, and strip a trailing `.git`. For
+example, `git@github.com:acme/widget.git` becomes
+`github.com/acme/widget`. Stop if the owner and repository cannot be derived
+unambiguously.
+
+Bind every repository-scoped command to that value. Pass it as the positional
+repository to `gh repo view` and with `--repo "$github_repository"` to every
+`gh pr` command. Do not let `gh` infer a different repository from the current
+directory in a multi-remote checkout.
+
 Prerequisites:
 
 ```bash
 gh --version
-gh auth status
+gh auth status --hostname "$github_host"
 ```
 
-If authentication fails, ask the user to run `gh auth login`. Do not start an
-interactive login.
+If authentication fails, ask the user to run
+`gh auth login --hostname "$github_host"`. Do not start an interactive login.
 
 Resolve the default branch when the remote-tracking symbolic ref is absent:
 
 ```bash
-gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name'
+gh repo view "$github_repository" \
+  --json defaultBranchRef \
+  --jq '.defaultBranchRef.name'
 ```
 
-Check for an existing PR from the current branch:
+Check for an existing open PR from the current branch to the selected base.
+Both filters are required because one source branch may have PRs targeting
+different bases:
 
 ```bash
-gh pr view <current-branch> --json url --jq '.url'
+gh pr list \
+  --repo "$github_repository" \
+  --head "$current" \
+  --base "$base" \
+  --state open \
+  --json url \
+  --jq '.[0].url // empty'
 ```
 
 A not-found result is expected and means creation may continue.
@@ -33,7 +55,12 @@ A not-found result is expected and means creation may continue.
 Create the PR while preserving its generated Markdown:
 
 ```bash
-gh pr create --base "$base" --head "$current" --title "$title" --body-file - <<'EOF'
+gh pr create \
+  --repo "$github_repository" \
+  --base "$base" \
+  --head "$current" \
+  --title "$title" \
+  --body-file - <<'EOF'
 ## Summary
 
 - ...
@@ -44,8 +71,9 @@ gh pr create --base "$base" --head "$current" --title "$title" --body-file - <<'
 EOF
 ```
 
-If creation fails, run the existing-PR check once. Return the URL if the PR was
-created despite the error; otherwise report the original error and stop.
+If creation fails, run the same repository-, head-, and base-filtered existing
+PR check once. Return the URL if the PR was created despite the error;
+otherwise report the original error and stop.
 
 ## Azure DevOps
 

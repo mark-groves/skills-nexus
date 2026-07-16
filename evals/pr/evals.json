@@ -145,8 +145,9 @@
       "expected_behavior": "Returns an existing PR URL instead of creating a duplicate PR.",
       "fixtures": [],
       "checks": [
-        "Checks for an existing pull request with gh pr view --json url --jq '.url'",
+        "Checks the selected GitHub repository with gh pr list filtered by both --head and --base",
         "Prints the existing PR URL when found",
+        "Does not mistake an open PR to another base for a duplicate",
         "Does not push or create a duplicate PR"
       ]
     },
@@ -221,6 +222,20 @@
         "Selects upstream from branch.feat/friendly-greeting.pushRemote",
         "Reports main as the PR target branch",
         "Uses upstream/main rather than local main for git log and git diff",
+        "Does NOT authenticate, push, or create a pull request"
+      ]
+    },
+    {
+      "id": 15,
+      "prompt": "Draft the exact GitHub CLI commands that would publish this branch, but do not authenticate, push, or create the PR.",
+      "expected_behavior": "Binds duplicate detection and PR creation commands to the repository derived from the selected non-origin remote and filters duplicates by both head and base.",
+      "fixtures": [
+        "non-origin-default-base"
+      ],
+      "checks": [
+        "Derives github.com/example/widget-api from the selected upstream remote",
+        "Uses gh pr list with --repo github.com/example/widget-api, --head feat/friendly-greeting, and --base main",
+        "Uses gh pr create with --repo github.com/example/widget-api, --head feat/friendly-greeting, and --base main",
         "Does NOT authenticate, push, or create a pull request"
       ]
     }
