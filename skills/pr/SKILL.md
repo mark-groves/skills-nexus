@@ -40,16 +40,24 @@ possible:
 - `git symbolic-ref --quiet --short HEAD`
 - `git remote -v`
 - `git rev-parse --abbrev-ref @{upstream}` (failure means no upstream)
+- `git config --get "branch.<current-branch>.pushRemote"`
+- `git config --get remote.pushDefault`
+- `git config --get "branch.<current-branch>.remote"`
+
+Read those three configuration keys exactly; do not rely on a case-sensitive
+`--get-regexp` pattern to discover Git's case-insensitive `pushRemote` key.
 
 Stop if HEAD is detached. If the working tree is dirty, suggest committing
 first and stop unless the user explicitly asks to continue with the dirty tree.
 
 Select `push_remote`, the destination for the current branch:
 
-1. Use the upstream remote when one exists.
-2. Otherwise prefer `branch.<current-branch>.pushRemote`.
-3. Then prefer `remote.pushDefault`.
-4. Then prefer `branch.<current-branch>.remote`.
+1. Prefer `branch.<current-branch>.pushRemote` when it names a configured
+   remote.
+2. Then prefer `remote.pushDefault` when it names a configured remote.
+3. Then use the upstream remote when one exists.
+4. Then prefer `branch.<current-branch>.remote` when it names a configured
+   remote.
 5. Then use the only configured remote.
 6. If several remotes remain possible, ask the user to choose; do not assume
    `origin`.
@@ -58,7 +66,10 @@ Select `base_remote`, the repository that owns the PR target, independently:
 
 1. If the user supplies `<remote>/<branch>` and `<remote>` is configured, use
    that remote and strip only the remote prefix when setting `base`.
-2. Otherwise use a target remote or repository explicitly named by the user.
+2. Otherwise use a configured target remote explicitly named by the user. If
+   the user names a repository URL or identifier that is not mapped to a
+   configured remote, stop and ask them to add/select a target remote; do not
+   invent a remote name or mutate Git configuration.
 3. Otherwise prefer a configured remote named `upstream` when it differs from
    `push_remote`; this is the conventional target in a fork checkout.
 4. Otherwise use the only configured remote.
@@ -70,8 +81,14 @@ Select `base_remote`, the repository that owns the PR target, independently:
 This separation is required in fork workflows: a branch may push to `origin`
 while its PR targets `upstream/main`.
 
-Read both URLs with `git remote get-url`. Detect the PR provider from the
-`base_remote` URL, preferring an explicit provider named by the user:
+Read `push_fetch_url` with `git remote get-url <push_remote>`, the actual push
+destination as `push_url` with `git remote get-url --push <push_remote>`, and
+the target fetch URL as `base_url` with
+`git remote get-url <base_remote>`. Keep `push_fetch_url` and `push_url`
+distinct. A configured `pushurl` overrides the fetch URL for transport,
+provider-source derivation, and host compatibility checks. In command-draft
+mode, label both values before the commands. Detect the PR provider from
+`base_url`, preferring an explicit provider named by the user:
 
 - GitHub: `github.com`, a host beginning with `github.`, or a host already
   configured for GitHub CLI
@@ -155,25 +172,33 @@ git diff <base_ref>...HEAD
 Stop if there are no commits ahead of the base.
 
 In publish and command-draft modes, determine push state locally before any
-provider authentication:
+provider authentication. Compare against
+`refs/remotes/<push_remote>/<current-branch>` when it exists; do not use a
+tracking branch from a different remote as evidence that the push destination
+is current:
 
 - No upstream: push with `git push -u <push_remote> <current-branch>`.
-- Upstream exists and local is ahead: push with `git push`.
-- Upstream is current: no push is needed.
-- Upstream is ahead or diverged: stop and ask the user to reconcile it.
+- A push-remote tracking ref exists and local is ahead: push with
+  `git push <push_remote> <current-branch>`.
+- The push-remote tracking ref is current: no push is needed.
+- The push-remote tracking ref is ahead or diverged: stop and ask the user to
+  reconcile it.
+- An upstream exists on another remote but no push-remote tracking ref exists:
+  push with `git push <push_remote> <current-branch>` without changing the
+  branch's upstream.
 
-Use `git rev-list --left-right --count @{upstream}...HEAD` for ahead/behind
-counts.
+Use `git rev-list --left-right --count
+refs/remotes/<push_remote>/<current-branch>...HEAD` for ahead/behind counts.
 
 Prevent Git transport from opening an interactive credential prompt. Inspect
-the `push_remote` URL and use the matching non-interactive form for both the
-preflight and eventual push:
+`push_url`, not the remote's fetch URL, and use the matching non-interactive
+form for both the preflight and eventual push:
 
 - SSH: set
   `GIT_SSH_COMMAND='ssh -o BatchMode=yes -o StrictHostKeyChecking=yes'`.
 - HTTPS: set `GCM_INTERACTIVE=Never GIT_TERMINAL_PROMPT=0`.
 
-In publish mode, run `git ls-remote <push_remote> HEAD` with that
+In publish mode, run `git ls-remote <push_url> HEAD` with that
 environment before any push. Stop on failure; do not fall through to an
 interactive password, key-passphrase, or host-key prompt. Use the same
 environment on `git push`. In command-draft mode, include the appropriate

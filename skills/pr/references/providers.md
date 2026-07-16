@@ -10,8 +10,10 @@ for GitHub CLI.
 Derive these values locally before running repository-scoped commands:
 
 - `github_host` from `base_remote`.
-- `github_target_repository` as `HOST/OWNER/REPO` from `base_remote`.
-- `github_source_repository` and `github_source_owner` from `push_remote`.
+- `github_target_repository` as `HOST/OWNER/REPO`, plus
+  `github_target_owner` and `github_target_name`, from `base_url`.
+- `github_source_repository`, `github_source_owner`, and
+  `github_source_name` from `push_url`.
 
 Normalize HTTPS, SCP-style SSH, and `ssh://` URLs, and strip a trailing `.git`.
 For example, `git@github.com:acme/widget.git` becomes
@@ -30,6 +32,7 @@ Prerequisites:
 ```bash
 gh --version
 gh auth status --hostname "$github_host"
+gh api --hostname "$github_host" "users/$github_source_owner" --jq '.type'
 ```
 
 If authentication fails, ask the user to run
@@ -59,9 +62,15 @@ gh pr list \
 
 A not-found result is expected and means creation may continue.
 
-For a same-repository PR, set `github_head` to `$current`. For a fork PR, set
+Record the source owner type from the prerequisite query. For a
+same-repository PR, set `github_head` to `$current`. For a user-owned fork, set
 it to `$github_source_owner:$current` so GitHub selects the source fork rather
 than a same-named target branch.
+
+In command-draft mode, use an owner type explicitly supplied by the user. If
+the owner type is unknown, include the non-mutating owner-type lookup and label
+the user-owned and organization-owned creation commands as conditional; do not
+authenticate or guess the type.
 
 Create the PR while preserving its generated Markdown:
 
@@ -82,6 +91,32 @@ gh pr create \
 EOF
 ```
 
+`gh pr create --head <owner>:<branch>` does not support an organization as the
+owner. For an organization-owned fork, use the REST create endpoint and include
+`head_repo`; this also handles forks owned by the same organization as the
+target:
+
+```bash
+body=$(cat <<'EOF'
+## Summary
+
+- ...
+
+## Validation
+
+- ...
+EOF
+)
+gh api --hostname "$github_host" --method POST \
+  "repos/$github_target_owner/$github_target_name/pulls" \
+  --raw-field title="$title" \
+  --raw-field head="$github_source_owner:$current" \
+  --raw-field head_repo="$github_source_name" \
+  --raw-field base="$base" \
+  --raw-field body="$body" \
+  --jq '.html_url'
+```
+
 If creation fails, run the same target-repository, head-branch, base-branch,
 and source-owner-filtered existing PR check once. Return the URL if the PR was
 created despite the error; otherwise report the original error and stop.
@@ -100,7 +135,7 @@ the three path components. Handle `*.visualstudio.com` organization URLs and
 strip a trailing `.git`. URL-decode path segments before passing them to Azure
 CLI. Stop if any value is ambiguous.
 
-Derive the corresponding values from `push_remote` and require them to match;
+Derive the corresponding values from `push_url` and require them to match;
 Azure Repos does not create cross-repository PRs. Pass organization, project,
 and repository explicitly to every `az repos` command rather than relying on
 checkout or CLI defaults.

@@ -276,6 +276,49 @@
         "Explains that az authentication does not authenticate the SSH Git transport and recommends ssh-agent rather than an interactive prompt",
         "Does NOT authenticate, accept a host key, push, or create a pull request"
       ]
+    },
+    {
+      "id": 18,
+      "prompt": "Draft the exact GitHub PR publish commands without running them. Respect this branch's configured push destination.",
+      "expected_behavior": "Prefers branch push configuration over pull tracking and uses the remote's push URL, rather than its fetch URL, for source derivation and non-interactive transport commands.",
+      "fixtures": [
+        "push-remote-pushurl"
+      ],
+      "checks": [
+        "Selects origin from branch.feat/transport.pushRemote even though the branch tracks upstream and remote.pushDefault names upstream",
+        "Uses git@github.com:contributor/widget-api.git as push_url while retaining the HTTPS fetch URL separately",
+        "Uses the SSH batch-mode environment for git ls-remote against the push URL and for git push",
+        "Derives contributor/widget-api as the source and example/widget-api as the target",
+        "Does NOT authenticate, push, or create a pull request"
+      ]
+    },
+    {
+      "id": 19,
+      "prompt": "Draft the exact GitHub PR publish commands without running them. The source fork is owned by the engineering organization.",
+      "expected_behavior": "Avoids gh pr create's unsupported organization-owned --head form and uses the GitHub REST create endpoint with an explicit head repository.",
+      "fixtures": [
+        "github-org-fork-feature"
+      ],
+      "checks": [
+        "Treats engineering as an Organization source owner",
+        "Uses the target repository github.com/example/widget-api for duplicate detection",
+        "Creates through gh api with head engineering:feat/org-fork, head_repo widget-api, and base main",
+        "Does NOT use gh pr create --head engineering:feat/org-fork",
+        "Does NOT authenticate, push, or create a pull request"
+      ]
+    },
+    {
+      "id": 20,
+      "prompt": "Draft the commands for a PR into github.com/example/widget-api main. Do not add remotes or run anything.",
+      "expected_behavior": "Does not pretend an unconfigured repository identifier is a Git remote and requests a configured target remote before deriving comparisons or provider commands.",
+      "fixtures": [
+        "unconfigured-explicit-target"
+      ],
+      "checks": [
+        "Recognizes that github.com/example/widget-api is not mapped to a configured remote",
+        "Asks the user to add or select a configured target remote",
+        "Does NOT invent a base_remote, authenticate, push, alter Git configuration, or create a pull request"
+      ]
     }
   ]
 }
