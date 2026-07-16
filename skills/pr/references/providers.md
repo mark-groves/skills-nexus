@@ -103,6 +103,12 @@ Azure Repos does not create cross-repository PRs. Pass organization, project,
 and repository explicitly to every `az repos` command rather than relying on
 checkout or CLI defaults.
 
+Azure CLI authentication and Git remote authentication are separate. For an
+SSH push URL such as `git@ssh.dev.azure.com:v3/...`, require the core
+workflow's batch-mode SSH preflight before pushing. If it fails, explain that
+the SSH key must be registered with Azure DevOps and loaded into `ssh-agent`;
+do not prompt for a passphrase or treat successful `az login` as Git access.
+
 Prerequisites:
 
 ```bash

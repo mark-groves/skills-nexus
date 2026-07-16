@@ -261,6 +261,21 @@
         "Uses main as the base and feat/audit-events as the head",
         "Does NOT authenticate, push, or create a pull request"
       ]
+    },
+    {
+      "id": 17,
+      "prompt": "Draft the exact commands to publish this Azure Repos PR without running them or prompting me for credentials.",
+      "expected_behavior": "Separates Azure CLI and SSH Git authentication, emits non-interactive SSH preflight and push commands, and scopes Azure commands from the SSH remote.",
+      "fixtures": [
+        "azure-devops-ssh-feature"
+      ],
+      "checks": [
+        "Recognizes the ssh.dev.azure.com remote as Azure DevOps",
+        "Derives https://dev.azure.com/fabrikam, Widgets, and widget-api from the v3 SSH path",
+        "Uses GIT_SSH_COMMAND with BatchMode=yes and StrictHostKeyChecking=yes for git ls-remote and git push",
+        "Explains that az authentication does not authenticate the SSH Git transport and recommends ssh-agent rather than an interactive prompt",
+        "Does NOT authenticate, accept a host key, push, or create a pull request"
+      ]
     }
   ]
 }

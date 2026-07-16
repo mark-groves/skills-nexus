@@ -165,6 +165,28 @@ provider authentication:
 Use `git rev-list --left-right --count @{upstream}...HEAD` for ahead/behind
 counts.
 
+Prevent Git transport from opening an interactive credential prompt. Inspect
+the `push_remote` URL and use the matching non-interactive form for both the
+preflight and eventual push:
+
+- SSH: set
+  `GIT_SSH_COMMAND='ssh -o BatchMode=yes -o StrictHostKeyChecking=yes'`.
+- HTTPS: set `GCM_INTERACTIVE=Never GIT_TERMINAL_PROMPT=0`.
+
+In publish mode, run `git ls-remote <push_remote> HEAD` with that
+environment before any push. Stop on failure; do not fall through to an
+interactive password, key-passphrase, or host-key prompt. Use the same
+environment on `git push`. In command-draft mode, include the appropriate
+environment in the returned preflight and push commands without running them.
+
+For an SSH failure, report that provider CLI authentication does not
+authenticate Git transport. Suggest checking loaded keys with `ssh-add -l`,
+loading the intended key into `ssh-agent`, and verifying an unknown host key
+fingerprint out of band. Do not run `ssh-add`, accept a host key, change the
+remote URL, or weaken host-key checking automatically. For HTTPS, recommend
+the provider-supported credential manager or token flow without requesting a
+secret in chat.
+
 ## 6. Draft the PR
 
 Write a title under 70 characters. Use imperative wording with no trailing
@@ -211,7 +233,10 @@ For command-draft mode, read only the detected provider section in
 [provider workflows](references/providers.md) and return the exact ordered
 duplicate-check, push, and create commands with all derived remote, repository,
 branch, organization, and project values filled in. Clearly label them as not
-executed. Do not run provider authentication or any mutating command.
+executed. For an SSH remote, also state that provider CLI authentication does
+not authenticate Git transport and that a failed batch-mode preflight requires
+the correct key to be loaded in `ssh-agent`. Do not run provider authentication
+or any mutating command.
 
 For publish mode, read [provider workflows](references/providers.md) and run
 only the prerequisite checks for the detected provider after the local draft
@@ -233,6 +258,8 @@ push result.
 ## Safety
 
 - Never force push or use `--no-verify`.
+- Never allow Git to prompt interactively for remote credentials during this
+  workflow.
 - Never push the default branch.
 - Never create a duplicate PR.
 - Never install a CLI or extension, start interactive authentication, or alter
