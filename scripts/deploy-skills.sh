@@ -7,7 +7,6 @@ SKILLS_DIR="$REPO_DIR/skills"
 
 HARNESS=""
 SCOPE="user"
-MODE=""
 PROJECT_ROOT=""
 DRY_RUN=0
 ALL=0
@@ -25,7 +24,6 @@ Options:
   --all                     Deploy every canonical skill
   --scope <user|project>    Install scope (default: user)
   --project-root <path>     Project root for project-scoped installs
-  --mode <symlink|copy>     Install mode (default: symlink for user, copy for project)
   --dry-run                 Print actions without changing anything
   --help                    Show this message
 EOF
@@ -97,47 +95,21 @@ add_all_skills() {
 
 install_skill() {
   local src="$1" dst="$2"
-  local replacing_symlink=0
   if [[ -L "$dst" ]]; then
-    replacing_symlink=1
     if (( DRY_RUN )); then
       echo "remove symlink $dst"
-    else
-      rm "$dst"
     fi
+  elif [[ -e "$dst" && ! -d "$dst" ]]; then
+    fail "existing non-directory path blocks deployment: $dst"
+  elif [[ -d "$dst" ]] && (( DRY_RUN )); then
+    echo "remove directory $dst"
   fi
 
-  case "$MODE" in
-    symlink)
-      if (( ! replacing_symlink )) && [[ -e "$dst" ]]; then
-        echo "skip existing non-symlink: $dst" >&2
-        return
-      fi
-      if (( DRY_RUN )); then
-        echo "ln -s $src $dst"
-      else
-        ln -s "$src" "$dst"
-      fi
-      ;;
-    copy)
-      if [[ -e "$dst" && ! -d "$dst" ]]; then
-        fail "existing non-directory path blocks copy mode: $dst"
-      fi
-      if [[ -d "$dst" ]]; then
-        if (( DRY_RUN )); then
-          echo "remove directory $dst"
-        fi
-      fi
-      if (( DRY_RUN )); then
-        echo "copy runtime $src $dst"
-      else
-        python3 "$REPO_DIR/scripts/package_skill.py" "$src" "$dst"
-      fi
-      ;;
-    *)
-      fail "unsupported mode: $MODE"
-      ;;
-  esac
+  if (( DRY_RUN )); then
+    echo "copy runtime $src $dst"
+  else
+    python3 "$REPO_DIR/scripts/package_skill.py" "$src" "$dst"
+  fi
 }
 
 while [[ $# -gt 0 ]]; do
@@ -155,11 +127,6 @@ while [[ $# -gt 0 ]]; do
     --project-root)
       [[ $# -ge 2 ]] || fail "--project-root requires a value"
       PROJECT_ROOT="$2"
-      shift 2
-      ;;
-    --mode)
-      [[ $# -ge 2 ]] || fail "--mode requires a value"
-      MODE="$2"
       shift 2
       ;;
     --skill)
@@ -187,10 +154,6 @@ done
 
 [[ -n "$HARNESS" ]] || fail "--harness is required"
 [[ "$SCOPE" == "user" || "$SCOPE" == "project" ]] || fail "--scope must be user or project"
-if [[ -z "$MODE" ]]; then
-  [[ "$SCOPE" == "user" ]] && MODE="symlink" || MODE="copy"
-fi
-[[ "$MODE" == "symlink" || "$MODE" == "copy" ]] || fail "--mode must be symlink or copy"
 
 HARNESS_FILE="$HARNESS_DIR/$HARNESS.json"
 [[ -f "$HARNESS_FILE" ]] || fail "unknown harness: $HARNESS"
@@ -214,7 +177,6 @@ fi
 
 echo "Harness: $HARNESS"
 echo "Scope: $SCOPE"
-echo "Mode: $MODE"
 echo "Target: $TARGET_ROOT"
 
 for skill_name in "${SKILL_NAMES[@]}"; do

@@ -41,16 +41,15 @@ bash scripts/deploy-skills.sh --harness agents --all
 metadata and install locations are adapter concerns; there are no separate
 harness-owned copies of the skill source.
 
-## Choose a scope and mode
+## Choose a scope
 
-User scope is the default. It uses symlinks so edits in the checkout are
-immediately visible:
+User scope is the default:
 
 ```bash
 bash scripts/deploy-skills.sh --harness claude-code --skill commit
 ```
 
-Project scope defaults to a clean runtime copy beneath the project root:
+Project scope installs beneath the project root:
 
 ```bash
 bash scripts/deploy-skills.sh \
@@ -60,14 +59,14 @@ bash scripts/deploy-skills.sh \
   --project-root /path/to/project
 ```
 
-Override either default with `--mode symlink` or `--mode copy`. Copy mode
-packages the canonical directory without repo-only working files. Evals and raw
-observations live outside `skills/`, so neither can leak into a packaged copy.
-The packager preserves `SKILL.md` exactly; deployment never rewrites metadata
-for a target.
+Every deployment installs a clean runtime copy of the canonical directory
+without repo-only working files. Evals and raw observations live outside
+`skills/`, so neither can leak into an installed copy. The packager preserves
+`SKILL.md` exactly; deployment never rewrites metadata for a target.
 
-Copy mode replaces an existing destination directory. Symlink mode replaces an
-existing symlink, while preserving and reporting an existing regular directory.
+Redeployment replaces an existing destination directory. A destination that is
+an old symlink is removed and replaced with a directory without modifying the
+symlink target. An existing non-directory path blocks deployment.
 
 ## Preview operations
 
