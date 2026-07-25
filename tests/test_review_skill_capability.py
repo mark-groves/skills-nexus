@@ -574,15 +574,16 @@ class DurableExportTests(unittest.TestCase):
             self.assertEqual(json_bytes, second_json.read_bytes())
             self.assertEqual(markdown_bytes, second_markdown.read_bytes())
             exported = json_bytes.decode()
-            self.assertNotIn(str(fixture.repo), exported)
-            self.assertNotIn(str(fixture.candidate), exported)
-            self.assertNotIn("RAW PROMPT MUST NOT EXPORT", exported)
-            self.assertNotIn("RAW COMMAND OUTPUT MUST NOT EXPORT", exported)
-            self.assertNotIn("DEVELOPMENT PROMPT MUST NOT EXPORT", exported)
+            markdown = markdown_bytes.decode()
+            for artifact in (exported, markdown):
+                self.assertNotIn(str(fixture.repo), artifact)
+                self.assertNotIn(str(fixture.candidate), artifact)
+                self.assertNotIn("RAW PROMPT MUST NOT EXPORT", artifact)
+                self.assertNotIn("RAW COMMAND OUTPUT MUST NOT EXPORT", artifact)
+                self.assertNotIn("DEVELOPMENT PROMPT MUST NOT EXPORT", artifact)
             self.assertLess(len(json_bytes), 256_000)
             self.assertFalse(first["human_review"]["automatic_promotion"])
             self.assertIn("${CANDIDATE_DIR}", first["reproduction"]["argv"])
-            markdown = markdown_bytes.decode()
             self.assertIn("## Baseline, Current, and Candidate metrics", markdown)
             self.assertIn("## Context footprint", markdown)
             self.assertIn("## Gate results", markdown)
@@ -593,14 +594,20 @@ class DurableExportTests(unittest.TestCase):
             config = fixture.config()
             review, _local_root = run_capability_review(config, FakeEvaluationRunner())
 
-            with self.assertRaisesRegex(EvalError, "absolute path"):
-                build_durable_summary(
-                    review,
-                    config,
-                    disposition="retain",
-                    reviewer="Test Reviewer",
-                    rationale="See /tmp/private-review-notes before deciding.",
-                )
+            for rationale in (
+                "See /tmp/private-review-notes before deciding.",
+                "See `/home/reviewer/private-notes` before deciding.",
+                'See "C:\\Users\\reviewer\\notes.txt" before deciding.',
+            ):
+                with self.subTest(rationale=rationale):
+                    with self.assertRaisesRegex(EvalError, "absolute path"):
+                        build_durable_summary(
+                            review,
+                            config,
+                            disposition="retain",
+                            reviewer="Test Reviewer",
+                            rationale=rationale,
+                        )
 
     def test_cli_end_to_end_uses_fake_profiles_without_external_services(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

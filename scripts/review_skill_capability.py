@@ -32,6 +32,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Build the capability-review command-line interface."""
     parser = argparse.ArgumentParser(
         description=(
             "Run one full candidate evaluation suite across required and selected "
@@ -149,6 +150,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _configuration(args: argparse.Namespace) -> CapabilityReviewConfig:
+    """Load and validate all review contracts before any model call."""
     repo_root = args.repo_root.resolve()
     contract = load_profile_contract(args.profiles)
     profiles = select_profiles(
@@ -194,6 +196,7 @@ def _configuration(args: argparse.Namespace) -> CapabilityReviewConfig:
 
 
 def _validate_export_args(args: argparse.Namespace) -> None:
+    """Require a complete human disposition only for explicit export."""
     supplied = any((args.reviewer, args.disposition, args.disposition_rationale))
     if args.export and not all((args.reviewer, args.disposition, args.disposition_rationale)):
         raise EvalError("--export requires --reviewer, --disposition, and --disposition-rationale")
@@ -208,6 +211,7 @@ def main(
     *,
     evaluation_runner: EvaluationRunner | None = None,
 ) -> int:
+    """Run, plan, or export a capability review."""
     parser = build_parser()
     args = parser.parse_args(argv)
     try:

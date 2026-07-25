@@ -37,6 +37,17 @@
       "type": "array",
       "minItems": 1,
       "maxItems": 16,
+      "contains": {
+        "type": "object",
+        "properties": {
+          "required": {
+            "const": true
+          }
+        },
+        "required": [
+          "required"
+        ]
+      },
       "items": {
         "type": "object",
         "additionalProperties": false,

@@ -598,13 +598,14 @@ def validate_generated_junk() -> None:
 
 
 def validate_model_profiles() -> None:
+    """Validate the checked-in versioned model-profile contract."""
     try:
         rel = repo_relative(MODEL_PROFILES)
     except ValueError:
         rel = str(MODEL_PROFILES)
     try:
         payload = json.loads(read_text(MODEL_PROFILES))
-    except Exception as exc:
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         fail(f"Invalid model profile contract {rel}: {exc}")
         return
     if not isinstance(payload, dict):

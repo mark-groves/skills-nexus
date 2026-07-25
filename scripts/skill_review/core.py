@@ -37,8 +37,8 @@ EVAL_DIGEST_EXCLUDED_NAMES = frozenset({"reviews", "working", "__pycache__"})
 SAFE_ID_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$")
 PINNED_IDENTIFIER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,159}$")
 DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
-UNIX_ABSOLUTE_PATH_RE = re.compile(r"(?:^|[\s=(])/(?!/)[^\s`]+")
-WINDOWS_ABSOLUTE_PATH_RE = re.compile(r"(?:^|[\s=(])[A-Za-z]:\\[^\s`]+")
+UNIX_ABSOLUTE_PATH_RE = re.compile(r"""(?:^|[\s=(\[{'\"`,;:])/(?!/)[^\s`]+""")
+WINDOWS_ABSOLUTE_PATH_RE = re.compile(r"""(?:^|[\s=(\[{'\"`,;:])[A-Za-z]:\\[^\s`]+""")
 FORBIDDEN_EXPORT_KEYS = {
     "prompt",
     "prompts",
@@ -82,6 +82,7 @@ def canonical_digest(value: object) -> str:
 
 
 def _load_json(path: Path, *, label: str) -> object:
+    """Load one JSON value with a user-actionable source label."""
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError as exc:
@@ -91,12 +92,14 @@ def _load_json(path: Path, *, label: str) -> object:
 
 
 def _object(value: object, *, location: str) -> dict[str, Any]:
+    """Require a JSON object at the named contract location."""
     if not isinstance(value, dict):
         raise EvalError(f"{location} must be an object")
     return value
 
 
 def _exact_keys(value: dict[str, Any], expected: set[str], *, location: str) -> None:
+    """Require an exact key set and report missing and unexpected keys."""
     missing = sorted(expected - set(value))
     extra = sorted(set(value) - expected)
     details = []
@@ -109,6 +112,7 @@ def _exact_keys(value: dict[str, Any], expected: set[str], *, location: str) -> 
 
 
 def _safe_id(value: object, *, location: str) -> str:
+    """Validate a stable lowercase identifier used in paths and summaries."""
     if not isinstance(value, str) or not SAFE_ID_RE.fullmatch(value):
         raise EvalError(
             f"{location} must be a lowercase kebab-case identifier between 1 and 64 characters"
@@ -117,6 +121,7 @@ def _safe_id(value: object, *, location: str) -> str:
 
 
 def _pinned_identifier(value: object, *, location: str) -> str:
+    """Validate an immutable model or protocol identifier."""
     if not isinstance(value, str) or not value.strip():
         raise EvalError(f"{location} must be a non-empty explicit identifier")
     result = value.strip()
@@ -139,6 +144,7 @@ class JudgePolicy:
     protocol: str
 
     def as_dict(self) -> dict[str, str]:
+        """Return the normalized contract representation."""
         return {"id": self.id, "model": self.model, "protocol": self.protocol}
 
 
@@ -152,9 +158,11 @@ class ModelProfile:
 
     @property
     def role(self) -> str:
+        """Return the profile's gating role."""
         return "required" if self.required else "observed"
 
     def as_dict(self) -> dict[str, Any]:
+        """Return the normalized contract representation."""
         return {
             "id": self.id,
             "adapter": self.adapter,
@@ -172,6 +180,7 @@ class ProfileContract:
     digest_sha256: str
 
     def as_dict(self) -> dict[str, Any]:
+        """Return the normalized contract representation."""
         return {
             "schema_version": self.schema_version,
             "judge_policy": self.judge_policy.as_dict(),
@@ -310,6 +319,7 @@ class CaseGroup:
     behavior_cases: tuple[str, ...]
 
     def as_dict(self) -> dict[str, Any]:
+        """Return the normalized case-group representation."""
         return {
             "id": self.id,
             "kind": self.kind,
@@ -324,6 +334,7 @@ def _case_ids(
     location: str,
     known: set[str],
 ) -> tuple[str, ...]:
+    """Validate one bounded list of known trigger or behavior case IDs."""
     if not isinstance(value, list) or len(value) > MAX_CASES_PER_KIND:
         raise EvalError(
             f"{location} must be a list containing at most {MAX_CASES_PER_KIND} case ids"
@@ -489,11 +500,13 @@ class CapabilityReviewConfig:
 
 
 def _positive_int(value: int, *, name: str) -> None:
+    """Require a positive integer CLI control."""
     if isinstance(value, bool) or value <= 0:
         raise EvalError(f"{name} must be greater than zero")
 
 
 def _verify_expected(name: str, expected: str | None, observed: str) -> None:
+    """Verify an optional caller-pinned SHA-256 value."""
     if expected is None:
         return
     if not DIGEST_RE.fullmatch(expected):
@@ -503,6 +516,7 @@ def _verify_expected(name: str, expected: str | None, observed: str) -> None:
 
 
 def _review_policy_payload(spec: EvalSpec, contract: ProfileContract) -> dict[str, Any]:
+    """Build the complete pinned judge-policy identity."""
     return {
         "judge_policy": contract.judge_policy.as_dict(),
         "evaluation_review_policy": (
@@ -513,6 +527,7 @@ def _review_policy_payload(spec: EvalSpec, contract: ProfileContract) -> dict[st
 
 
 def _case_groups_digest(groups: tuple[CaseGroup, ...]) -> str:
+    """Hash normalized case-group semantics independently of source paths."""
     return canonical_digest(
         {
             "schema_version": CASE_GROUP_SCHEMA_VERSION,
@@ -522,11 +537,13 @@ def _case_groups_digest(groups: tuple[CaseGroup, ...]) -> str:
 
 
 def _safe_subset(value: object, keys: tuple[str, ...]) -> dict[str, Any]:
+    """Copy only allowlisted keys from an optional mapping."""
     payload = value if isinstance(value, dict) else {}
     return {key: payload.get(key) for key in keys}
 
 
 def _gate_summary(review: object) -> dict[str, Any]:
+    """Reduce evaluator gates to durable, raw-evidence-free fields."""
     payload = review if isinstance(review, dict) else {}
     dimensions_payload = payload.get("dimensions")
     dimensions = dimensions_payload if isinstance(dimensions_payload, dict) else {}
@@ -563,6 +580,7 @@ def _gate_summary(review: object) -> dict[str, Any]:
 
 
 def _condition_metrics(summary: dict[str, Any], condition: str) -> dict[str, Any]:
+    """Extract bounded behavior and efficiency metrics for one condition."""
     grade = summary.get(condition)
     return {
         "behavior_checks": _safe_subset(
@@ -593,6 +611,7 @@ def _condition_metrics(summary: dict[str, Any], condition: str) -> dict[str, Any
 
 
 def _trigger_metrics(value: object) -> dict[str, Any]:
+    """Extract bounded trigger metrics."""
     return _safe_subset(
         value,
         (
@@ -609,6 +628,7 @@ def _trigger_metrics(value: object) -> dict[str, Any]:
 
 
 def _context_metrics(value: object) -> dict[str, Any]:
+    """Extract portable context-footprint measurements."""
     payload = value if isinstance(value, dict) else {}
     return {
         "description": _safe_subset(
@@ -635,6 +655,7 @@ def _cell_summary(
     trigger_repeats: int,
     behavior_repeats: int,
 ) -> dict[str, Any]:
+    """Build one durable profile/universe cell from a complete local result."""
     behavior_payload = result.get("behavior")
     behavior = behavior_payload if isinstance(behavior_payload, dict) else {}
     summary_payload = behavior.get("summary")
@@ -715,6 +736,7 @@ def _validate_result(
     candidate_digest: str,
     eval_spec_digest: str,
 ) -> str:
+    """Verify a cell used the pinned models, digests, universe, and schema."""
     if result.get("schema_version") != 3:
         raise EvalError(
             f"Profile {profile.id} in {universe} did not produce candidate schema version 3"
@@ -763,6 +785,7 @@ def _build_eval_args(
     universe: str,
     cell_root: Path,
 ) -> argparse.Namespace:
+    """Construct one full-suite evaluator invocation from review controls."""
     from eval_skills import build_parser
 
     argv = [
@@ -811,6 +834,7 @@ def _aggregate_profiles(
     *,
     groups: tuple[CaseGroup, ...],
 ) -> dict[str, Any]:
+    """Aggregate cell gates while keeping observed profiles non-blocking."""
     severity = {"rejected": 3, "insufficient-evidence": 2, "approved": 1}
     profile_results: list[dict[str, Any]] = []
     for profile in profiles:
@@ -899,6 +923,7 @@ def _assert_pinned_sources(
     harness_digest: str,
     groups_digest: str,
 ) -> None:
+    """Reject material input drift between matrix cells."""
     observed = {
         "Current runtime package": stable_digest(
             skill_dir,
@@ -1190,6 +1215,7 @@ def run_capability_review(
 
 
 def _portable_source(path: Path | None, repo_root: Path, fallback: str) -> str | None:
+    """Return a repository-relative source or a path-free placeholder."""
     if path is None:
         return None
     try:
@@ -1202,6 +1228,7 @@ def _reproduction_argv(
     review: dict[str, Any],
     config: CapabilityReviewConfig,
 ) -> list[str]:
+    """Build a path-safe command with digest assertions for every input."""
     pinned = review["pinned_inputs"]
     argv = [
         "python3",
@@ -1343,6 +1370,7 @@ def build_durable_summary(
 
 
 def _confidence_limitations(review: dict[str, Any]) -> list[str]:
+    """Describe bounded conclusions and unresolved evidence."""
     limitations = [
         "Evidence applies only to the pinned eval, judge policy, runner, harness, and digests.",
         "Repeated model runs reduce but do not eliminate stochastic uncertainty.",
@@ -1366,6 +1394,7 @@ def _confidence_limitations(review: dict[str, Any]) -> list[str]:
 
 
 def _walk(value: object, path: tuple[str, ...] = ()) -> Iterable[tuple[tuple[str, ...], object]]:
+    """Yield every nested value with its structural path."""
     yield path, value
     if isinstance(value, dict):
         for key, item in value.items():
@@ -1380,6 +1409,7 @@ def _validate_durable_summary(
     *,
     forbidden_paths: tuple[Path, ...],
 ) -> None:
+    """Reject raw evidence fields and machine-specific absolute paths."""
     forbidden_text = tuple(str(path) for path in forbidden_paths)
     for path, value in _walk(summary):
         if path and path[-1].lower() in FORBIDDEN_EXPORT_KEYS:
@@ -1395,6 +1425,7 @@ def _validate_durable_summary(
 
 
 def _write_json(path: Path, value: object) -> None:
+    """Write stable pretty JSON for local manifests."""
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
@@ -1403,6 +1434,7 @@ def _write_json(path: Path, value: object) -> None:
 
 
 def _markdown_value(value: object) -> str:
+    """Render a compact deterministic Markdown scalar."""
     if value is None:
         return "—"
     if isinstance(value, float):
@@ -1411,6 +1443,7 @@ def _markdown_value(value: object) -> str:
 
 
 def _markdown(summary: dict[str, Any]) -> str:
+    """Render the bounded durable review as human-readable Markdown."""
     lines = [
         f"# Capability review: {summary['skill']}",
         "",
