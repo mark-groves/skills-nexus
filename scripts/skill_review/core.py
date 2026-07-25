@@ -38,7 +38,15 @@ SAFE_ID_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$")
 PINNED_IDENTIFIER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,159}$")
 DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
 UNIX_ABSOLUTE_PATH_RE = re.compile(r"""(?:^|[\s=(\[{'\"`,;:])/(?!/)[^\s`]+""")
-WINDOWS_ABSOLUTE_PATH_RE = re.compile(r"""(?:^|[\s=(\[{'\"`,;:])[A-Za-z]:\\[^\s`]+""")
+WINDOWS_ABSOLUTE_PATH_RE = re.compile(
+    r"""(?:(?:^|[\s=(\[{'\"`,;:])[A-Za-z]:[\\/]|"""
+    r"""(?:^|[\s=(\[{'\"`,;])(?:\\\\|//)(?:[?.][\\/]|[^\\/\s`]+[\\/][^\\/\s`]+))"""
+    r"""[^\s`]*"""
+)
+FILE_ABSOLUTE_PATH_RE = re.compile(
+    r"""(?:^|[\s=(\[{'\"`,;:])file:/[^\s`]*""",
+    re.IGNORECASE,
+)
 FORBIDDEN_EXPORT_KEYS = {
     "prompt",
     "prompts",
@@ -87,6 +95,8 @@ def _load_json(path: Path, *, label: str) -> object:
         return json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError as exc:
         raise EvalError(f"Missing {label}: {path}") from exc
+    except (OSError, UnicodeDecodeError) as exc:
+        raise EvalError(f"Unable to read {label} {path}: {exc}") from exc
     except json.JSONDecodeError as exc:
         raise EvalError(f"Invalid JSON in {label} {path}: {exc}") from exc
 
@@ -124,7 +134,9 @@ def _pinned_identifier(value: object, *, location: str) -> str:
     """Validate an immutable model or protocol identifier."""
     if not isinstance(value, str) or not value.strip():
         raise EvalError(f"{location} must be a non-empty explicit identifier")
-    result = value.strip()
+    if value != value.strip():
+        raise EvalError(f"{location} must not contain surrounding whitespace")
+    result = value
     if result == "runtime-default":
         raise EvalError(
             f"{location} must pin an exact identifier; mutable runtime-default is not allowed"
@@ -1389,7 +1401,11 @@ def validate_durable_disposition(
         (reviewer, "--reviewer"),
         (rationale, "--disposition-rationale"),
     ):
-        if UNIX_ABSOLUTE_PATH_RE.search(value) or WINDOWS_ABSOLUTE_PATH_RE.search(value):
+        if (
+            UNIX_ABSOLUTE_PATH_RE.search(value)
+            or WINDOWS_ABSOLUTE_PATH_RE.search(value)
+            or FILE_ABSOLUTE_PATH_RE.search(value)
+        ):
             raise EvalError(f"{name} must not contain an absolute path")
 
 
@@ -1449,7 +1465,9 @@ def _validate_durable_summary(
         if isinstance(value, str) and any(token and token in value for token in forbidden_text):
             raise EvalError("Durable summary contains a workspace path in field: " + ".".join(path))
         if isinstance(value, str) and (
-            UNIX_ABSOLUTE_PATH_RE.search(value) or WINDOWS_ABSOLUTE_PATH_RE.search(value)
+            UNIX_ABSOLUTE_PATH_RE.search(value)
+            or WINDOWS_ABSOLUTE_PATH_RE.search(value)
+            or FILE_ABSOLUTE_PATH_RE.search(value)
         ):
             raise EvalError("Durable summary contains an absolute path in field: " + ".".join(path))
 
@@ -1641,6 +1659,7 @@ def export_durable_summary(
     repo_root: Path,
 ) -> tuple[Path, Path]:
     """Write bounded deterministic JSON and Markdown under the skill review directory."""
+    _validate_durable_summary(summary, forbidden_paths=(repo_root.resolve(),))
     review_dir = repo_root.resolve() / "evals" / summary["skill"] / "reviews"
     json_path = review_dir / f"{summary['review_id']}.json"
     markdown_path = review_dir / f"{summary['review_id']}.md"

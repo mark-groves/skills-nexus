@@ -379,6 +379,16 @@ class ProfileContractTests(unittest.TestCase):
             with self.assertRaisesRegex(EvalError, "runtime-default"):
                 load_profile_contract(fixture.profiles)
 
+    def test_rejects_pinned_identifier_with_surrounding_whitespace(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fixture = CapabilityReviewFixture(Path(temp_dir))
+            payload = json.loads(fixture.profiles.read_text(encoding="utf-8"))
+            payload["judge_policy"]["model"] = " fake-judge-v1"
+            fixture.profiles.write_text(json.dumps(payload), encoding="utf-8")
+
+            with self.assertRaisesRegex(EvalError, "surrounding whitespace"):
+                load_profile_contract(fixture.profiles)
+
     def test_rejects_profile_judge_that_differs_from_pinned_policy(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             fixture = CapabilityReviewFixture(Path(temp_dir))
@@ -661,6 +671,13 @@ class DurableExportTests(unittest.TestCase):
                 "See /tmp/private-review-notes before deciding.",
                 "See `/home/reviewer/private-notes` before deciding.",
                 'See "C:\\Users\\reviewer\\notes.txt" before deciding.',
+                "See \\\\server\\share\\private-review-notes before deciding.",
+                "See \\\\?\\C:\\private-review-notes before deciding.",
+                "See \\\\.\\PhysicalDrive0 before deciding.",
+                "See C:/private-review-notes before deciding.",
+                "See //server/share/private-review-notes before deciding.",
+                "See file://server/share/private-review-notes before deciding.",
+                "See file:///C:/private-review-notes before deciding.",
             ):
                 with self.subTest(rationale=rationale):
                     with self.assertRaisesRegex(EvalError, "absolute path"):
@@ -671,6 +688,60 @@ class DurableExportTests(unittest.TestCase):
                             reviewer="Test Reviewer",
                             rationale=rationale,
                         )
+
+    def test_summary_allows_https_url_in_human_fields(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fixture = CapabilityReviewFixture(Path(temp_dir))
+            config = fixture.config()
+            review, _local_root = run_capability_review(config, FakeEvaluationRunner())
+
+            summary = build_durable_summary(
+                review,
+                config,
+                disposition="retain",
+                reviewer="Test Reviewer",
+                rationale="See https://example.com/review-notes before deciding.",
+            )
+
+        self.assertEqual(
+            summary["human_review"]["rationale"],
+            "See https://example.com/review-notes before deciding.",
+        )
+
+    def test_export_rejects_unc_and_device_paths_before_writing_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fixture = CapabilityReviewFixture(Path(temp_dir))
+            config = fixture.config()
+            review, _local_root = run_capability_review(config, FakeEvaluationRunner())
+            summary = build_durable_summary(
+                review,
+                config,
+                disposition="retain",
+                reviewer="Test Reviewer",
+                rationale="Keep the current capability.",
+            )
+
+            for index, rationale in enumerate(
+                (
+                    "See \\\\server\\share\\private-review-notes before deciding.",
+                    "See \\\\?\\C:\\private-review-notes before deciding.",
+                    "See \\\\.\\PhysicalDrive0 before deciding.",
+                    "See C:/private-review-notes before deciding.",
+                    "See //server/share/private-review-notes before deciding.",
+                    "See file://server/share/private-review-notes before deciding.",
+                    "See file:///C:/private-review-notes before deciding.",
+                )
+            ):
+                with self.subTest(rationale=rationale):
+                    tampered = json.loads(json.dumps(summary))
+                    tampered["review_id"] = f"tampered-{index}"
+                    tampered["human_review"]["rationale"] = rationale
+
+                    with self.assertRaisesRegex(EvalError, "absolute path"):
+                        export_durable_summary(tampered, repo_root=fixture.repo)
+
+            review_dir = fixture.repo / "evals" / "demo" / "reviews"
+            self.assertFalse(review_dir.exists())
 
     def test_export_args_fail_before_matrix_run(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -704,6 +775,42 @@ class DurableExportTests(unittest.TestCase):
                     "--disposition-rationale",
                     "See /tmp/private-review-notes.",
                 ],
+                [
+                    "--reviewer",
+                    "Test Reviewer",
+                    "--disposition-rationale",
+                    "See \\\\server\\share\\private-review-notes.",
+                ],
+                [
+                    "--reviewer",
+                    "Test Reviewer",
+                    "--disposition-rationale",
+                    "See \\\\?\\C:\\private-review-notes.",
+                ],
+                [
+                    "--reviewer",
+                    "Test Reviewer",
+                    "--disposition-rationale",
+                    "See C:/private-review-notes.",
+                ],
+                [
+                    "--reviewer",
+                    "Test Reviewer",
+                    "--disposition-rationale",
+                    "See //server/share/private-review-notes.",
+                ],
+                [
+                    "--reviewer",
+                    "Test Reviewer",
+                    "--disposition-rationale",
+                    "See file://server/share/private-review-notes.",
+                ],
+                [
+                    "--reviewer",
+                    "Test Reviewer",
+                    "--disposition-rationale",
+                    "See file:///C:/private-review-notes.",
+                ],
             ):
                 with self.subTest(human_args=human_args):
                     fake = FakeEvaluationRunner()
@@ -715,6 +822,8 @@ class DurableExportTests(unittest.TestCase):
                         )
 
                     self.assertEqual(exit_code, 1)
+                    if human_args[1].strip():
+                        self.assertIn("absolute path", stderr.getvalue())
                     self.assertEqual(fake.calls, [])
 
     def test_plan_validates_numeric_controls_before_matrix_run(self) -> None:

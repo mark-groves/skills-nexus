@@ -9,6 +9,7 @@ from unittest import mock
 
 REPO_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_DIR / "scripts"))
+from skill_eval.core import EvalError  # noqa: E402
 from skill_review.core import load_profile_contract  # noqa: E402
 
 MODULE_PATH = REPO_DIR / "scripts" / "validate_repo.py"
@@ -755,7 +756,7 @@ class ValidateModelProfileTests(unittest.TestCase):
 
         self.assertEqual(validate_repo.ERRORS, [])
 
-    def test_accepts_judge_policy_whitespace_normalized_by_loader(self) -> None:
+    def test_rejects_noncanonical_judge_policy_whitespace(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             profiles = Path(temp_dir) / "eval-profiles.json"
             profiles.write_text(
@@ -780,12 +781,36 @@ class ValidateModelProfileTests(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
-            contract = load_profile_contract(profiles)
+            with self.assertRaisesRegex(EvalError, "surrounding whitespace"):
+                load_profile_contract(profiles)
             with mock.patch.object(validate_repo, "MODEL_PROFILES", profiles):
                 validate_repo.validate_model_profiles()
 
-        self.assertEqual(contract.judge_policy.model, "judge-v1")
-        self.assertEqual(validate_repo.ERRORS, [])
+        self.assertTrue(
+            any("surrounding whitespace" in error for error in validate_repo.ERRORS),
+            validate_repo.ERRORS,
+        )
+
+    def test_reports_invalid_utf8_profile_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            profiles = Path(temp_dir) / "eval-profiles.json"
+            profiles.write_bytes(b"\xff")
+
+            with mock.patch.object(validate_repo, "MODEL_PROFILES", profiles):
+                validate_repo.validate_model_profiles()
+
+        self.assertEqual(len(validate_repo.ERRORS), 1)
+        self.assertIn("Unable to read model profile contract", validate_repo.ERRORS[0])
+
+    def test_reports_profile_contract_io_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            profiles = Path(temp_dir)
+
+            with mock.patch.object(validate_repo, "MODEL_PROFILES", profiles):
+                validate_repo.validate_model_profiles()
+
+        self.assertEqual(len(validate_repo.ERRORS), 1)
+        self.assertIn("Unable to read model profile contract", validate_repo.ERRORS[0])
 
     def test_rejects_mutable_runtime_default(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
