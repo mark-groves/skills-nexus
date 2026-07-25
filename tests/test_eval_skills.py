@@ -454,6 +454,48 @@ class EvalCoreTests(unittest.TestCase):
             self.assertIn("logical skill identity mismatch", stderr.getvalue())
             runner.assert_not_called()
 
+    def test_plan_does_not_measure_runtime_footprints(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo = Path(temp_dir)
+            skill = repo / "skills" / "demo"
+            eval_dir = repo / "evals" / "demo"
+            skill.mkdir(parents=True)
+            eval_dir.mkdir(parents=True)
+            (skill / "SKILL.md").write_text("plan-only instructions\n", encoding="utf-8")
+            (eval_dir / "evals.json").write_text(
+                json.dumps(
+                    {
+                        "skill_name": "demo",
+                        "trigger_evals": [
+                            {
+                                "id": "1",
+                                "query": "Use the demo skill.",
+                                "should_trigger": True,
+                            }
+                        ],
+                        "behavior_evals": [],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with (
+                mock.patch.object(eval_skills, "condition_static_footprints") as footprints,
+                contextlib.redirect_stdout(io.StringIO()),
+            ):
+                status = eval_skills.main(
+                    [
+                        "--repo-root",
+                        str(repo),
+                        "--skill",
+                        "demo",
+                        "--plan",
+                    ]
+                )
+
+            self.assertEqual(status, 0)
+            footprints.assert_not_called()
+
     def test_behavior_summary_uses_condition_ids_instead_of_fixed_keys(self) -> None:
         conditions = (
             EvaluationCondition("current", None, None, "demo", "Current"),

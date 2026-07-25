@@ -85,17 +85,13 @@ def _static_markdown_rows(
         body = footprint["skill_md_body"]
         package = footprint["runtime_package"]
         digest = package["digest_sha256"]
+        digest_cell = f"`{digest[:12]}`" if digest else "—"
         rows.append(
             f"| {_markdown_label(condition.display_label)} | "
             f"{_integer(description['characters'])} / {_integer(description['utf8_bytes'])} | "
             f"{_integer(body['characters'])} / {_integer(body['utf8_bytes'])} | "
             f"{_integer(package['file_count'])} / {_integer(package['bytes'])} | "
-            f"`{digest[:12]}` |"
-            if digest
-            else f"| {_markdown_label(condition.display_label)} | "
-            f"{_integer(description['characters'])} / {_integer(description['utf8_bytes'])} | "
-            f"{_integer(body['characters'])} / {_integer(body['utf8_bytes'])} | "
-            f"{_integer(package['file_count'])} / {_integer(package['bytes'])} | — |"
+            f"{digest_cell} |"
         )
     return rows
 

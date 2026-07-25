@@ -130,9 +130,10 @@ completed/failed run counts. If any completed run omits usage or supplies an
 invalid usage value, the affected aggregate is `null` in JSON and shown as `—`
 in Markdown and HTML, never as zero.
 
-Without `--candidate`, `results.json` remains schema version 1 with the existing
-top-level fields, two behavior runs, task counts, reports, reproduction command,
-and current-versus-baseline metrics. The `skill` condition ID and
+Without `--candidate`, `results.json` remains schema version 1 and additively
+includes the top-level `context_footprint` field. Existing top-level fields, two
+behavior runs, task counts, reports, reproduction command, and
+current-versus-baseline metrics remain intact. The `skill` condition ID and
 `skill.runtime_digest_sha256` continue to identify Current for existing
 consumers.
 

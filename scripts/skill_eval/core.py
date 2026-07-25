@@ -252,6 +252,43 @@ def stable_digest(path: Path, *, exclude: Iterable[str] = ()) -> str:
     return digest.hexdigest()
 
 
+def _parse_skill_document(
+    text: str,
+    skill_md: Path,
+    *,
+    source: str,
+) -> tuple[dict[str, Any], str]:
+    """Parse canonical skill frontmatter and return its exact instruction body."""
+    lines = text.splitlines(keepends=True)
+    if not lines or lines[0].rstrip("\r\n").strip() != "---":
+        raise EvalError(f"{source} SKILL.md must start with YAML frontmatter: {skill_md}")
+    closing = next(
+        (
+            index
+            for index, line in enumerate(lines[1:], start=1)
+            if line.rstrip("\r\n").strip() == "---"
+            and not line.rstrip("\r\n").startswith((" ", "\t"))
+        ),
+        None,
+    )
+    if closing is None:
+        raise EvalError(f"{source} SKILL.md frontmatter is missing a closing delimiter: {skill_md}")
+
+    import validate_repo
+
+    previous_error_count = len(validate_repo.ERRORS)
+    payload = validate_repo.parse_yaml_string_map(
+        "".join(lines[1:closing]).rstrip("\r\n"),
+        str(skill_md),
+    )
+    parse_errors = validate_repo.ERRORS[previous_error_count:]
+    del validate_repo.ERRORS[previous_error_count:]
+    if payload is None or parse_errors:
+        detail = "; ".join(parse_errors) or "invalid YAML frontmatter"
+        raise EvalError(f"{source} SKILL.md is malformed: {detail}")
+    return payload, "".join(lines[closing + 1 :])
+
+
 def measure_static_footprint(
     runtime_skill_dir: Path | None,
     runtime_digest_sha256: str | None,
@@ -276,39 +313,12 @@ def measure_static_footprint(
     except UnicodeDecodeError as exc:
         raise EvalError(f"Runtime SKILL.md must be UTF-8: {skill_md}") from exc
 
-    lines = text.splitlines(keepends=True)
-    if not lines or lines[0].rstrip("\r\n").strip() != "---":
-        raise EvalError(f"Runtime SKILL.md must start with YAML frontmatter: {skill_md}")
-    closing = next(
-        (
-            index
-            for index, line in enumerate(lines[1:], start=1)
-            if line.rstrip("\r\n").strip() == "---"
-            and not line.rstrip("\r\n").startswith((" ", "\t"))
-        ),
-        None,
-    )
-    if closing is None:
-        raise EvalError(f"Runtime SKILL.md frontmatter is missing a closing delimiter: {skill_md}")
-
-    import validate_repo
-
-    previous_error_count = len(validate_repo.ERRORS)
-    payload = validate_repo.parse_yaml_string_map(
-        "".join(lines[1:closing]).rstrip("\r\n"),
-        str(skill_md),
-    )
-    parse_errors = validate_repo.ERRORS[previous_error_count:]
-    del validate_repo.ERRORS[previous_error_count:]
-    if payload is None or parse_errors:
-        detail = "; ".join(parse_errors) or "invalid YAML frontmatter"
-        raise EvalError(f"Runtime SKILL.md is malformed: {detail}")
+    payload, body = _parse_skill_document(text, skill_md, source="Runtime")
     description_value = payload.get("description", "")
     description = description_value.strip() if isinstance(description_value, str) else ""
     if not description:
         raise EvalError(f"Runtime SKILL.md is missing a non-empty description: {skill_md}")
 
-    body = "".join(lines[closing + 1 :])
     files = _runtime_package_files(runtime_skill_dir, exclude=RUNTIME_EXCLUDED_NAMES)
     return {
         "description": {
@@ -513,36 +523,12 @@ def resolve_candidate_skill(repo_root: Path, selector: Path, logical_name: str) 
         text = skill_md.read_text(encoding="utf-8")
     except UnicodeDecodeError as exc:
         raise EvalError(f"Candidate SKILL.md must be UTF-8: {skill_md}") from exc
-    lines = text.splitlines()
-    if not lines or lines[0].strip() != "---":
-        raise EvalError(f"Candidate SKILL.md must start with YAML frontmatter: {skill_md}")
-    closing = next(
-        (
-            index
-            for index, line in enumerate(lines[1:], start=1)
-            if line.strip() == "---" and not line.startswith((" ", "\t"))
-        ),
-        None,
-    )
-    if closing is None:
-        raise EvalError(
-            f"Candidate SKILL.md frontmatter is missing a closing delimiter: {skill_md}"
-        )
 
     # Reuse the repository's canonical, dependency-free YAML subset parser so
     # candidate packages obey the same publishable metadata contract.
     import validate_repo
 
-    previous_error_count = len(validate_repo.ERRORS)
-    payload = validate_repo.parse_yaml_string_map(
-        "\n".join(lines[1:closing]),
-        str(skill_md),
-    )
-    parse_errors = validate_repo.ERRORS[previous_error_count:]
-    del validate_repo.ERRORS[previous_error_count:]
-    if payload is None or parse_errors:
-        detail = "; ".join(parse_errors) or "invalid YAML frontmatter"
-        raise EvalError(f"Candidate SKILL.md is malformed: {detail}")
+    payload, _body = _parse_skill_document(text, skill_md, source="Candidate")
 
     extra_keys = sorted(set(payload) - validate_repo.ALLOWED_FRONTMATTER_KEYS)
     if extra_keys:

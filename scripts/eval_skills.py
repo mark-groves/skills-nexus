@@ -390,7 +390,6 @@ def _run_evaluation(
         (condition for condition in conditions if condition.id == "candidate"),
         None,
     )
-    static_footprints = condition_static_footprints(conditions)
     spec = load_eval_spec(skill_dir, repo_root / "evals")
     eval_dir = spec.path.parent
     trigger_cases = (
@@ -419,6 +418,7 @@ def _run_evaluation(
         _print_plan(skill_dir, eval_dir, trigger_cases, behavior_cases, conditions, args)
         return {}, Path()
 
+    static_footprints = condition_static_footprints(conditions)
     runtime_digest = primary_condition.runtime_digest_sha256
     if runtime_digest is None:
         raise EvalError("the primary evaluation condition must include a runtime skill")
