@@ -135,6 +135,9 @@ def _source_path(skill_dir: Path, source: object, *, location: str) -> tuple[str
         raise EvalError(f"{location} must stay within the runtime skill package")
     if relative.suffix.lower() not in {".md", ".markdown"}:
         raise EvalError(f"{location} must select a Markdown source file")
+    excluded = sorted(set(relative.parts) & RUNTIME_EXCLUDED_NAMES)
+    if excluded:
+        raise EvalError(f"{location} selects runtime-excluded path name(s): {', '.join(excluded)}")
     unresolved = skill_dir
     for part in relative.parts:
         unresolved /= part
@@ -303,6 +306,22 @@ def load_component_contract(path: Path, skill_dir: Path) -> ComponentContract:
         digest_sha256=canonical_digest(normalized),
         spans=spans,
     )
+
+
+def validate_component_metadata_source(
+    repo_root: Path,
+    skill_dir: Path,
+    components_source: Path,
+) -> Path:
+    """Require repository-owned metadata and return its complete eval directory."""
+    eval_dir = (repo_root.resolve() / "evals" / skill_dir.name).resolve()
+    try:
+        components_source.resolve().relative_to(eval_dir)
+    except ValueError as exc:
+        raise EvalError(
+            "Component metadata must remain under the selected skill's repository eval directory"
+        ) from exc
+    return eval_dir
 
 
 def create_component_candidate(
@@ -529,6 +548,7 @@ def _write_record(path: Path, record: dict[str, Any]) -> None:
 def _assert_pinned(
     config: ComponentAblationConfig,
     skill_dir: Path,
+    eval_dir: Path,
     *,
     current_digest: str,
     components_digest: str,
@@ -547,7 +567,7 @@ def _assert_pinned(
             f"expected {components_digest}, observed {observed_contract.digest_sha256}"
         )
     observed_eval = stable_digest(
-        config.components_source.parent,
+        eval_dir,
         exclude=EVAL_DIGEST_EXCLUDED_NAMES,
     )
     if observed_eval != eval_digest:
@@ -600,14 +620,11 @@ def run_component_ablation(
     """Greedily remove safe components and rerun the final combination from scratch."""
     repo_root = config.review.repo_root.resolve()
     skill_dir = resolve_skill(repo_root, config.review.skill)
-    eval_dir = (repo_root / "evals" / skill_dir.name).resolve()
-    components_source = config.components_source.resolve()
-    try:
-        components_source.relative_to(eval_dir)
-    except ValueError as exc:
-        raise EvalError(
-            "Component metadata must remain under the selected skill's repository eval directory"
-        ) from exc
+    eval_dir = validate_component_metadata_source(
+        repo_root,
+        skill_dir,
+        config.components_source,
+    )
     output_root = config.output_root.resolve()
     try:
         output_relative = output_root.relative_to(repo_root)
@@ -692,6 +709,7 @@ def run_component_ablation(
                 _assert_pinned(
                     config,
                     skill_dir,
+                    eval_dir,
                     current_digest=current_digest,
                     components_digest=contract.digest_sha256,
                     eval_digest=eval_digest,
@@ -796,6 +814,7 @@ def run_component_ablation(
         _assert_pinned(
             config,
             skill_dir,
+            eval_dir,
             current_digest=current_digest,
             components_digest=contract.digest_sha256,
             eval_digest=eval_digest,

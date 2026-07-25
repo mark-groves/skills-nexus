@@ -14,6 +14,7 @@ from skill_review.ablation import (
     ComponentContract,
     load_component_contract,
     run_component_ablation,
+    validate_component_metadata_source,
 )
 from skill_review.core import (
     CapabilityReviewConfig,
@@ -104,6 +105,7 @@ def _configuration(
         if args.components is not None
         else repo_root / "evals" / skill_dir.name / "components.json"
     )
+    validate_component_metadata_source(repo_root, skill_dir, components_source)
     contract = load_component_contract(components_source, skill_dir)
     profile_source = (
         args.profiles if args.profiles is not None else repo_root / "eval-profiles.json"

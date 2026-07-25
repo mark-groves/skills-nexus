@@ -144,16 +144,17 @@ with complete evidence, elimination stops. It then recreates and reruns the
 combined candidate from the complete current runtime package.
 
 Protected components are reported as `skipped-protected` and never enter a
-candidate. Temporary packages and complete capability runs remain under
-ignored `.skill-evals/` storage; the temporary runtime candidates themselves
-are always deleted. Repository-local output is accepted only below the ignored
-`.skill-evals/` root. The local `decision.json` retains current, component,
-eval, case-group, prior, candidate, profile, and final digests; incremental and
-cumulative static savings; quality deltas; hard regressions; gate outcomes;
-uncertainty; and separate repository and isolated results. An accepted step is
-provisional until the final combined rerun passes. The command does not rewrite
-prose, apply the candidate, export a durable repository summary, commit a
-runtime reduction, or promote it.
+candidate. By default, temporary packages and complete capability runs remain
+under ignored `.skill-evals/` storage. An external `--output-root` is supported,
+while repository-local output is accepted only below the ignored
+`.skill-evals/` root. Temporary runtime candidates are always deleted. The
+local `decision.json` retains current, component, eval, case-group, prior,
+candidate, profile, and final digests; incremental and cumulative static
+savings; quality deltas; hard regressions; gate outcomes; uncertainty; and
+separate repository and isolated results. An accepted step is provisional
+until the final combined rerun passes. The command does not rewrite prose,
+apply the candidate, export a durable repository summary, commit a runtime
+reduction, or promote it.
 
 ## Evidence and gates
 

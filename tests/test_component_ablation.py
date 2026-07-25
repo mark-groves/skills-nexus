@@ -5,11 +5,13 @@ import unittest
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
+from unittest import mock
 
 REPO_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_DIR / "scripts"))
 
 import ablate_skill_components  # noqa: E402
+import validate_repo  # noqa: E402
 from skill_eval.core import EvalError  # noqa: E402
 from skill_review.ablation import (  # noqa: E402
     ComponentAblationConfig,
@@ -334,6 +336,30 @@ class ComponentSelectorTests(unittest.TestCase):
             with self.assertRaisesRegex(EvalError, "found 0"):
                 load_component_contract(fixture.components, fixture.skill)
 
+    def test_runtime_excluded_component_source_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fixture = AblationFixture(Path(temp_dir))
+            working = fixture.skill / "working"
+            working.mkdir()
+            (working / "notes.md").write_text(
+                "## Internal\n\nRepository-only notes.\n",
+                encoding="utf-8",
+            )
+            payload = json.loads(fixture.components.read_text(encoding="utf-8"))
+            payload["components"] = [
+                {
+                    "id": "internal",
+                    "source": "working/notes.md",
+                    "heading": "## Internal",
+                    "class": "workflow",
+                    "protected": False,
+                }
+            ]
+            fixture.components.write_text(json.dumps(payload), encoding="utf-8")
+
+            with self.assertRaisesRegex(EvalError, "runtime-excluded"):
+                load_component_contract(fixture.components, fixture.skill)
+
     def test_cli_defaults_follow_repo_root(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             fixture = AblationFixture(Path(temp_dir))
@@ -355,6 +381,47 @@ class ComponentSelectorTests(unittest.TestCase):
             )
             self.assertEqual(config.output_root, fixture.repo / ".skill-evals")
 
+    def test_cli_plan_rejects_external_component_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fixture = AblationFixture(Path(temp_dir))
+            external = Path(temp_dir) / "external-components.json"
+            external.write_bytes(fixture.components.read_bytes())
+            args = ablate_skill_components.build_parser().parse_args(
+                [
+                    "--skill",
+                    "demo",
+                    "--repo-root",
+                    str(fixture.repo),
+                    "--components",
+                    str(external),
+                    "--plan",
+                ]
+            )
+
+            with self.assertRaisesRegex(EvalError, "repository eval directory"):
+                ablate_skill_components._configuration(args)
+
+    def test_repo_validator_rejects_dangling_component_metadata_symlink(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fixture = AblationFixture(Path(temp_dir))
+            fixture.components.unlink()
+            fixture.components.symlink_to("missing-components.json")
+
+            with (
+                mock.patch.object(
+                    validate_repo,
+                    "load_component_contract",
+                    side_effect=EvalError("dangling metadata rejected"),
+                ) as loader,
+                mock.patch.object(validate_repo, "REPO_DIR", fixture.repo),
+            ):
+                validate_repo.ERRORS.clear()
+                validate_repo.validate_evals(fixture.skill, fixture.eval_dir)
+
+            loader.assert_called_once_with(fixture.components, fixture.skill)
+            self.assertIn("dangling metadata rejected", validate_repo.ERRORS)
+            validate_repo.ERRORS.clear()
+
 
 class BackwardEliminationTests(unittest.TestCase):
     def test_repository_local_output_must_stay_under_ignored_root(self) -> None:
@@ -369,6 +436,18 @@ class BackwardEliminationTests(unittest.TestCase):
                 run_component_ablation(unsafe, MatrixRunner({}))
 
             self.assertFalse((fixture.eval_dir / "generated").exists())
+
+    def test_nested_repository_metadata_rechecks_the_complete_eval_bundle(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fixture = AblationFixture(Path(temp_dir))
+            nested = fixture.eval_dir / "metadata" / "components.json"
+            nested.parent.mkdir()
+            nested.write_bytes(fixture.components.read_bytes())
+            config = replace(fixture.config, components_source=nested)
+
+            record, _local_root = run_component_ablation(config, MatrixRunner({}))
+
+            self.assertEqual(record["status"], "completed")
 
     def test_protected_components_are_surfaced_and_never_removed(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

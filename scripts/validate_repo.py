@@ -934,7 +934,7 @@ def validate_evals(skill_dir: Path, eval_dir: Path) -> None:
                         )
 
     components_json = eval_dir / "components.json"
-    if components_json.exists():
+    if components_json.exists() or components_json.is_symlink():
         try:
             load_component_contract(components_json, skill_dir)
         except EvalError as exc:

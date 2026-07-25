@@ -247,15 +247,15 @@ This catches removals that pass alone but regress together and catches
 stochastic final-run failures. An interrupted run leaves an `interrupted`
 decision record while its temporary candidate is deleted.
 
-All artifacts stay under
-`.skill-evals/<skill>/component-ablations/<run-id>/`. `decision.json` records
-component status, prior and candidate digests, incremental and cumulative
-static savings, quality deltas, hard regressions, gate results, uncertainty,
-and separate repository and isolated results for every trial and the final
-rerun. It also pins the component, eval, case-group, and profile contracts
-across rounds. Raw capability evidence remains below the same ignored local
-run. Repository-local `--output-root` values are accepted only beneath
-`.skill-evals/`.
+By default, artifacts stay under
+`.skill-evals/<skill>/component-ablations/<run-id>/`; an external
+`--output-root` is also supported. `decision.json` records component status,
+prior and candidate digests, incremental and cumulative static savings, quality
+deltas, hard regressions, gate results, uncertainty, and separate repository
+and isolated results for every trial and the final rerun. It also pins the
+component, eval, case-group, and profile contracts across rounds. Raw capability
+evidence remains below the same local run. Repository-local `--output-root`
+values are accepted only beneath `.skill-evals/`.
 `propose-reduction` means only that the final candidate is ready for human
 review; the command never edits the runtime skill, rewrites prose, commits a
 reduction, exports repository evidence, or promotes a result.
