@@ -26,7 +26,10 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     source = args.source.resolve()
     destination = args.destination.absolute()
-    resolved_destination = destination.resolve()
+    if destination.is_symlink():
+        resolved_destination = destination.parent.resolve() / destination.name
+    else:
+        resolved_destination = destination.resolve()
     if not (source / "SKILL.md").is_file():
         print(f"error: source is not a skill directory: {source}", file=sys.stderr)
         return 1

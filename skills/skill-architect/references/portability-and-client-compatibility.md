@@ -16,8 +16,8 @@ by the file format:
 3. **Target integration** — install destinations, permissions, hooks, UI
    metadata, plugins, and runtime-specific activation behavior.
 
-A common runtime core can be copied, symlinked, packaged, or installed into
-several clients. Cross-client compatibility remains a tested claim because
+A common runtime core can be copied, packaged, or installed into several
+clients. Cross-client compatibility remains a tested claim because
 clients differ in discovery, activation, file access, permissions, tools,
 context behavior, and supported runtimes.
 
