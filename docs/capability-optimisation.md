@@ -7,10 +7,10 @@ known failure into proof that instructions are redundant.
 
 This guide defines the repository contract for capability-review tooling. The
 current evaluator compares baseline, current, and candidate packages, reports
-context metrics, and enforces repository-owned single-profile optimisation
-gates. It does not yet orchestrate required and observed model profiles or
-perform component ablation. Those implementation steps are tracked in the
-[roadmap](../ROADMAP.md).
+context metrics, enforces repository-owned optimisation gates, and orchestrates
+required and selected observed Codex model profiles across pinned review
+inputs. It does not yet perform component ablation. That implementation step is
+tracked in the [roadmap](../ROADMAP.md).
 
 ## Two evidence paths
 
@@ -67,6 +67,15 @@ Durable comparisons pin exact model and judge identifiers. A mutable runtime
 default is not sufficient evidence, and results produced with different suites
 or judge policies are not treated as directly comparable.
 
+The executable profile contract lives at
+[`eval-profiles.json`](../eval-profiles.json). Every required profile runs;
+observed profiles are opt-in. Schema v1 requires every profile to use the same
+top-level pinned judge model and protocol. The review command verifies the
+Current, Candidate, eval, profile, case-group, judge-policy, harness-manifest,
+and runner inputs across every profile/universe cell before aggregating gates.
+Its eval digest covers the suite definition and fixture bytes, not prior
+durable review exports.
+
 Skills Nexus packages skills for several harnesses, but the initial executable
 capability evidence is **Codex model-profile evidence**. The repository does not
 yet have equivalent runner adapters for other harnesses. Packaging
@@ -89,6 +98,10 @@ itself justify removing or retiring the target skill. A capability review
 should inspect both universes. If only one is run, the durable summary must
 state the resulting limitation and must not answer the other universe's
 question.
+
+The orchestrator runs both universes by default. A single-universe command is
+invalid without an explicit limitation, keeping a narrower scope deliberate
+and reviewable.
 
 ## Efficacy and marginal value
 
@@ -155,6 +168,12 @@ cases are not used to design the candidate and provide an overfitting check.
 Both are required evidence for a durable reduction; a single run or only the
 development cases cannot establish non-inferiority.
 
+Case groups label a complete, non-overlapping partition of one unchanged eval
+suite. The evaluator still runs the full suite in each matrix cell, while the
+orchestrator records development and held-back group IDs and their repeat
+coverage. This prevents a group-specific filtered run from being mistaken for
+complete-suite evidence.
+
 A suite in which baseline, current, and candidate all score at or near the
 ceiling is **saturated**. Saturation triggers suite review: add or refine
 discriminating, edge, and held-back cases before drawing a stronger conclusion.
@@ -182,6 +201,13 @@ That summary records:
 
 Summaries are evidence about one pinned comparison, not a timeless claim about
 a model family or another harness.
+
+Complete runs stay local under `.skill-evals/`. Opt-in JSON and Markdown
+exports under `evals/<skill>/reviews/` are deterministic and size-bounded. They
+are built from an allowlist and reject mutable model defaults; prompts,
+transcripts, command output, generated artifacts, and workspace paths never
+enter the durable form. A human reviewer must provide a bounded disposition
+and rationale. The export records that automatic promotion is disabled.
 
 ## Verdict vocabulary
 

@@ -707,5 +707,83 @@ class ValidateRepoPortabilityTests(unittest.TestCase):
         )
 
 
+class ValidateModelProfileTests(unittest.TestCase):
+    def setUp(self) -> None:
+        validate_repo.ERRORS.clear()
+
+    def tearDown(self) -> None:
+        validate_repo.ERRORS.clear()
+
+    def test_accepts_versioned_required_and_observed_profiles(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            profiles = Path(temp_dir) / "eval-profiles.json"
+            profiles.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "judge_policy": {
+                            "id": "review-v1",
+                            "model": "judge-v1",
+                            "protocol": "skill-eval-candidate-v3-condition-blind",
+                        },
+                        "profiles": [
+                            {
+                                "id": "required-model",
+                                "adapter": "codex",
+                                "model": "task-v1",
+                                "judge_model": "judge-v1",
+                                "required": True,
+                            },
+                            {
+                                "id": "observed-model",
+                                "adapter": "codex",
+                                "model": "task-v2",
+                                "judge_model": "judge-v1",
+                                "required": False,
+                            },
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with mock.patch.object(validate_repo, "MODEL_PROFILES", profiles):
+                validate_repo.validate_model_profiles()
+
+        self.assertEqual(validate_repo.ERRORS, [])
+
+    def test_rejects_mutable_runtime_default(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            profiles = Path(temp_dir) / "eval-profiles.json"
+            profiles.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "judge_policy": {
+                            "id": "review-v1",
+                            "model": "judge-v1",
+                            "protocol": "skill-eval-candidate-v3-condition-blind",
+                        },
+                        "profiles": [
+                            {
+                                "id": "required-model",
+                                "adapter": "codex",
+                                "model": "runtime-default",
+                                "judge_model": "judge-v1",
+                                "required": True,
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with mock.patch.object(validate_repo, "MODEL_PROFILES", profiles):
+                validate_repo.validate_model_profiles()
+
+        self.assertTrue(
+            any("runtime-default" in error for error in validate_repo.ERRORS),
+            validate_repo.ERRORS,
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

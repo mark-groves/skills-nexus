@@ -67,6 +67,116 @@ Useful controls include:
 
 Run `python3 scripts/eval_skills.py --help` for the complete interface.
 
+## Model-profile capability reviews
+
+`scripts/review_skill_capability.py` orchestrates the unchanged candidate
+evaluator across a repository-level, versioned Codex profile contract. The
+checked-in [`eval-profiles.json`](../eval-profiles.json) pins an exact task
+model and judge model for every profile. `required: true` profiles always run
+and gate the review; `required: false` profiles run only when selected and
+remain visible without blocking.
+
+Profile schema v1 supports only the Codex adapter. Every profile's
+`judge_model` must match the contract's pinned `judge_policy.model`, so
+historical task-model comparisons use one grading model and protocol. Empty
+identifiers, unknown keys, unsupported adapters, duplicate IDs, and
+`runtime-default` receive actionable validation errors. The declarative shape
+is also published as
+[`schemas/eval-profiles-v1.schema.json`](../schemas/eval-profiles-v1.schema.json).
+
+Preview the required-profile, universe, and case-group matrix without model
+calls:
+
+```bash
+python3 scripts/review_skill_capability.py \
+  --skill skill-architect \
+  --candidate /path/to/candidate-skill \
+  --plan
+```
+
+Run required profiles plus a selected observed profile:
+
+```bash
+python3 scripts/review_skill_capability.py \
+  --skill skill-architect \
+  --candidate /path/to/candidate-skill \
+  --observed-profile codex-frontier-observed \
+  --case-groups /path/to/review-case-groups.json
+```
+
+The command runs the complete trigger and behavior suite once per
+profile/universe cell. It does not run filtered group-sized suites, so every
+cell retains the evaluator's complete-suite optimisation gate. Both repository
+and isolated universes run by default. Selecting only one requires both
+`--universe` and a specific `--universe-limitation`; that limitation remains in
+the summary.
+
+Case groups are a versioned, complete, non-overlapping partition of the same
+eval digest:
+
+```json
+{
+  "schema_version": 1,
+  "groups": [
+    {
+      "id": "development",
+      "kind": "development",
+      "trigger_cases": ["1", "2"],
+      "behavior_cases": ["1"]
+    },
+    {
+      "id": "held-back-v1",
+      "kind": "held-back",
+      "trigger_cases": ["3"],
+      "behavior_cases": ["2"]
+    }
+  ]
+}
+```
+
+Every configured eval case must belong to exactly one group. Repeats apply to
+all cases; the summary records repeat counts for each clearly identified
+development or held-back group. Omitting `--case-groups` labels the full suite
+as development for diagnostic use, but the aggregate verdict remains
+`insufficient-evidence` because no held-back group was established.
+
+Complete runs, including raw evaluator evidence, stay under
+`.skill-evals/<skill>/capability-reviews/`. The orchestrator verifies that
+Current, Candidate, eval, judge-policy, harness, profile, and case-group inputs
+remain pinned across the matrix. It also rejects a runner-version change during
+one review. The capability-review eval digest covers `evals.json` and fixture
+bytes while excluding prior durable `reviews/`; the evaluator's narrower
+`eval_spec_digest_sha256` is retained and checked separately.
+
+Durable export is explicit and human-reviewed:
+
+```bash
+python3 scripts/review_skill_capability.py \
+  --skill skill-architect \
+  --candidate /path/to/candidate-skill \
+  --case-groups /path/to/review-case-groups.json \
+  --export \
+  --reviewer "Reviewer Name" \
+  --disposition retain \
+  --disposition-rationale "Required evidence passes; retain pending a stronger reduction."
+```
+
+This writes deterministic, size-bounded JSON and Markdown to
+`evals/<skill>/reviews/`. Export uses an allowlist: it includes pinned digests,
+exact models and versions, required/observed status, coverage, aggregate
+metrics, context footprints, gates, reproducible digest assertions,
+limitations, and the human disposition. It excludes prompts, transcripts,
+command output, generated artifacts, local run directories, and workspace
+paths. Reproduction uses `CANDIDATE_DIR` plus expected digest flags instead of
+persisting a machine-specific candidate path.
+
+A required-profile `rejected` cell rejects the aggregate review; required
+`insufficient-evidence` blocks approval. Observed failures are listed but never
+block. The command exits `0` only for an approved evidence verdict, `2` for
+rejected or insufficient evidence, and `1` for invalid configuration. Neither
+an approved evidence verdict nor a human disposition promotes, edits, merges,
+or publishes a candidate.
+
 ## Checks and optimisation policy
 
 Behavior checks remain backwards-compatible. A plain string is a normal
@@ -285,8 +395,9 @@ removes that home after each turn.
 
 Candidate comparison and single-profile optimisation gates are available
 through `--candidate`; context-footprint reporting is available in both modes.
-Regression ingestion, model-profile orchestration, and component ablation
-remain separate work tracked in the [roadmap](../ROADMAP.md). The
+Model-profile orchestration composes those gates without changing ordinary
+evaluation behavior. Regression ingestion and component ablation remain
+separate work tracked in the [roadmap](../ROADMAP.md). The
 [capability-optimisation contract](capability-optimisation.md) defines the
 broader evidence standard.
 
