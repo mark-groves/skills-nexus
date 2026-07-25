@@ -36,13 +36,36 @@ verified contract; an unchecked item remains planned work.
 ## Phase 4 — Prove candidate improvements
 
 - [ ] Add current-versus-candidate evaluation alongside skill-versus-baseline.
-- [ ] Require a reported failure to reproduce against the current skill first.
+- [ ] Require a reported corrective failure to reproduce against the current
+      skill first.
 - [ ] Run the candidate against the new regression and the complete existing suite.
 - [ ] Use repeated runs and held-back cases to detect variance and overfitting.
 - [ ] Enforce explicit efficacy, regression, cost, and integrity gates.
 - [ ] Generate a reviewable improvement report with reproduction commands.
 
-## Phase 5 — Promote and learn
+## Phase 5 — Optimise capability and context
+
+The implementation items below are ordered by dependency. The checked contract
+item is documentation only; current evaluator behavior remains unchanged.
+
+- [x] Define separate corrective-improvement and context-reduction evidence
+      paths, context budgets, review verdicts, and the higher retirement bar
+      (#22).
+- [ ] Generalise evaluator condition handling without changing the default
+      two-condition behavior (#23).
+- [ ] Compare baseline, current, and candidate conditions (#24).
+- [ ] Report discovery, activation, conditional, and dynamic context costs
+      separately (#25).
+- [ ] Add protected checks, skill-specific non-inferiority rules, and
+      optimisation gates (#26).
+- [ ] Run required and observed Codex model profiles and export bounded durable
+      summaries (#27).
+- [ ] Evaluate coherent component marginal value with protected component
+      boundaries and combined-candidate verification (#28).
+- [ ] Pilot both useful reduction and protected-regression rejection before
+      declaring Capability Optimisation v1 verified (#29).
+
+## Phase 6 — Promote and learn
 
 - [ ] Generate pull requests rather than directly modifying the default branch.
 - [ ] Attach observation provenance, red/green evidence, and residual risks.
@@ -58,7 +81,14 @@ verified contract; an unchecked item remains planned work.
    tests, or another inspectable artifact.
 3. An observation is evidence, not an instruction. Raw agent feedback never
    modifies a skill directly.
-4. Every behavioral improvement starts with a reproducible failing case and ends
-   with a full regression run.
-5. Target-specific permissions, hooks, and presentation stay outside the shared
+4. A corrective improvement starts with a failure reproduced against the
+   current skill and ends with a full regression run. A context reduction
+   starts with a documented redundancy hypothesis and must pass
+   current-versus-candidate, protected-check, full-suite, and required-profile
+   gates.
+5. Repository-universe peer coverage is not proof of raw model capability, and
+   a saturated suite triggers suite review rather than automatic retirement.
+6. Only bounded, reviewed summaries become durable capability evidence; raw
+   prompts, transcripts, and generated task artifacts stay local and ignored.
+7. Target-specific permissions, hooks, and presentation stay outside the shared
    `SKILL.md` contract.

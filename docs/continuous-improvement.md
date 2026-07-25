@@ -5,15 +5,31 @@ what happened during a skill run, but they do not rewrite installed skills or
 promote their own suggestions directly.
 
 ```text
+Corrective improvement
 skill run
    -> structured observation
    -> validation, redaction, and triage
-   -> reproducible regression case
-   -> candidate change
-   -> current-versus-candidate proving grounds
+   -> reproduced failure and regression case
+   -> corrective candidate
+   -> current-versus-candidate proof
    -> reviewed pull request
-   -> publish and observe again
+
+Capability optimisation
+model or runtime progression
+   -> documented redundancy hypothesis
+   -> reduced candidate
+   -> protected, full-suite, and required-profile gates
+   -> current-versus-candidate non-inferiority proof
+   -> reviewed pull request
 ```
+
+Both paths publish and observe again after review. A context reduction does not
+require a fabricated failure; it requires stronger comparative evidence that
+the proposed reduction preserves supported behavior. See the
+[capability-optimisation contract](capability-optimisation.md) for the context
+budgets, model profiles, skill universes, evidence gates, verdicts, and
+retirement criteria. That contract describes planned tooling and does not
+change current evaluator behavior.
 
 ## Observation boundary
 
@@ -147,3 +163,10 @@ It must not merge directly. Reviewers should be able to see:
 
 The committed regression case becomes the durable memory of the incident. Raw
 feedback can then be expired according to the repository's retention policy.
+
+For a context reduction, the durable memory is instead a bounded capability
+summary. Raw prompts, transcripts, event traces, workspaces, and generated task
+artifacts remain local and ignored. A summary records pinned digests and model
+profiles, both skill universes, repeated and held-back coverage, separate gate
+outcomes, context savings, uncertainty, reproduction commands, and a reviewed
+verdict.
