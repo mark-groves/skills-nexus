@@ -45,8 +45,10 @@ verified contract; an unchecked item remains planned work.
 
 ## Phase 5 — Optimise capability and context
 
-The implementation items below are ordered by dependency. The checked contract
-item is documentation only; current evaluator behavior remains unchanged.
+The implementation items below are ordered by dependency. The default
+two-condition evaluator behavior remains unchanged; candidate mode now adds the
+baseline/current/candidate comparison, while later optimisation tooling remains
+planned.
 
 - [x] Define separate corrective-improvement and context-reduction evidence
       paths, context budgets, review verdicts, and the higher retirement bar

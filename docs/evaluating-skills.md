@@ -122,6 +122,8 @@ Candidate runs use schema version 2 and add:
 
 - `candidate.path` and `candidate.runtime_digest_sha256`, separate from the
   Current digest under `skill.runtime_digest_sha256`;
+- `candidate.name`, `config.candidate` (the candidate path exactly as
+  supplied), and `integrity.blind_condition_grading`;
 - `candidate_trigger`, alongside the unchanged Current `trigger` path;
 - `candidate_run` and `candidate` grades for each behavior result;
 - `behavior.summary.comparisons` entries named `current_vs_baseline`,

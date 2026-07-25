@@ -25,6 +25,7 @@ SPEC.loader.exec_module(eval_skills)
 
 from skill_eval.codex_runner import CodexRunner, _event_summary, _scrub  # noqa: E402
 from skill_eval.core import (  # noqa: E402
+    RUNTIME_EXCLUDED_NAMES,
     BehaviorCase,
     EvalError,
     EvaluationCondition,
@@ -44,6 +45,7 @@ from skill_eval.core import (  # noqa: E402
     stable_digest,
     summarize_behavior_results,
     summarize_trigger_results,
+    validate_candidate_separation,
 )
 
 
@@ -179,7 +181,7 @@ class EvalCoreTests(unittest.TestCase):
                 "---\nname: demo\ndescription: Use for demo tasks.\n---\n",
                 encoding="utf-8",
             )
-            for excluded_name in ("evals", "working", "__pycache__", ".git"):
+            for excluded_name in RUNTIME_EXCLUDED_NAMES:
                 excluded = candidate / excluded_name
                 excluded.mkdir()
                 (excluded / "note.txt").write_text(
@@ -192,7 +194,7 @@ class EvalCoreTests(unittest.TestCase):
             runtime_skill_copy(resolved, runtime)
 
             self.assertEqual(resolved, candidate.resolve())
-            for excluded_name in ("evals", "working", "__pycache__", ".git"):
+            for excluded_name in RUNTIME_EXCLUDED_NAMES:
                 self.assertFalse((runtime / excluded_name).exists())
 
     def test_candidate_snapshot_is_immutable_and_digest_matches_runtime(self) -> None:
@@ -219,17 +221,33 @@ class EvalCoreTests(unittest.TestCase):
             self.assertEqual(candidate_condition.runtime_skill_dir, snapshot.resolve())
             self.assertEqual(
                 candidate_condition.runtime_digest_sha256,
-                stable_digest(snapshot, exclude={"evals", "working", "__pycache__", ".git"}),
+                stable_digest(snapshot, exclude=RUNTIME_EXCLUDED_NAMES),
             )
             self.assertEqual((snapshot / "SKILL.md").read_text(encoding="utf-8"), original)
+
+    def test_candidate_and_current_packages_must_not_be_nested(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            current = root / "current"
+            nested_candidate = current / "candidate"
+            sibling_candidate = root / "candidate"
+            nested_current = sibling_candidate / "current"
+
+            with self.assertRaisesRegex(EvalError, "must not be nested"):
+                validate_candidate_separation(current, nested_candidate)
+            with self.assertRaisesRegex(EvalError, "must not be nested"):
+                validate_candidate_separation(nested_current, sibling_candidate)
+            validate_candidate_separation(current, sibling_candidate)
 
     def test_candidate_validation_failure_precedes_runner_creation(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             repo = Path(temp_dir)
             skill = repo / "skills" / "demo"
             candidate = repo / "candidate"
+            eval_dir = repo / "evals" / "demo"
             skill.mkdir(parents=True)
             candidate.mkdir()
+            eval_dir.mkdir(parents=True)
             (skill / "SKILL.md").write_text(
                 "---\nname: demo\ndescription: Use for demo tasks.\n---\n",
                 encoding="utf-8",
@@ -238,10 +256,26 @@ class EvalCoreTests(unittest.TestCase):
                 "---\nname: other\ndescription: Use for other tasks.\n---\n",
                 encoding="utf-8",
             )
+            (eval_dir / "evals.json").write_text(
+                json.dumps(
+                    {
+                        "skill_name": "demo",
+                        "trigger_evals": [
+                            {
+                                "id": "1",
+                                "query": "Use the demo skill.",
+                                "should_trigger": True,
+                            }
+                        ],
+                        "behavior_evals": [],
+                    }
+                ),
+                encoding="utf-8",
+            )
 
             with (
                 mock.patch.object(eval_skills, "CodexRunner") as runner,
-                contextlib.redirect_stderr(io.StringIO()),
+                contextlib.redirect_stderr(io.StringIO()) as stderr,
             ):
                 status = eval_skills.main(
                     [
@@ -251,11 +285,13 @@ class EvalCoreTests(unittest.TestCase):
                         "demo",
                         "--candidate",
                         str(candidate),
-                        "--plan",
+                        "--output-root",
+                        str(repo / "output"),
                     ]
                 )
 
             self.assertEqual(status, 1)
+            self.assertIn("logical skill identity mismatch", stderr.getvalue())
             runner.assert_not_called()
 
     def test_behavior_summary_uses_condition_ids_instead_of_fixed_keys(self) -> None:

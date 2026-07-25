@@ -309,6 +309,18 @@ def candidate_evaluation_conditions(
     )
 
 
+def validate_candidate_separation(skill_dir: Path, candidate_dir: Path) -> None:
+    """Reject nested packages whose runtime trees would contaminate one another."""
+    current = skill_dir.resolve()
+    candidate = candidate_dir.resolve()
+    if current == candidate:
+        return
+    if current in candidate.parents or candidate in current.parents:
+        raise EvalError(
+            f"Candidate and current skill packages must not be nested: {candidate} and {current}"
+        )
+
+
 def resolve_candidate_skill(repo_root: Path, selector: Path, logical_name: str) -> Path:
     """Resolve and validate a publishable candidate for the selected logical skill."""
     supplied = selector.expanduser()

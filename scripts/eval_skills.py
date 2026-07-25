@@ -37,6 +37,7 @@ from skill_eval.core import (
     stable_digest,
     summarize_behavior_results,
     summarize_trigger_results,
+    validate_candidate_separation,
 )
 from skill_eval.report import write_reports
 
@@ -345,6 +346,7 @@ def run_evaluation(args: argparse.Namespace) -> tuple[dict[str, Any], Path]:
     )
     if candidate_dir is None:
         return _run_evaluation(args, repo_root, skill_dir, None, None)
+    validate_candidate_separation(skill_dir, candidate_dir)
 
     with tempfile.TemporaryDirectory(prefix="skill-eval-candidate-snapshot-") as temp_dir:
         candidate_runtime_dir = snapshot_candidate_skill(
