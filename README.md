@@ -58,6 +58,15 @@ Preview an evaluation without invoking agent turns:
 python3 scripts/eval_skills.py --skill skill-architect --plan
 ```
 
+Preview a pinned multi-profile candidate capability review:
+
+```bash
+python3 scripts/review_skill_capability.py \
+  --skill skill-architect \
+  --candidate /path/to/candidate-skill \
+  --plan
+```
+
 Evaluation suites are repository-only evidence. They are stored separately
 from runtime skills and are never included in packaged copies.
 

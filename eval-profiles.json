@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "judge_policy": {
+    "id": "codex-capability-review-v1",
+    "model": "gpt-5.6-sol",
+    "protocol": "skill-eval-candidate-v3-condition-blind"
+  },
+  "profiles": [
+    {
+      "id": "codex-supported-floor",
+      "adapter": "codex",
+      "model": "gpt-5.4",
+      "judge_model": "gpt-5.6-sol",
+      "required": true
+    },
+    {
+      "id": "codex-frontier-observed",
+      "adapter": "codex",
+      "model": "gpt-5.6-sol",
+      "judge_model": "gpt-5.6-sol",
+      "required": false
+    }
+  ]
+}

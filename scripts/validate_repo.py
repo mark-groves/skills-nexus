@@ -11,10 +11,14 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+from skill_eval.core import EvalError
+from skill_review.core import load_profile_contract
+
 REPO_DIR = Path(__file__).resolve().parents[1]
 SKILLS_DIR = REPO_DIR / "skills"
 EVALS_DIR = REPO_DIR / "evals"
 HARNESS_DIR = REPO_DIR / "harnesses"
+MODEL_PROFILES = REPO_DIR / "eval-profiles.json"
 CLOUD_DIAGRAM_REFS = SKILLS_DIR / "cloud-diagram" / "references"
 DRAWIO_FIXTURES = SKILLS_DIR / "drawio-shapes" / "fixtures" / "extracted"
 DRAWIO_GENERATOR = SKILLS_DIR / "drawio-shapes" / "scripts" / "generate_catalog.py"
@@ -591,6 +595,14 @@ def validate_generated_junk() -> None:
             fail(f"Tracked generated junk under __pycache__: {rel}")
         if rel.endswith(".pyc"):
             fail(f"Tracked generated junk .pyc file: {rel}")
+
+
+def validate_model_profiles() -> None:
+    """Validate the checked-in versioned model-profile contract."""
+    try:
+        load_profile_contract(MODEL_PROFILES)
+    except EvalError as exc:
+        fail(str(exc))
 
 
 def validate_harness_manifests() -> dict[str, dict[str, str]]:
@@ -1362,6 +1374,7 @@ def validate_handoff_smoke_tests() -> None:
 def main() -> int:
     valid_skills = validate_skills_root()
     harnesses = validate_harness_manifests()
+    validate_model_profiles()
     validate_generated_junk()
     validate_deploy_script(valid_skills, harnesses)
     validate_handoff_smoke_tests()

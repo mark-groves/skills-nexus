@@ -48,8 +48,8 @@ verified contract; an unchecked item remains planned work.
 The implementation items below are ordered by dependency. The default
 two-condition evaluator behavior remains unchanged; candidate mode now adds the
 baseline/current/candidate comparison, separate context evidence, and
-repository-owned optimisation gates. Model-profile orchestration and component
-ablation remain planned.
+repository-owned optimisation gates. Model-profile orchestration composes those
+unchanged evaluations; component ablation remains planned.
 
 - [x] Define separate corrective-improvement and context-reduction evidence
       paths, context budgets, review verdicts, and the higher retirement bar
@@ -61,7 +61,7 @@ ablation remain planned.
       separately (#25).
 - [x] Add protected checks, skill-specific non-inferiority rules, and
       optimisation gates (#26).
-- [ ] Run required and observed Codex model profiles and export bounded durable
+- [x] Run required and observed Codex model profiles and export bounded durable
       summaries (#27).
 - [ ] Evaluate coherent component marginal value with protected component
       boundaries and combined-candidate verification (#28).
