@@ -66,7 +66,9 @@ real executions into a private inbox. Planned stages validate and triage that
 evidence, turn accepted reports into regression cases, and compare candidate
 changes against the current skill before a reviewed pull request can be
 promoted. See [Continuous improvement](docs/continuous-improvement.md) and the
-tracked [roadmap](ROADMAP.md).
+tracked [roadmap](ROADMAP.md). The
+[Capability optimisation](docs/capability-optimisation.md) guide defines the
+evidence contract for planned context reduction and retirement reviews.
 
 ## Repository layout
 
@@ -84,6 +86,7 @@ Repository guides:
 - [Authoring skills](docs/authoring-skills.md)
 - [Evaluating skills](docs/evaluating-skills.md)
 - [Continuous improvement](docs/continuous-improvement.md)
+- [Capability optimisation](docs/capability-optimisation.md)
 - [Development and CI](docs/development.md)
 
 Licensed under the [MIT License](LICENSE).

@@ -84,5 +84,27 @@ the existing Codex authentication file into a temporary isolated home and
 removes that home after each turn.
 
 Current runs compare skill versus baseline. Current-versus-candidate proving,
-regression ingestion, and promotion gates are tracked in the
-[roadmap](../ROADMAP.md).
+regression ingestion, capability-review gates, and component ablation are
+tracked in the [roadmap](../ROADMAP.md). The
+[capability-optimisation contract](capability-optimisation.md) defines the
+evidence standard for that planned tooling without changing current evaluator
+behavior.
+
+## Capability-review boundary
+
+Future capability reviews will use baseline, current, and candidate conditions
+to answer two distinct questions. Whole-skill efficacy asks whether the complete
+skill improves on baseline. Component marginal value asks whether a coherent
+part still improves the complete skill enough to justify its discovery,
+activation, or conditional context cost.
+
+Capability evidence must identify its skill universe. The default repository
+universe includes peer skills in every condition and reflects normal
+deployment. `--skill-universe isolated` removes those peers and helps separate
+the target skill's value from sibling-skill coverage. Repository-mode coverage
+by a peer is not evidence that the raw model provides the behavior. A complete
+capability review inspects both universes or records the limitation.
+
+The current task runner is Codex. Model selection through `--model` and
+`--judge-model` therefore produces Codex model-profile evidence, not behavioral
+evidence for every harness supported by the packaging system.
