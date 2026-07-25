@@ -28,7 +28,9 @@ python3 scripts/eval_skills.py \
 `--repo-root`. The directory may have any working name, but its canonical
 frontmatter `name` must match the selected skill. Before any agent turn, the
 evaluator verifies the minimal publishable metadata contract, rejects runtime
-symlinks, and creates a clean runtime copy.
+symlinks, and creates a clean immutable runtime snapshot. The snapshot digest
+is recorded before agent turns begin, so edits to the source during a run cannot
+change the package being evaluated.
 
 ## Plan and run
 

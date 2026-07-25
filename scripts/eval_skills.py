@@ -32,6 +32,7 @@ from skill_eval.core import (
     resolve_candidate_skill,
     resolve_skill,
     run_fixture_setups,
+    snapshot_candidate_skill,
     snapshot_workspace,
     stable_digest,
     summarize_behavior_results,
@@ -342,9 +343,34 @@ def run_evaluation(args: argparse.Namespace) -> tuple[dict[str, Any], Path]:
         if args.candidate is not None
         else None
     )
+    if candidate_dir is None:
+        return _run_evaluation(args, repo_root, skill_dir, None, None)
+
+    with tempfile.TemporaryDirectory(prefix="skill-eval-candidate-snapshot-") as temp_dir:
+        candidate_runtime_dir = snapshot_candidate_skill(
+            candidate_dir,
+            Path(temp_dir) / skill_dir.name,
+            skill_dir.name,
+        )
+        return _run_evaluation(
+            args,
+            repo_root,
+            skill_dir,
+            candidate_dir,
+            candidate_runtime_dir,
+        )
+
+
+def _run_evaluation(
+    args: argparse.Namespace,
+    repo_root: Path,
+    skill_dir: Path,
+    candidate_dir: Path | None,
+    candidate_runtime_dir: Path | None,
+) -> tuple[dict[str, Any], Path]:
     conditions = (
-        candidate_evaluation_conditions(skill_dir, candidate_dir)
-        if candidate_dir is not None
+        candidate_evaluation_conditions(skill_dir, candidate_runtime_dir)
+        if candidate_runtime_dir is not None
         else default_evaluation_conditions(skill_dir)
     )
     primary_condition = conditions[0]

@@ -39,7 +39,9 @@ from skill_eval.core import (  # noqa: E402
     resolve_candidate_skill,
     run_fixture_setups,
     runtime_skill_copy,
+    snapshot_candidate_skill,
     snapshot_workspace,
+    stable_digest,
     summarize_behavior_results,
     summarize_trigger_results,
 )
@@ -167,6 +169,59 @@ class EvalCoreTests(unittest.TestCase):
             )
             with self.assertRaisesRegex(EvalError, "not portable"):
                 resolve_candidate_skill(repo, Path("working/nonportable"), "demo")
+
+    def test_candidate_validation_ignores_all_runtime_excluded_directories(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo = Path(temp_dir)
+            candidate = repo / "candidate"
+            candidate.mkdir()
+            (candidate / "SKILL.md").write_text(
+                "---\nname: demo\ndescription: Use for demo tasks.\n---\n",
+                encoding="utf-8",
+            )
+            for excluded_name in ("evals", "working", "__pycache__", ".git"):
+                excluded = candidate / excluded_name
+                excluded.mkdir()
+                (excluded / "note.txt").write_text(
+                    "Development-only note mentioning ~/.codex/skills.\n",
+                    encoding="utf-8",
+                )
+
+            resolved = resolve_candidate_skill(repo, candidate, "demo")
+            runtime = repo / "runtime"
+            runtime_skill_copy(resolved, runtime)
+
+            self.assertEqual(resolved, candidate.resolve())
+            for excluded_name in ("evals", "working", "__pycache__", ".git"):
+                self.assertFalse((runtime / excluded_name).exists())
+
+    def test_candidate_snapshot_is_immutable_and_digest_matches_runtime(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            current = root / "current"
+            candidate = root / "candidate"
+            snapshot = root / "snapshot" / "demo"
+            current.mkdir()
+            candidate.mkdir()
+            snapshot.parent.mkdir()
+            (current / "SKILL.md").write_text("current\n", encoding="utf-8")
+            original = (
+                "---\nname: demo\ndescription: Use for candidate demo tasks.\n---\n"
+                "\n# Candidate Demo\n"
+            )
+            (candidate / "SKILL.md").write_text(original, encoding="utf-8")
+
+            snapshot_candidate_skill(candidate, snapshot, "demo")
+            conditions = candidate_evaluation_conditions(current, snapshot)
+            (candidate / "SKILL.md").write_text("changed during evaluation\n", encoding="utf-8")
+
+            candidate_condition = conditions[2]
+            self.assertEqual(candidate_condition.runtime_skill_dir, snapshot.resolve())
+            self.assertEqual(
+                candidate_condition.runtime_digest_sha256,
+                stable_digest(snapshot, exclude={"evals", "working", "__pycache__", ".git"}),
+            )
+            self.assertEqual((snapshot / "SKILL.md").read_text(encoding="utf-8"), original)
 
     def test_candidate_validation_failure_precedes_runner_creation(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

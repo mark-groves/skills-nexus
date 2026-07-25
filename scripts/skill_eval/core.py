@@ -385,8 +385,7 @@ def resolve_candidate_skill(repo_root: Path, selector: Path, logical_name: str) 
         if (
             not file_path.is_file()
             or file_path.is_symlink()
-            or "working" in relative.parts
-            or "__pycache__" in relative.parts
+            or any(part in RUNTIME_EXCLUDED_NAMES for part in relative.parts)
         ):
             continue
         try:
@@ -422,6 +421,16 @@ def resolve_candidate_skill(repo_root: Path, selector: Path, logical_name: str) 
     with tempfile.TemporaryDirectory(prefix="skill-eval-candidate-validation-") as temp_dir:
         runtime_skill_copy(candidate, Path(temp_dir) / logical_name)
     return candidate
+
+
+def snapshot_candidate_skill(
+    candidate_dir: Path,
+    destination: Path,
+    logical_name: str,
+) -> Path:
+    """Create and validate the immutable candidate runtime used for one evaluation."""
+    runtime_skill_copy(candidate_dir, destination)
+    return resolve_candidate_skill(destination.parent, destination, logical_name)
 
 
 def runtime_skill_copy(skill_dir: Path, destination: Path) -> None:
