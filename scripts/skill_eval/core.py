@@ -371,7 +371,15 @@ def summarize_candidate_comparison(
     if current_efficiency is not None and candidate_efficiency is not None:
         current_input = current_efficiency.get("input_tokens")
         candidate_input = candidate_efficiency.get("input_tokens")
-        if isinstance(current_input, int) and isinstance(candidate_input, int):
+        current_completed = current_efficiency.get("completed_runs")
+        candidate_completed = candidate_efficiency.get("completed_runs")
+        fully_paired = (
+            isinstance(current_completed, int)
+            and current_completed == candidate_completed
+            and current_efficiency.get("failed_runs") == 0
+            and candidate_efficiency.get("failed_runs") == 0
+        )
+        if fully_paired and isinstance(current_input, int) and isinstance(candidate_input, int):
             input_token_reduction = current_input - candidate_input
 
     paired = candidate_vs_current.get("paired_checks") if candidate_vs_current else None

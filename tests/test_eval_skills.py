@@ -12,6 +12,7 @@ import textwrap
 import unittest
 from dataclasses import FrozenInstanceError
 from pathlib import Path
+from typing import Any
 from unittest import mock
 
 REPO_DIR = Path(__file__).resolve().parents[1]
@@ -635,7 +636,7 @@ class EvalCoreTests(unittest.TestCase):
                 "runtime_package": {"file_count": 3, "bytes": 750},
             },
         }
-        behavior = {
+        behavior: dict[str, Any] = {
             "comparisons": {
                 "candidate_vs_current": {
                     "absolute_lift": -0.1,
@@ -653,8 +654,16 @@ class EvalCoreTests(unittest.TestCase):
                 },
             },
             "efficiency": {
-                "skill": {"input_tokens": 1_000},
-                "candidate": {"input_tokens": None},
+                "skill": {
+                    "input_tokens": 1_000,
+                    "completed_runs": 2,
+                    "failed_runs": 0,
+                },
+                "candidate": {
+                    "input_tokens": 800,
+                    "completed_runs": 2,
+                    "failed_runs": 0,
+                },
             },
         }
 
@@ -673,11 +682,16 @@ class EvalCoreTests(unittest.TestCase):
                 "runtime_package_bytes": 250,
             },
         )
-        self.assertIsNone(comparison["dynamic_input_token_reduction"])
+        self.assertEqual(comparison["dynamic_input_token_reduction"], 200)
         self.assertEqual(
             comparison["paired_checks"],
             {"wins": 1, "regressions": 2, "ties": 3, "unknown": 4},
         )
+
+        behavior["efficiency"]["candidate"]["completed_runs"] = 1
+        comparison = summarize_candidate_comparison(behavior, footprints)
+
+        self.assertIsNone(comparison["dynamic_input_token_reduction"])
 
     def test_duplicate_case_filters_are_rejected(self) -> None:
         case = TriggerCase("1", "demo", True)

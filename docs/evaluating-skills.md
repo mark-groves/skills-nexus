@@ -159,7 +159,8 @@ it does not decide whether to promote the candidate.
 Candidate comparison signs are intentional: quality is Candidate minus the
 named comparison, so positive means Candidate quality is higher. Context
 reduction is Current minus Candidate, so positive means Candidate is smaller.
-Dynamic input-token reduction is unknown when either side lacks runner usage.
+Dynamic input-token reduction is unknown when either side lacks runner usage or
+when Current and Candidate do not have equal, fully completed behavior runs.
 These measurements are evidence, not optimisation gates.
 
 Running evaluations requires an authenticated Codex CLI. The evaluator links
