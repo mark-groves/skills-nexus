@@ -239,6 +239,103 @@ class EvalCoreTests(unittest.TestCase):
                 validate_candidate_separation(nested_current, sibling_candidate)
             validate_candidate_separation(current, sibling_candidate)
 
+    def test_candidate_nested_in_repository_peer_fails_before_runner_creation(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo = Path(temp_dir)
+            skill = repo / "skills" / "demo"
+            peer = repo / "skills" / "peer"
+            candidate = peer / "candidate"
+            skill.mkdir(parents=True)
+            candidate.mkdir(parents=True)
+            (skill / "SKILL.md").write_text(
+                "---\nname: demo\ndescription: Use for demo tasks.\n---\n",
+                encoding="utf-8",
+            )
+            (peer / "SKILL.md").write_text(
+                "---\nname: peer\ndescription: Use for peer tasks.\n---\n",
+                encoding="utf-8",
+            )
+            (candidate / "SKILL.md").write_text(
+                "---\nname: demo\ndescription: Use for candidate demo tasks.\n---\n",
+                encoding="utf-8",
+            )
+
+            with (
+                mock.patch.object(eval_skills, "CodexRunner") as runner,
+                contextlib.redirect_stderr(io.StringIO()) as stderr,
+            ):
+                status = eval_skills.main(
+                    [
+                        "--repo-root",
+                        str(repo),
+                        "--skill",
+                        "demo",
+                        "--candidate",
+                        str(candidate),
+                        "--plan",
+                    ]
+                )
+
+            self.assertEqual(status, 1)
+            self.assertIn("must not be nested", stderr.getvalue())
+            runner.assert_not_called()
+
+    def test_candidate_mode_snapshots_current_and_candidate_for_the_whole_run(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo = Path(temp_dir)
+            current = repo / "skills" / "demo"
+            candidate = repo / "candidate"
+            current.mkdir(parents=True)
+            candidate.mkdir()
+            current_text = "---\nname: demo\ndescription: Current demo.\n---\n\n# Current\n"
+            candidate_text = "---\nname: demo\ndescription: Candidate demo.\n---\n\n# Candidate\n"
+            (current / "SKILL.md").write_text(current_text, encoding="utf-8")
+            (candidate / "SKILL.md").write_text(candidate_text, encoding="utf-8")
+            args = eval_skills.build_parser().parse_args(
+                [
+                    "--repo-root",
+                    str(repo),
+                    "--skill",
+                    "demo",
+                    "--candidate",
+                    str(candidate),
+                    "--plan",
+                ]
+            )
+
+            def inspect_snapshots(
+                _args,
+                _repo_root,
+                source_current,
+                current_runtime,
+                source_candidate,
+                candidate_runtime,
+            ):
+                self.assertNotEqual(current_runtime, source_current)
+                self.assertNotEqual(candidate_runtime, source_candidate)
+                (source_current / "SKILL.md").write_text("changed current\n", encoding="utf-8")
+                (source_candidate / "SKILL.md").write_text("changed candidate\n", encoding="utf-8")
+                self.assertEqual(
+                    (current_runtime / "SKILL.md").read_text(encoding="utf-8"),
+                    current_text,
+                )
+                self.assertEqual(
+                    (candidate_runtime / "SKILL.md").read_text(encoding="utf-8"),
+                    candidate_text,
+                )
+                return {}, Path()
+
+            with mock.patch.object(
+                eval_skills,
+                "_run_evaluation",
+                side_effect=inspect_snapshots,
+            ) as evaluate:
+                result, output = eval_skills.run_evaluation(args)
+
+            self.assertEqual(result, {})
+            self.assertEqual(output, Path())
+            evaluate.assert_called_once()
+
     def test_candidate_validation_failure_precedes_runner_creation(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             repo = Path(temp_dir)

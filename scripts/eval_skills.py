@@ -32,6 +32,7 @@ from skill_eval.core import (
     resolve_candidate_skill,
     resolve_skill,
     run_fixture_setups,
+    runtime_skill_copy,
     snapshot_candidate_skill,
     snapshot_workspace,
     stable_digest,
@@ -345,19 +346,25 @@ def run_evaluation(args: argparse.Namespace) -> tuple[dict[str, Any], Path]:
         else None
     )
     if candidate_dir is None:
-        return _run_evaluation(args, repo_root, skill_dir, None, None)
+        return _run_evaluation(args, repo_root, skill_dir, None, None, None)
     validate_candidate_separation(skill_dir, candidate_dir)
+    for peer_dir in discover_repository_skills(repo_root):
+        if peer_dir not in {skill_dir, candidate_dir}:
+            validate_candidate_separation(peer_dir, candidate_dir)
 
     with tempfile.TemporaryDirectory(prefix="skill-eval-candidate-snapshot-") as temp_dir:
+        current_runtime_dir = Path(temp_dir) / "current" / skill_dir.name
+        runtime_skill_copy(skill_dir, current_runtime_dir)
         candidate_runtime_dir = snapshot_candidate_skill(
             candidate_dir,
-            Path(temp_dir) / skill_dir.name,
+            Path(temp_dir) / "candidate" / skill_dir.name,
             skill_dir.name,
         )
         return _run_evaluation(
             args,
             repo_root,
             skill_dir,
+            current_runtime_dir,
             candidate_dir,
             candidate_runtime_dir,
         )
@@ -367,12 +374,13 @@ def _run_evaluation(
     args: argparse.Namespace,
     repo_root: Path,
     skill_dir: Path,
+    current_runtime_dir: Path | None,
     candidate_dir: Path | None,
     candidate_runtime_dir: Path | None,
 ) -> tuple[dict[str, Any], Path]:
     conditions = (
-        candidate_evaluation_conditions(skill_dir, candidate_runtime_dir)
-        if candidate_runtime_dir is not None
+        candidate_evaluation_conditions(current_runtime_dir, candidate_runtime_dir)
+        if current_runtime_dir is not None and candidate_runtime_dir is not None
         else default_evaluation_conditions(skill_dir)
     )
     primary_condition = conditions[0]
