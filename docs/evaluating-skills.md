@@ -135,10 +135,13 @@ eval digest:
 ```
 
 Every configured eval case must belong to exactly one group. Repeats apply to
-all cases; the summary records repeat counts for each clearly identified
-development or held-back group. Omitting `--case-groups` labels the full suite
-as development for diagnostic use, but the aggregate verdict remains
-`insufficient-evidence` because no held-back group was established.
+all cases. The summary records repeat counts against each development or
+held-back partition label. These groups are declarative process controls, not
+per-group performance measurements. The current gates use whole-suite metrics,
+so a passing coverage gate does not establish held-back-only non-inferiority or
+measured group efficacy. Omitting `--case-groups` labels the full suite as
+development for diagnostic use, but the aggregate verdict remains
+`insufficient-evidence` because no held-back process-control label was supplied.
 
 Complete runs, including raw evaluator evidence, stay under
 `.skill-evals/<skill>/capability-reviews/`. The orchestrator verifies that

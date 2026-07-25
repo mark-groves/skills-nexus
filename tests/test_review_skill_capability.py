@@ -462,6 +462,10 @@ class CapabilityReviewOrchestrationTests(unittest.TestCase):
             self.assertEqual(review["aggregate"]["required_blockers"], [])
             self.assertEqual(review["aggregate"]["observed_failures"], ["fake-observed"])
             self.assertFalse(review["aggregate"]["observed_profiles_block"])
+            coverage_detail = review["aggregate"]["coverage_gate"]["detail"]
+            self.assertIn("declarative", coverage_detail)
+            self.assertIn("process controls", coverage_detail)
+            self.assertIn("whole-suite", coverage_detail)
             self.assertEqual(len(fake.calls), 4)
             self.assertEqual(
                 {call[2] for call in fake.calls},
@@ -584,9 +588,68 @@ class DurableExportTests(unittest.TestCase):
             self.assertLess(len(json_bytes), 256_000)
             self.assertFalse(first["human_review"]["automatic_promotion"])
             self.assertIn("${CANDIDATE_DIR}", first["reproduction"]["argv"])
+            self.assertTrue(
+                any(
+                    "declarative process controls" in limitation
+                    and "held-back-only non-inferiority" in limitation
+                    for limitation in first["confidence_limitations"]
+                )
+            )
             self.assertIn("## Baseline, Current, and Candidate metrics", markdown)
             self.assertIn("## Context footprint", markdown)
             self.assertIn("## Gate results", markdown)
+
+    def test_export_refuses_different_payload_for_existing_review_id(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fixture = CapabilityReviewFixture(Path(temp_dir))
+            config = fixture.config()
+            review, _local_root = run_capability_review(config, FakeEvaluationRunner())
+            first = build_durable_summary(
+                review,
+                config,
+                disposition="retain",
+                reviewer="First Reviewer",
+                rationale="Keep the current capability.",
+            )
+            different = build_durable_summary(
+                review,
+                config,
+                disposition="compress",
+                reviewer="Second Reviewer",
+                rationale="Compress the current capability.",
+            )
+
+            json_path, markdown_path = export_durable_summary(first, repo_root=fixture.repo)
+            json_bytes = json_path.read_bytes()
+            markdown_bytes = markdown_path.read_bytes()
+            export_durable_summary(first, repo_root=fixture.repo)
+            with self.assertRaisesRegex(EvalError, first["review_id"]):
+                export_durable_summary(different, repo_root=fixture.repo)
+
+            self.assertEqual(json_path.read_bytes(), json_bytes)
+            self.assertEqual(markdown_path.read_bytes(), markdown_bytes)
+
+    def test_export_refuses_incomplete_existing_pair(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fixture = CapabilityReviewFixture(Path(temp_dir))
+            config = fixture.config()
+            review, _local_root = run_capability_review(config, FakeEvaluationRunner())
+            summary = build_durable_summary(
+                review,
+                config,
+                disposition="retain",
+                reviewer="Test Reviewer",
+                rationale="Keep the current capability.",
+            )
+
+            json_path, markdown_path = export_durable_summary(summary, repo_root=fixture.repo)
+            markdown_path.unlink()
+
+            with self.assertRaisesRegex(EvalError, "incomplete"):
+                export_durable_summary(summary, repo_root=fixture.repo)
+
+            self.assertTrue(json_path.is_file())
+            self.assertFalse(markdown_path.exists())
 
     def test_summary_rejects_absolute_path_in_human_fields(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -608,6 +671,86 @@ class DurableExportTests(unittest.TestCase):
                             reviewer="Test Reviewer",
                             rationale=rationale,
                         )
+
+    def test_export_args_fail_before_matrix_run(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fixture = CapabilityReviewFixture(Path(temp_dir))
+            base_argv = [
+                "--repo-root",
+                str(fixture.repo),
+                "--skill",
+                "demo",
+                "--candidate",
+                str(fixture.candidate),
+                "--profiles",
+                str(fixture.profiles),
+                "--case-groups",
+                str(fixture.case_groups),
+                "--export",
+                "--disposition",
+                "retain",
+            ]
+
+            for human_args in (
+                [
+                    "--reviewer",
+                    "   ",
+                    "--disposition-rationale",
+                    "Keep the capability.",
+                ],
+                [
+                    "--reviewer",
+                    "Test Reviewer",
+                    "--disposition-rationale",
+                    "See /tmp/private-review-notes.",
+                ],
+            ):
+                with self.subTest(human_args=human_args):
+                    fake = FakeEvaluationRunner()
+                    stderr = io.StringIO()
+                    with contextlib.redirect_stderr(stderr):
+                        exit_code = review_skill_capability.main(
+                            base_argv + human_args,
+                            evaluation_runner=fake,
+                        )
+
+                    self.assertEqual(exit_code, 1)
+                    self.assertEqual(fake.calls, [])
+
+    def test_plan_validates_numeric_controls_before_matrix_run(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fixture = CapabilityReviewFixture(Path(temp_dir))
+            base_argv = [
+                "--repo-root",
+                str(fixture.repo),
+                "--skill",
+                "demo",
+                "--candidate",
+                str(fixture.candidate),
+                "--profiles",
+                str(fixture.profiles),
+                "--case-groups",
+                str(fixture.case_groups),
+                "--plan",
+            ]
+            fake = FakeEvaluationRunner()
+            stderr = io.StringIO()
+
+            with contextlib.redirect_stderr(stderr):
+                invalid_exit = review_skill_capability.main(
+                    base_argv + ["--trigger-repeats", "0"],
+                    evaluation_runner=fake,
+                )
+            with contextlib.redirect_stdout(io.StringIO()):
+                valid_exit = review_skill_capability.main(
+                    base_argv,
+                    evaluation_runner=fake,
+                )
+
+            self.assertEqual(invalid_exit, 1)
+            self.assertIn("--trigger-repeats must be greater than zero", stderr.getvalue())
+            self.assertEqual(valid_exit, 0)
+            self.assertEqual(fake.calls, [])
 
     def test_cli_end_to_end_uses_fake_profiles_without_external_services(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

@@ -11,6 +11,9 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+from skill_eval.core import EvalError
+from skill_review.core import load_profile_contract
+
 REPO_DIR = Path(__file__).resolve().parents[1]
 SKILLS_DIR = REPO_DIR / "skills"
 EVALS_DIR = REPO_DIR / "evals"
@@ -30,9 +33,6 @@ OPTIONAL_EVAL_KEYS = {"review_policy"}
 CHECK_ID_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$")
 CHECK_CLASSES = {"quality", "correctness", "safety", "local-contract"}
 CHECK_GATES = {"normal", "hard"}
-MODEL_IDENTIFIER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,159}$")
-MODEL_PROFILE_KEYS = {"id", "adapter", "model", "judge_model", "required"}
-JUDGE_POLICY_KEYS = {"id", "model", "protocol"}
 CONTEXT_REDUCTION_METRICS = {
     "description_characters",
     "skill_md_body_characters",
@@ -600,79 +600,9 @@ def validate_generated_junk() -> None:
 def validate_model_profiles() -> None:
     """Validate the checked-in versioned model-profile contract."""
     try:
-        rel = repo_relative(MODEL_PROFILES)
-    except ValueError:
-        rel = str(MODEL_PROFILES)
-    try:
-        payload = json.loads(read_text(MODEL_PROFILES))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-        fail(f"Invalid model profile contract {rel}: {exc}")
-        return
-    if not isinstance(payload, dict):
-        fail(f"Model profile contract must be an object: {rel}")
-        return
-    expected_keys = {"schema_version", "judge_policy", "profiles"}
-    if set(payload) != expected_keys:
-        missing = sorted(expected_keys - set(payload))
-        extra = sorted(set(payload) - expected_keys)
-        if missing:
-            fail(f"Missing model profile keys in {rel}: {', '.join(missing)}")
-        if extra:
-            fail(f"Unexpected model profile keys in {rel}: {', '.join(extra)}")
-        return
-    if payload["schema_version"] != 1:
-        fail(f"model profile schema_version must be 1 in {rel}")
-
-    policy = payload["judge_policy"]
-    if not isinstance(policy, dict) or set(policy) != JUDGE_POLICY_KEYS:
-        fail(f"judge_policy must contain id, model, and protocol in {rel}")
-        return
-    policy_id = policy["id"]
-    if not isinstance(policy_id, str) or not CHECK_ID_RE.fullmatch(policy_id):
-        fail(f"judge_policy.id must be lowercase kebab-case in {rel}")
-    for key in ("model", "protocol"):
-        value = policy[key]
-        if not isinstance(value, str) or not MODEL_IDENTIFIER_RE.fullmatch(value.strip()):
-            fail(f"judge_policy.{key} must be a non-empty pinned identifier in {rel}")
-        elif value.strip() == "runtime-default":
-            fail(f"judge_policy.{key} must not use runtime-default in {rel}")
-    if policy["protocol"] != "skill-eval-candidate-v3-condition-blind":
-        fail(f"judge_policy.protocol must be 'skill-eval-candidate-v3-condition-blind' in {rel}")
-
-    profiles = payload["profiles"]
-    if not isinstance(profiles, list) or not 1 <= len(profiles) <= 16:
-        fail(f"profiles must contain between 1 and 16 entries in {rel}")
-        return
-    seen: set[str] = set()
-    required_count = 0
-    for index, profile in enumerate(profiles):
-        location = f"profiles[{index}]"
-        if not isinstance(profile, dict) or set(profile) != MODEL_PROFILE_KEYS:
-            fail(f"{location} must contain id, adapter, model, judge_model, and required in {rel}")
-            continue
-        profile_id = profile["id"]
-        if not isinstance(profile_id, str) or not CHECK_ID_RE.fullmatch(profile_id):
-            fail(f"{location}.id must be lowercase kebab-case in {rel}")
-        elif profile_id in seen:
-            fail(f"Duplicate model profile id {profile_id!r} in {rel}")
-        else:
-            seen.add(profile_id)
-        if profile["adapter"] != "codex":
-            fail(f"{location}.adapter must be 'codex' in {rel}")
-        for key in ("model", "judge_model"):
-            value = profile[key]
-            if not isinstance(value, str) or not MODEL_IDENTIFIER_RE.fullmatch(value.strip()):
-                fail(f"{location}.{key} must be a non-empty pinned identifier in {rel}")
-            elif value.strip() == "runtime-default":
-                fail(f"{location}.{key} must not use runtime-default in {rel}")
-        if profile["judge_model"] != policy["model"]:
-            fail(f"{location}.judge_model must match judge_policy.model in {rel}")
-        if not isinstance(profile["required"], bool):
-            fail(f"{location}.required must be boolean in {rel}")
-        else:
-            required_count += int(profile["required"])
-    if required_count == 0:
-        fail(f"profiles must contain at least one required entry in {rel}")
+        load_profile_contract(MODEL_PROFILES)
+    except EvalError as exc:
+        fail(str(exc))
 
 
 def validate_harness_manifests() -> dict[str, dict[str, str]]:

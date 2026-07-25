@@ -164,15 +164,17 @@ efficacy or efficiency score can override one of those outcomes.
 ### Repeats and held-back cases
 
 Repeated runs expose stochastic variance and unstable improvements. Held-back
-cases are not used to design the candidate and provide an overfitting check.
-Both are required evidence for a durable reduction; a single run or only the
-development cases cannot establish non-inferiority.
+case labels record the intended separation between candidate design inputs and
+the rest of the suite. The current orchestrator does not calculate
+held-back-only metrics or per-group non-inferiority. Its quality and triggering
+metrics remain whole-suite.
 
 Case groups label a complete, non-overlapping partition of one unchanged eval
 suite. The evaluator still runs the full suite in each matrix cell, while the
 orchestrator records development and held-back group IDs and their repeat
-coverage. This prevents a group-specific filtered run from being mistaken for
-complete-suite evidence.
+counts. These labels are declarative process controls. A passing coverage gate
+confirms that both labels were supplied and the full suite was repeated. It does
+not prove held-back-only non-inferiority or measured group efficacy.
 
 A suite in which baseline, current, and candidate all score at or near the
 ceiling is **saturated**. Saturation triggers suite review: add or refine
@@ -191,8 +193,8 @@ That summary records:
 - current, candidate, baseline configuration, evaluation, and runtime digests;
 - exact task and judge models, runner and harness versions, and required or
   observed profile status;
-- repository and isolated universe coverage plus development, repeated, and
-  held-back case coverage;
+- repository and isolated universe coverage plus development and held-back
+  partition labels and repeat counts;
 - separate behavior, triggering, protected-check, context, cost, and integrity
   results;
 - the configured margins, gate outcomes, uncertainty, limitations, and
@@ -228,7 +230,8 @@ Every review ends with one of these bounded dispositions:
 - `retire` — withdraw the complete skill after satisfying the higher retirement
   bar below.
 - `insufficient-evidence` — make no reduction because coverage, repeats,
-  held-back cases, required profiles, integrity, or confidence are inadequate.
+  case-group process controls, required profiles, integrity, or confidence are
+  inadequate.
 
 A verdict describes the reviewed evidence; it does not merge, publish, delete,
 or otherwise apply a change automatically.
@@ -241,8 +244,8 @@ must show all of the following:
 
 1. Baseline is non-inferior to the complete current skill in the isolated
    universe across every required profile.
-2. Repeated development, edge, and held-back cases are stable and do not merely
-   show a saturated suite.
+2. Repeated whole-suite results are stable and do not merely show a saturated
+   suite. Any held-back-only claim needs separate group-specific measurement.
 3. No protected behavior regresses, and unknown protected evidence is resolved.
 4. Repository-universe parity is not supplied only by peer skills.
 5. The skill has no unique scripts, assets, local policy, permissions, or

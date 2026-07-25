@@ -25,6 +25,7 @@ from skill_review.core import (
     load_profile_contract,
     run_capability_review,
     select_profiles,
+    validate_durable_disposition,
     validate_universes,
 )
 
@@ -200,6 +201,12 @@ def _validate_export_args(args: argparse.Namespace) -> None:
     supplied = any((args.reviewer, args.disposition, args.disposition_rationale))
     if args.export and not all((args.reviewer, args.disposition, args.disposition_rationale)):
         raise EvalError("--export requires --reviewer, --disposition, and --disposition-rationale")
+    if args.export:
+        validate_durable_disposition(
+            disposition=args.disposition,
+            reviewer=args.reviewer,
+            rationale=args.disposition_rationale,
+        )
     if not args.export and supplied:
         raise EvalError("--reviewer, --disposition, and --disposition-rationale require --export")
     if args.plan and args.export:

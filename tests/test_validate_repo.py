@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import sys
 import tempfile
 import textwrap
 import unittest
@@ -7,6 +8,9 @@ from pathlib import Path
 from unittest import mock
 
 REPO_DIR = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO_DIR / "scripts"))
+from skill_review.core import load_profile_contract  # noqa: E402
+
 MODULE_PATH = REPO_DIR / "scripts" / "validate_repo.py"
 SPEC = importlib.util.spec_from_file_location("validate_repo", MODULE_PATH)
 assert SPEC is not None
@@ -749,6 +753,38 @@ class ValidateModelProfileTests(unittest.TestCase):
             with mock.patch.object(validate_repo, "MODEL_PROFILES", profiles):
                 validate_repo.validate_model_profiles()
 
+        self.assertEqual(validate_repo.ERRORS, [])
+
+    def test_accepts_judge_policy_whitespace_normalized_by_loader(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            profiles = Path(temp_dir) / "eval-profiles.json"
+            profiles.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "judge_policy": {
+                            "id": "review-v1",
+                            "model": "judge-v1 ",
+                            "protocol": "skill-eval-candidate-v3-condition-blind",
+                        },
+                        "profiles": [
+                            {
+                                "id": "required-model",
+                                "adapter": "codex",
+                                "model": "task-v1",
+                                "judge_model": "judge-v1",
+                                "required": True,
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            contract = load_profile_contract(profiles)
+            with mock.patch.object(validate_repo, "MODEL_PROFILES", profiles):
+                validate_repo.validate_model_profiles()
+
+        self.assertEqual(contract.judge_policy.model, "judge-v1")
         self.assertEqual(validate_repo.ERRORS, [])
 
     def test_rejects_mutable_runtime_default(self) -> None:

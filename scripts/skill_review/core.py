@@ -498,6 +498,18 @@ class CapabilityReviewConfig:
     expected_profiles_digest: str | None = None
     expected_case_groups_digest: str | None = None
 
+    def __post_init__(self) -> None:
+        """Validate numeric controls when configuration enters the review system."""
+        for value, name in (
+            (self.trigger_repeats, "--trigger-repeats"),
+            (self.behavior_repeats, "--behavior-repeats"),
+            (self.jobs, "--jobs"),
+            (self.timeout, "--timeout"),
+        ):
+            _positive_int(value, name=name)
+        if not 0 <= self.activation_threshold <= 1:
+            raise EvalError("--activation-threshold must be between 0 and 1")
+
 
 def _positive_int(value: int, *, name: str) -> None:
     """Require a positive integer CLI control."""
@@ -901,9 +913,10 @@ def _aggregate_profiles(
             "held_back_groups": held_back,
             "repeated": repeated,
             "detail": (
-                "At least one explicitly identified development group and held-back "
-                "group with two or more trigger and behavior repeats is required for "
-                "sufficient capability evidence."
+                "Case groups are declarative partition labels and process controls, "
+                "not measured per-group efficacy; metrics and gates remain whole-suite. "
+                "A pass requires at least one development group and held-back group "
+                "with two or more trigger and behavior repeats."
             ),
         },
         "no_aggregate_override": True,
@@ -964,15 +977,6 @@ def run_capability_review(
     evaluation_runner: EvaluationRunner,
 ) -> tuple[dict[str, Any], Path]:
     """Run every selected profile in the selected universes and retain full local runs."""
-    for value, name in (
-        (config.trigger_repeats, "--trigger-repeats"),
-        (config.behavior_repeats, "--behavior-repeats"),
-        (config.jobs, "--jobs"),
-        (config.timeout, "--timeout"),
-    ):
-        _positive_int(value, name=name)
-    if not 0 <= config.activation_threshold <= 1:
-        raise EvalError("--activation-threshold must be between 0 and 1")
     if not config.profiles:
         raise EvalError("At least one selected model profile is required")
     if not any(profile.required for profile in config.profiles):
@@ -1292,16 +1296,11 @@ def build_durable_summary(
     rationale: str,
 ) -> dict[str, Any]:
     """Build an allowlisted, deterministic, human-dispositioned export."""
-    if disposition not in DISPOSITIONS:
-        raise EvalError("--disposition must be one of: " + ", ".join(sorted(DISPOSITIONS)))
-    if not reviewer.strip():
-        raise EvalError("--reviewer is required for durable export")
-    if not rationale.strip():
-        raise EvalError("--disposition-rationale is required for durable export")
-    if len(reviewer.strip()) > 200:
-        raise EvalError("--reviewer must be at most 200 characters")
-    if len(rationale.strip()) > 4000:
-        raise EvalError("--disposition-rationale must be at most 4000 characters")
+    validate_durable_disposition(
+        disposition=disposition,
+        reviewer=reviewer,
+        rationale=rationale,
+    )
     for profile in config.profiles:
         if profile.model == "runtime-default" or profile.judge_model == "runtime-default":
             raise EvalError("Durable export rejects mutable runtime-default model identifiers")
@@ -1369,6 +1368,31 @@ def build_durable_summary(
     return summary
 
 
+def validate_durable_disposition(
+    *,
+    disposition: str | None,
+    reviewer: str | None,
+    rationale: str | None,
+) -> None:
+    """Validate human export fields at their first external boundary."""
+    if disposition not in DISPOSITIONS:
+        raise EvalError("--disposition must be one of: " + ", ".join(sorted(DISPOSITIONS)))
+    if not isinstance(reviewer, str) or not reviewer.strip():
+        raise EvalError("--reviewer is required for durable export")
+    if not isinstance(rationale, str) or not rationale.strip():
+        raise EvalError("--disposition-rationale is required for durable export")
+    if len(reviewer.strip()) > 200:
+        raise EvalError("--reviewer must be at most 200 characters")
+    if len(rationale.strip()) > 4000:
+        raise EvalError("--disposition-rationale must be at most 4000 characters")
+    for value, name in (
+        (reviewer, "--reviewer"),
+        (rationale, "--disposition-rationale"),
+    ):
+        if UNIX_ABSOLUTE_PATH_RE.search(value) or WINDOWS_ABSOLUTE_PATH_RE.search(value):
+            raise EvalError(f"{name} must not contain an absolute path")
+
+
 def _confidence_limitations(review: dict[str, Any]) -> list[str]:
     """Describe bounded conclusions and unresolved evidence."""
     limitations = [
@@ -1384,6 +1408,12 @@ def _confidence_limitations(review: dict[str, Any]) -> list[str]:
     if not any(group["kind"] == "held-back" for group in coverage["case_groups"]):
         limitations.append(
             "No explicitly held-back case group was supplied; aggregate evidence is insufficient."
+        )
+    elif any(group["kind"] == "development" for group in coverage["case_groups"]):
+        limitations.append(
+            "Development and held-back groups are declarative process controls; "
+            "whole-suite metrics do not prove held-back-only non-inferiority or "
+            "measured group efficacy."
         )
     if review["aggregate"]["observed_failures"]:
         limitations.append(
@@ -1619,6 +1649,21 @@ def export_durable_summary(
     for label, content in (("JSON", json_text), ("Markdown", markdown_text)):
         if len(content.encode()) > MAX_EXPORT_BYTES:
             raise EvalError(f"Durable {label} summary exceeds the {MAX_EXPORT_BYTES}-byte bound")
+    json_exists = json_path.exists()
+    markdown_exists = markdown_path.exists()
+    if json_exists != markdown_exists:
+        raise EvalError(
+            f"Refusing incomplete durable export for review {summary['review_id']}: "
+            f"{json_path}, {markdown_path}"
+        )
+    if json_exists and (
+        json_path.read_text(encoding="utf-8") != json_text
+        or markdown_path.read_text(encoding="utf-8") != markdown_text
+    ):
+        raise EvalError(
+            f"Refusing to overwrite different durable export for review {summary['review_id']}: "
+            f"{json_path}, {markdown_path}"
+        )
     review_dir.mkdir(parents=True, exist_ok=True)
     json_path.write_text(json_text, encoding="utf-8")
     markdown_path.write_text(markdown_text, encoding="utf-8")
