@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import argparse
 import concurrent.futures
+import hashlib
+import json
 import shlex
 import subprocess
 import sys
@@ -39,6 +41,7 @@ from skill_eval.core import (
     stable_digest,
     summarize_behavior_results,
     summarize_candidate_comparison,
+    summarize_optimisation_review,
     summarize_trigger_results,
     validate_candidate_separation,
 )
@@ -203,6 +206,44 @@ def _fixture_fidelity(
     return "files" if records else "none"
 
 
+def _fixture_parity(
+    behavior_jobs: list[dict[str, Any]],
+    conditions: tuple[EvaluationCondition, ...],
+) -> bool | None:
+    """Verify that every condition was scheduled from the same fixture record."""
+    if not behavior_jobs:
+        return None
+    expected_conditions = {condition.id for condition in conditions}
+    for job in behavior_jobs:
+        records = job.get("condition_fixtures")
+        if not isinstance(records, dict) or set(records) != expected_conditions:
+            return None
+        templates: set[str] = set()
+        fidelities: set[str] = set()
+        snapshots: set[str] = set()
+        for record in records.values():
+            if not isinstance(record, dict):
+                return None
+            template = record.get("template")
+            fidelity = record.get("fidelity")
+            snapshot = record.get("initial_snapshot_sha256")
+            if (
+                not isinstance(template, str)
+                or not template
+                or not isinstance(fidelity, str)
+                or not fidelity
+                or not isinstance(snapshot, str)
+                or not snapshot
+            ):
+                return None
+            templates.add(template)
+            fidelities.add(fidelity)
+            snapshots.add(snapshot)
+        if len(templates) != 1 or len(fidelities) != 1 or len(snapshots) != 1:
+            return False
+    return True
+
+
 def _fixture_error_run(
     *,
     case_id: str,
@@ -241,7 +282,10 @@ def _unknown_grades(
     values = [
         {
             "index": index,
-            "check": check,
+            "check_id": check.id,
+            "check": check.text,
+            "class": check.check_class,
+            "gate": check.gate,
             "passed": None,
             "confidence": 0,
             "evidence": reason,
@@ -527,11 +571,21 @@ def _run_evaluation(
             )
             repository = initialize_fixture_repository(template)
             setup_results = run_fixture_setups(setup_scripts, template, skill_dir)
+            initial_snapshot = snapshot_workspace(template)
+            initial_snapshot_sha256 = hashlib.sha256(
+                json.dumps(
+                    initial_snapshot,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode()
+            ).hexdigest()
             fixture_manifest = {
                 "records": records,
                 "repository": repository,
                 "setups": setup_results,
-                "initial_snapshot": snapshot_workspace(template),
+                "initial_snapshot": initial_snapshot,
+                "initial_snapshot_sha256": initial_snapshot_sha256,
             }
             fidelity = _fixture_fidelity(records, setup_results, repository)
             fixture_manifest["fidelity"] = fidelity
@@ -549,6 +603,7 @@ def _run_evaluation(
                     "fixture": fixture_manifest,
                     "fidelity": fidelity,
                     "runs": {},
+                    "condition_fixtures": {},
                 }
             )
 
@@ -562,6 +617,11 @@ def _run_evaluation(
             repeat = job["repeat"]
             fidelity = job["fidelity"]
             for condition in conditions:
+                job["condition_fixtures"][condition.id] = {
+                    "template": str(job["template"].resolve()),
+                    "fidelity": fidelity,
+                    "initial_snapshot_sha256": job["fixture"]["initial_snapshot_sha256"],
+                }
                 run_dir = job["root"] / condition.id
                 if fidelity in {"missing", "setup-failed"}:
                     job["runs"][condition.id] = _fixture_error_run(
@@ -613,7 +673,7 @@ def _run_evaluation(
                     "repeat": job["repeat"],
                     "prompt": behavior_case.prompt,
                     "expected_behavior": behavior_case.expected_behavior,
-                    "checks": list(behavior_case.checks),
+                    "checks": [check.report_value() for check in behavior_case.checks],
                     "fixture_fidelity": job["fidelity"],
                     "fixture": job["fixture"],
                     **{
@@ -664,7 +724,7 @@ def _run_evaluation(
                 "repeat": job["repeat"],
                 "prompt": behavior_case.prompt,
                 "expected_behavior": behavior_case.expected_behavior,
-                "checks": list(behavior_case.checks),
+                "checks": [check.report_value() for check in behavior_case.checks],
                 "fixture_fidelity": job["fidelity"],
                 "fixture": job["fixture"],
                 **{f"{condition.id}_run": job["runs"][condition.id] for condition in conditions},
@@ -706,6 +766,28 @@ def _run_evaluation(
     candidate_comparison = (
         summarize_candidate_comparison(behavior_summary, static_footprints)
         if candidate_condition is not None
+        else None
+    )
+    fixture_parity = _fixture_parity(behavior_jobs, conditions)
+    optimisation_review = (
+        summarize_optimisation_review(
+            policy=spec.review_policy,
+            behavior_cases=behavior_cases,
+            behavior_results=behavior_results,
+            behavior_summary=behavior_summary,
+            current_trigger_summary=trigger_summary,
+            candidate_trigger_summary=candidate_trigger_summary,
+            candidate_comparison=candidate_comparison,
+            configured_trigger_case_ids=tuple(case.id for case in spec.trigger_cases),
+            selected_trigger_case_ids=tuple(case.id for case in trigger_cases),
+            configured_behavior_case_ids=tuple(case.id for case in spec.behavior_cases),
+            selected_behavior_case_ids=tuple(case.id for case in behavior_cases),
+            trigger_repeats=args.trigger_repeats,
+            behavior_repeats=args.behavior_repeats,
+            fixture_parity=fixture_parity,
+            blind_grading=True,
+        )
+        if candidate_condition is not None and candidate_comparison is not None
         else None
     )
     profile = efficacy_profile(trigger_summary, behavior_summary, conditions)
@@ -771,7 +853,7 @@ def _run_evaluation(
         reproduce.extend(["--fail-under", str(args.fail_under)])
 
     result: dict[str, Any] = {
-        "schema_version": 2 if candidate_condition is not None else 1,
+        "schema_version": 3 if candidate_condition is not None else 1,
         "run_id": run_id,
         "generated_at": timestamp.isoformat(),
         "repository": {"root": str(repo_root), **_git_metadata(repo_root)},
@@ -831,7 +913,9 @@ def _run_evaluation(
         )
         result["config"]["candidate"] = str(args.candidate)
         result["integrity"]["blind_condition_grading"] = True
+        result["integrity"]["fixture_parity"] = fixture_parity
         result["candidate_comparison"] = candidate_comparison
+        result["optimisation_review"] = optimisation_review
     json_dump(output_dir / "results.json", result)
     markdown, html = write_reports(output_dir, result, conditions)
     print(f"Report: {markdown}", flush=True)
@@ -843,6 +927,12 @@ def _run_evaluation(
         else f"Verdict: {profile['verdict']} · absolute efficacy unavailable",
         flush=True,
     )
+    if optimisation_review is not None:
+        print(
+            f"Optimisation review: {optimisation_review['verdict']} · "
+            "no aggregate score can override a hard gate",
+            flush=True,
+        )
     return result, output_dir
 
 
@@ -866,6 +956,9 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     if args.plan:
         return 0
+    review = result.get("optimisation_review")
+    if review is not None and not review.get("approved", False):
+        return 2
     if args.fail_under is not None:
         score = result["efficacy"]["absolute_efficacy_percent"]
         if score is None or score < args.fail_under:

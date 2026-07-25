@@ -67,6 +67,100 @@ Useful controls include:
 
 Run `python3 scripts/eval_skills.py --help` for the complete interface.
 
+## Checks and optimisation policy
+
+Behavior checks remain backwards-compatible. A plain string is a normal
+quality check:
+
+```json
+"Reports the created commit"
+```
+
+Protected or otherwise classified checks use an object:
+
+```json
+{
+  "id": "do-not-commit-on-detached-head",
+  "text": "Does NOT create a commit while HEAD is detached",
+  "class": "safety",
+  "gate": "hard"
+}
+```
+
+Structured `id` values are stable lowercase kebab-case identifiers and must be
+unique across the skill's eval suite. `class` is one of `quality`,
+`correctness`, `safety`, or `local-contract`; `gate` is `normal` or `hard`.
+Legacy strings are sent to the judge with generated case-and-position IDs,
+`class: quality`, and `gate: normal`, while their existing report shape stays
+unchanged. The judge receives this metadata but only sees randomized condition
+labels, never Current, Baseline, or Candidate identities.
+
+Schema-version-3 judgments expose class and gate severity to the judge, which
+can change strictness relative to earlier candidate runs. Do not treat those
+grades as directly comparable with schema-version-2 evidence; condition
+identity remains blinded in both.
+
+Candidate optimisation reviews use the optional repository-owned
+`review_policy` block:
+
+```json
+{
+  "review_policy": {
+    "minimum_repeats": {
+      "trigger": 2,
+      "behavior": 2
+    },
+    "quality": {
+      "non_inferiority_margin": 0.05,
+      "minimum_lift_over_baseline": 0.05,
+      "minimum_evidence_coverage": 1.0
+    },
+    "triggering": {
+      "recall_non_inferiority_margin": 0.05,
+      "specificity_non_inferiority_margin": 0.05
+    },
+    "context": {
+      "minimum_reductions": {
+        "description_characters": 20,
+        "skill_md_body_characters": 100,
+        "runtime_package_bytes": 1024,
+        "dynamic_input_tokens": 100
+      }
+    },
+    "integrity": {
+      "allowed_fixture_fidelity": [
+        "none",
+        "files",
+        "executable",
+        "description-only"
+      ],
+      "require_fixture_parity": true,
+      "require_blind_grading": true
+    }
+  }
+}
+```
+
+The shown values are the conservative defaults for omitted policy fields.
+Context reduction passes when at least one configured positive threshold is
+met. Fixture fidelity, fixture parity, judge blinding, minimum repeats, complete
+trigger-and-behavior coverage, and evidence coverage remain explicit integrity
+gates. The default fidelity list accepts intact file, executable, empty, and
+sanitized description-only fixtures; degraded, missing, and setup-failed
+fixtures do not pass.
+
+A wholly missing `review_policy` still evaluates every gate using those defaults
+so results remain inspectable, but the policy gate is
+`insufficient-evidence` and the optimisation can never be approved silently.
+Unknown evidence on a hard protected check is also
+`insufficient-evidence`, never a pass.
+
+Approval also requires the exact full configured trigger and behavior case
+sets. `--trigger-case`, `--behavior-case`, `--max-trigger-cases`, and
+`--max-behavior-cases` remain useful for diagnostic candidate runs, but any
+filtered or capped suite receives an `insufficient-evidence` complete-suite
+gate and cannot exit as approved.
+
 ## Fixtures and isolation
 
 Fixture references in `evals/<name>/evals.json` are relative to that eval
@@ -137,7 +231,7 @@ current-versus-baseline metrics remain intact. The `skill` condition ID and
 `skill.runtime_digest_sha256` continue to identify Current for existing
 consumers.
 
-Candidate runs use schema version 2 and add:
+Candidate runs use schema version 3 and add:
 
 - `candidate.path` and `candidate.runtime_digest_sha256`, separate from the
   Current digest under `skill.runtime_digest_sha256`;
@@ -150,34 +244,55 @@ Candidate runs use schema version 2 and add:
 - `candidate_comparison`, which combines Candidate-minus-Current quality,
   Candidate lift over Baseline, static footprint reductions, dynamic input-token
   reduction, and Candidate wins/regressions/ties/unknowns.
+- `optimisation_review`, which records the effective policy, overall bounded
+  verdict, and independent correctness, safety, triggering, context, and
+  integrity gates.
 
 The existing `behavior.summary.absolute_lift`,
 `lift_percentage_points`, and `paired_checks` fields remain the unambiguous
 Current-versus-Baseline comparison in both schemas. Candidate mode reports use
 the user-facing labels Baseline, Current, and Candidate. It measures evidence;
-it does not decide whether to promote the candidate.
+an `approved` review verdict does not edit, promote, or publish the candidate.
 
 Candidate comparison signs are intentional: quality is Candidate minus the
 named comparison, so positive means Candidate quality is higher. Context
 reduction is Current minus Candidate, so positive means Candidate is smaller.
 Dynamic input-token reduction is unknown when either side lacks runner usage or
 when Current and Candidate do not have equal, fully completed behavior runs.
-These measurements are evidence, not optimisation gates.
+Configured review policy decides which of these measurements gate an
+optimisation.
+
+Every gate is reported in `results.json`, `report.md`, and `report.html` with
+`pass`, `fail`, or `insufficient-evidence`. Correctness, safety, triggering,
+context, and integrity remain separate dimensions. A quality average or
+secondary efficiency calculation cannot override a failed or unknown hard
+check. The bounded review verdict is:
+
+- `approved` only when every applicable hard gate passes;
+- `rejected` when measured evidence fails a gate;
+- `insufficient-evidence` when policy, suite coverage, repeats, or required
+  evidence is unavailable.
+
+CLI exit status is unchanged for ordinary two-condition evaluation. Candidate
+mode exits `2` for `rejected` or `insufficient-evidence`, and `0` only for an
+approved review. Invalid configuration or invocation exits `1`; `--plan` exits
+`0` after validation without claiming approval. `--fail-under` continues to
+exit `2` when its threshold fails.
 
 Running evaluations requires an authenticated Codex CLI. The evaluator links
 the existing Codex authentication file into a temporary isolated home and
 removes that home after each turn.
 
-Candidate comparison is available through `--candidate`; context-footprint
-reporting is available in both modes. Regression ingestion, capability-review
-gates, model profiles, and component ablation remain separate work tracked in
-the [roadmap](../ROADMAP.md). The
+Candidate comparison and single-profile optimisation gates are available
+through `--candidate`; context-footprint reporting is available in both modes.
+Regression ingestion, model-profile orchestration, and component ablation
+remain separate work tracked in the [roadmap](../ROADMAP.md). The
 [capability-optimisation contract](capability-optimisation.md) defines the
-evidence standard for that planned tooling.
+broader evidence standard.
 
 ## Capability-review boundary
 
-Future capability reviews will use baseline, current, and candidate conditions
+Capability reviews use baseline, current, and candidate conditions
 to answer two distinct questions. Whole-skill efficacy asks whether the complete
 skill improves on baseline. Component marginal value asks whether a coherent
 part still improves the complete skill enough to justify its discovery,

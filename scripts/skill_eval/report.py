@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import html
+import json
 from pathlib import Path
 from typing import Any
 
@@ -35,6 +36,112 @@ def _mark(value: object) -> str:
 
 def _markdown_label(value: str) -> str:
     return value.replace("|", "\\|").replace("\r", " ").replace("\n", " ")
+
+
+def _check_text(value: object) -> str:
+    if isinstance(value, dict):
+        text = str(value.get("text", ""))
+        check_id = str(value.get("id", ""))
+        check_class = str(value.get("class", ""))
+        gate = str(value.get("gate", ""))
+        return f"`{check_id}` [{check_class}/{gate}] {text}"
+    return str(value)
+
+
+def _gate_mark(status: str) -> str:
+    return "✅" if status == "pass" else "❌" if status == "fail" else "❔"
+
+
+def _review_markdown(result: dict[str, Any]) -> list[str]:
+    review = result.get("optimisation_review")
+    if not review:
+        return []
+    lines = [
+        "## Optimisation gates",
+        "",
+        f"Verdict **{review['verdict']}** · repository policy "
+        f"`{review['policy']['status']}` · hard failure `{review['hard_failure']}` · "
+        f"hard gate blocked `{review['hard_blocked']}`.",
+        "",
+        "Correctness, safety, triggering, context, and integrity are independent. "
+        "No aggregate score can override a hard failure.",
+        "",
+        "| Dimension | Gate | Status | Observed | Required |",
+        "|---|---|---:|---|---|",
+    ]
+    for dimension_name, dimension in review["dimensions"].items():
+        gates = dimension["gates"]
+        if not gates:
+            lines.append(f"| {dimension_name} | — | not-applicable | — | — |")
+            continue
+        for gate in gates:
+            observed = _markdown_label(
+                json.dumps(gate["observed"], ensure_ascii=False, sort_keys=True)
+            )
+            required = _markdown_label(
+                json.dumps(gate["required"], ensure_ascii=False, sort_keys=True)
+            )
+            lines.append(
+                f"| {dimension_name} | `{gate['id']}` | "
+                f"{_gate_mark(gate['status'])} {gate['status']} | {observed} | {required} |"
+            )
+    lines.extend(["", "### Effective review policy", "", "```json"])
+    lines.append(
+        json.dumps(
+            review["policy"]["effective"],
+            indent=2,
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+    )
+    lines.extend(["```", ""])
+    return lines
+
+
+def _review_html(result: dict[str, Any]) -> str:
+    review = result.get("optimisation_review")
+    if not review:
+        return ""
+    rows = ""
+    for dimension_name, dimension in review["dimensions"].items():
+        gates = dimension["gates"]
+        if not gates:
+            rows += (
+                f"<tr><td>{html.escape(dimension_name)}</td><td>—</td>"
+                "<td>not-applicable</td><td>—</td><td>—</td></tr>"
+            )
+            continue
+        for gate in gates:
+            rows += (
+                "<tr>"
+                f"<td>{html.escape(dimension_name)}</td>"
+                f"<td><code>{html.escape(gate['id'])}</code></td>"
+                f"<td>{_gate_mark(gate['status'])} {html.escape(gate['status'])}</td>"
+                f"<td><code>{html.escape(json.dumps(gate['observed'], ensure_ascii=False, sort_keys=True))}</code></td>"
+                f"<td><code>{html.escape(json.dumps(gate['required'], ensure_ascii=False, sort_keys=True))}</code></td>"
+                "</tr>"
+            )
+    policy = html.escape(
+        json.dumps(
+            review["policy"]["effective"],
+            indent=2,
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+    )
+    return (
+        "<section><h2>Optimisation gates</h2>"
+        f"<p>Verdict <strong>{html.escape(review['verdict'])}</strong> · "
+        f"repository policy <code>{html.escape(review['policy']['status'])}</code> · "
+        f"hard failure <code>{review['hard_failure']}</code> · "
+        f"hard gate blocked <code>{review['hard_blocked']}</code>.</p>"
+        "<p>Correctness, safety, triggering, context, and integrity are independent. "
+        "No aggregate score can override a hard failure.</p>"
+        "<table><thead><tr><th>Dimension</th><th>Gate</th><th>Status</th>"
+        f"<th>Observed</th><th>Required</th></tr></thead><tbody>{rows}</tbody></table>"
+        f"<details><summary>Effective review policy</summary><pre>{policy}</pre></details>"
+        "</section>"
+    )
 
 
 def _validated_conditions(
@@ -166,6 +273,7 @@ def render_markdown(
         "",
     ]
     lines.extend(_candidate_markdown(result))
+    lines.extend(_review_markdown(result))
 
     trigger_entries = _trigger_entries(result, conditions)
     if trigger_entries:
@@ -301,7 +409,7 @@ def render_markdown(
                         if grade.get("evidence")
                     )
                 )
-                escaped_check = check.replace("|", "\\|")
+                escaped_check = _markdown_label(_check_text(check))
                 lines.append(
                     f"| {escaped_check} | "
                     + " | ".join(_mark(grade.get("passed")) for grade in condition_grades)
@@ -433,6 +541,7 @@ def render_html(
             f"{paired['regressions']} regressions, {paired['ties']} ties, "
             f"{paired['unknown']} unknown.</p></section>"
         )
+    review_section = _review_html(result)
     trigger_sections = ""
     trigger_entries = _trigger_entries(result, conditions)
     for condition, trigger in trigger_entries:
@@ -547,7 +656,8 @@ def render_html(
                     else " / ".join(evidence_parts)
                 )
                 rows += (
-                    f"<tr><td>{html.escape(check)}</td>{marks}<td>{html.escape(evidence)}</td></tr>"
+                    f"<tr><td>{html.escape(_check_text(check))}</td>{marks}"
+                    f"<td>{html.escape(evidence)}</td></tr>"
                 )
             responses = "".join(
                 f"<div><h4>{html.escape(condition.display_label)} response</h4>"
@@ -608,6 +718,7 @@ details{{background:var(--panel);border:1px solid var(--line);border-radius:10px
 <div class="cards">{cards}</div><p>{html.escape(profile["formula"])} {html.escape(profile["note"])}</p>
 {footprint_section}
 {candidate_section}
+{review_section}
 {trigger_section}
 <section><h2>Behavior and lift</h2>{behavior_intro}{behavior_sections or "<p>Behavior suite was not selected.</p>"}</section>
 <section><h2>Integrity and limitations</h2><ul>{warnings}</ul><p>Eval ground truth withheld: <code>{result["integrity"]["evals_withheld"]}</code> · fresh contexts: <code>{result["integrity"]["fresh_contexts"]}</code> · peer parity: <code>{result["integrity"]["peer_skill_parity"]}</code> · {grading_integrity_label}: <code>{result["integrity"]["blind_paired_grading"]}</code></p></section>

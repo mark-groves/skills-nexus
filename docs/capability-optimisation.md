@@ -6,10 +6,11 @@ improvement; it does not lower the evidence standard or turn the absence of a
 known failure into proof that instructions are redundant.
 
 This guide defines the repository contract for capability-review tooling. The
-current evaluator can compare baseline, current, and candidate packages, but it
-does not yet enforce the gates below, report context metrics, run required model
-profiles, or perform component ablation. Those implementation steps are tracked
-in the [roadmap](../ROADMAP.md).
+current evaluator compares baseline, current, and candidate packages, reports
+context metrics, and enforces repository-owned single-profile optimisation
+gates. It does not yet orchestrate required and observed model profiles or
+perform component ablation. Those implementation steps are tracked in the
+[roadmap](../ROADMAP.md).
 
 ## Two evidence paths
 
@@ -136,6 +137,16 @@ reduction must satisfy all of these categories:
 The review policy sets margins and minimum evidence for each skill. Missing
 policy or materially uncertain evidence produces `insufficient-evidence`, not
 an implicit approval.
+
+The executable review reports correctness, safety, triggering, context, and
+integrity independently in JSON, Markdown, and HTML. Protected `safety` and
+`local-contract` checks use stable IDs and hard gates; any Candidate failure
+fails the review, and unknown Current or Candidate evidence is
+`insufficient-evidence`. Quality non-inferiority, retained Candidate lift over
+Baseline, trigger recall and specificity, meaningful context reduction, fixture
+fidelity and parity, judge blinding, complete-suite coverage, evidence coverage,
+and minimum repeats each remain visible as their own gates. No aggregate
+efficacy or efficiency score can override one of those outcomes.
 
 ### Repeats and held-back cases
 

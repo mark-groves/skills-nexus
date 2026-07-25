@@ -14,7 +14,7 @@ import tempfile
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeGuard
 
 
 class EvalError(RuntimeError):
@@ -33,6 +33,20 @@ BEHAVIOR_SUMMARY_RESERVED_KEYS = frozenset(
         "efficiency",
         "cases",
         "graded_cases",
+    }
+)
+CHECK_ID_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$")
+CHECK_CLASSES = frozenset({"quality", "correctness", "safety", "local-contract"})
+CHECK_GATES = frozenset({"normal", "hard"})
+FIXTURE_FIDELITIES = frozenset(
+    {"none", "files", "executable", "description-only", "degraded", "missing", "setup-failed"}
+)
+CONTEXT_REDUCTION_METRICS = frozenset(
+    {
+        "description_characters",
+        "skill_md_body_characters",
+        "runtime_package_bytes",
+        "dynamic_input_tokens",
     }
 )
 
@@ -57,12 +71,96 @@ class TriggerCase:
 
 
 @dataclass(frozen=True)
+class BehaviorCheck:
+    id: str
+    text: str
+    check_class: str = "quality"
+    gate: str = "normal"
+    structured: bool = True
+
+    def as_dict(self) -> dict[str, str]:
+        return {
+            "id": self.id,
+            "text": self.text,
+            "class": self.check_class,
+            "gate": self.gate,
+        }
+
+    def report_value(self) -> str | dict[str, str]:
+        return self.as_dict() if self.structured else self.text
+
+
+@dataclass(frozen=True)
+class ReviewPolicy:
+    minimum_trigger_repeats: int = 2
+    minimum_behavior_repeats: int = 2
+    quality_non_inferiority_margin: float = 0.05
+    minimum_lift_over_baseline: float = 0.05
+    minimum_evidence_coverage: float = 1.0
+    recall_non_inferiority_margin: float = 0.05
+    specificity_non_inferiority_margin: float = 0.05
+    minimum_context_reductions: tuple[tuple[str, int], ...] = (
+        ("description_characters", 20),
+        ("skill_md_body_characters", 100),
+        ("runtime_package_bytes", 1024),
+        ("dynamic_input_tokens", 100),
+    )
+    allowed_fixture_fidelity: tuple[str, ...] = (
+        "none",
+        "files",
+        "executable",
+        "description-only",
+    )
+    require_fixture_parity: bool = True
+    require_blind_grading: bool = True
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "minimum_repeats": {
+                "trigger": self.minimum_trigger_repeats,
+                "behavior": self.minimum_behavior_repeats,
+            },
+            "quality": {
+                "non_inferiority_margin": self.quality_non_inferiority_margin,
+                "minimum_lift_over_baseline": self.minimum_lift_over_baseline,
+                "minimum_evidence_coverage": self.minimum_evidence_coverage,
+            },
+            "triggering": {
+                "recall_non_inferiority_margin": self.recall_non_inferiority_margin,
+                "specificity_non_inferiority_margin": self.specificity_non_inferiority_margin,
+            },
+            "context": {
+                "minimum_reductions": dict(self.minimum_context_reductions),
+            },
+            "integrity": {
+                "allowed_fixture_fidelity": list(self.allowed_fixture_fidelity),
+                "require_fixture_parity": self.require_fixture_parity,
+                "require_blind_grading": self.require_blind_grading,
+            },
+        }
+
+
+@dataclass(frozen=True)
 class BehaviorCase:
     id: str
     prompt: str
     expected_behavior: str
     fixtures: tuple[str, ...]
-    checks: tuple[str, ...]
+    checks: tuple[BehaviorCheck, ...]
+
+    def __post_init__(self) -> None:
+        normalized = tuple(
+            check
+            if isinstance(check, BehaviorCheck)
+            else parse_behavior_check(
+                check,
+                case_id=self.id,
+                index=index,
+                location=f"behavior case {self.id} check {index + 1}",
+            )
+            for index, check in enumerate(self.checks)
+        )
+        object.__setattr__(self, "checks", normalized)
 
 
 @dataclass(frozen=True)
@@ -70,6 +168,7 @@ class EvalSpec:
     skill_name: str
     trigger_cases: tuple[TriggerCase, ...]
     behavior_cases: tuple[BehaviorCase, ...]
+    review_policy: ReviewPolicy | None
     path: Path
 
 
@@ -115,6 +214,254 @@ def _case_id(value: object, *, location: str) -> str:
     if result in {".", ".."} or "/" in result or "\\" in result or "\0" in result:
         raise EvalError(f"{location} id must be a safe path segment")
     return result
+
+
+def parse_behavior_check(
+    value: object,
+    *,
+    case_id: str,
+    index: int,
+    location: str,
+) -> BehaviorCheck:
+    """Parse a legacy string or metadata-bearing behavior check."""
+    if isinstance(value, str):
+        if not value.strip():
+            raise EvalError(f"{location} must be a non-empty string or check object")
+        return BehaviorCheck(
+            id=f"{case_id}-check-{index + 1}",
+            text=value,
+            structured=False,
+        )
+    if not isinstance(value, dict):
+        raise EvalError(f"{location} must be a non-empty string or check object")
+    required = {"id", "text", "class", "gate"}
+    if set(value) != required:
+        missing = sorted(required - set(value))
+        extra = sorted(set(value) - required)
+        detail = []
+        if missing:
+            detail.append("missing " + ", ".join(missing))
+        if extra:
+            detail.append("unexpected " + ", ".join(extra))
+        raise EvalError(f"{location} must contain id, text, class, and gate ({'; '.join(detail)})")
+    check_id = value["id"]
+    text = value["text"]
+    check_class = value["class"]
+    gate = value["gate"]
+    if not isinstance(check_id, str) or not CHECK_ID_RE.fullmatch(check_id):
+        raise EvalError(
+            f"{location}.id must be a stable lowercase kebab-case identifier "
+            "between 1 and 64 characters"
+        )
+    if not isinstance(text, str) or not text.strip():
+        raise EvalError(f"{location}.text must be a non-empty string")
+    if check_class not in CHECK_CLASSES:
+        raise EvalError(f"{location}.class must be one of: {', '.join(sorted(CHECK_CLASSES))}")
+    if gate not in CHECK_GATES:
+        raise EvalError(f"{location}.gate must be one of: {', '.join(sorted(CHECK_GATES))}")
+    return BehaviorCheck(
+        id=check_id,
+        text=text,
+        check_class=check_class,
+        gate=gate,
+    )
+
+
+def _policy_object(value: object, *, location: str) -> dict[str, Any]:
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise EvalError(f"{location} must be an object")
+    return value
+
+
+def _policy_number(
+    value: object,
+    default: float,
+    *,
+    location: str,
+    maximum: float = 1.0,
+) -> float:
+    if value is None:
+        return default
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise EvalError(f"{location} must be a number between 0 and {maximum:g}")
+    result = float(value)
+    if not 0 <= result <= maximum:
+        raise EvalError(f"{location} must be between 0 and {maximum:g}")
+    return result
+
+
+def _policy_positive_int(value: object, default: int, *, location: str) -> int:
+    if value is None:
+        return default
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise EvalError(f"{location} must be a positive integer")
+    return value
+
+
+def _reject_policy_keys(value: dict[str, Any], allowed: set[str], *, location: str) -> None:
+    extra = sorted(set(value) - allowed)
+    if extra:
+        raise EvalError(f"{location} contains unexpected keys: {', '.join(extra)}")
+
+
+def parse_review_policy(value: object) -> ReviewPolicy:
+    """Validate and default a repository-owned optimisation review policy."""
+    root = _policy_object(value, location="review_policy")
+    _reject_policy_keys(
+        root,
+        {"minimum_repeats", "quality", "triggering", "context", "integrity"},
+        location="review_policy",
+    )
+    defaults = ReviewPolicy()
+    repeats = _policy_object(root.get("minimum_repeats"), location="review_policy.minimum_repeats")
+    quality = _policy_object(root.get("quality"), location="review_policy.quality")
+    triggering = _policy_object(root.get("triggering"), location="review_policy.triggering")
+    context = _policy_object(root.get("context"), location="review_policy.context")
+    integrity = _policy_object(root.get("integrity"), location="review_policy.integrity")
+    _reject_policy_keys(
+        repeats,
+        {"trigger", "behavior"},
+        location="review_policy.minimum_repeats",
+    )
+    _reject_policy_keys(
+        quality,
+        {
+            "non_inferiority_margin",
+            "minimum_lift_over_baseline",
+            "minimum_evidence_coverage",
+        },
+        location="review_policy.quality",
+    )
+    _reject_policy_keys(
+        triggering,
+        {
+            "recall_non_inferiority_margin",
+            "specificity_non_inferiority_margin",
+        },
+        location="review_policy.triggering",
+    )
+    _reject_policy_keys(
+        context,
+        {"minimum_reductions"},
+        location="review_policy.context",
+    )
+    _reject_policy_keys(
+        integrity,
+        {
+            "allowed_fixture_fidelity",
+            "require_fixture_parity",
+            "require_blind_grading",
+        },
+        location="review_policy.integrity",
+    )
+
+    reductions_value = context.get("minimum_reductions")
+    if reductions_value is None:
+        reductions = defaults.minimum_context_reductions
+    else:
+        reductions_object = _policy_object(
+            reductions_value,
+            location="review_policy.context.minimum_reductions",
+        )
+        unknown_metrics = sorted(set(reductions_object) - CONTEXT_REDUCTION_METRICS)
+        if unknown_metrics:
+            raise EvalError(
+                "review_policy.context.minimum_reductions contains unknown metrics: "
+                + ", ".join(unknown_metrics)
+            )
+        if not reductions_object:
+            raise EvalError("review_policy.context.minimum_reductions must not be empty")
+        parsed_reductions: list[tuple[str, int]] = []
+        for metric, threshold in reductions_object.items():
+            if isinstance(threshold, bool) or not isinstance(threshold, int) or threshold <= 0:
+                raise EvalError(
+                    "review_policy.context.minimum_reductions values must be positive integers"
+                )
+            parsed_reductions.append((metric, threshold))
+        reductions = tuple(sorted(parsed_reductions))
+
+    fidelity_value = integrity.get("allowed_fixture_fidelity")
+    if fidelity_value is None:
+        allowed_fidelity = defaults.allowed_fixture_fidelity
+    else:
+        if (
+            not isinstance(fidelity_value, list)
+            or not fidelity_value
+            or not all(isinstance(item, str) for item in fidelity_value)
+        ):
+            raise EvalError(
+                "review_policy.integrity.allowed_fixture_fidelity must be a "
+                "non-empty list of fidelity names"
+            )
+        invalid_fidelity = sorted(set(fidelity_value) - FIXTURE_FIDELITIES)
+        if invalid_fidelity:
+            raise EvalError(
+                "review_policy.integrity.allowed_fixture_fidelity contains unknown values: "
+                + ", ".join(invalid_fidelity)
+            )
+        if len(set(fidelity_value)) != len(fidelity_value):
+            raise EvalError(
+                "review_policy.integrity.allowed_fixture_fidelity must not contain duplicates"
+            )
+        allowed_fidelity = tuple(fidelity_value)
+
+    def policy_bool(key: str, default: bool) -> bool:
+        supplied = integrity.get(key)
+        if supplied is None:
+            return default
+        if not isinstance(supplied, bool):
+            raise EvalError(f"review_policy.integrity.{key} must be boolean")
+        return supplied
+
+    return ReviewPolicy(
+        minimum_trigger_repeats=_policy_positive_int(
+            repeats.get("trigger"),
+            defaults.minimum_trigger_repeats,
+            location="review_policy.minimum_repeats.trigger",
+        ),
+        minimum_behavior_repeats=_policy_positive_int(
+            repeats.get("behavior"),
+            defaults.minimum_behavior_repeats,
+            location="review_policy.minimum_repeats.behavior",
+        ),
+        quality_non_inferiority_margin=_policy_number(
+            quality.get("non_inferiority_margin"),
+            defaults.quality_non_inferiority_margin,
+            location="review_policy.quality.non_inferiority_margin",
+        ),
+        minimum_lift_over_baseline=_policy_number(
+            quality.get("minimum_lift_over_baseline"),
+            defaults.minimum_lift_over_baseline,
+            location="review_policy.quality.minimum_lift_over_baseline",
+        ),
+        minimum_evidence_coverage=_policy_number(
+            quality.get("minimum_evidence_coverage"),
+            defaults.minimum_evidence_coverage,
+            location="review_policy.quality.minimum_evidence_coverage",
+        ),
+        recall_non_inferiority_margin=_policy_number(
+            triggering.get("recall_non_inferiority_margin"),
+            defaults.recall_non_inferiority_margin,
+            location="review_policy.triggering.recall_non_inferiority_margin",
+        ),
+        specificity_non_inferiority_margin=_policy_number(
+            triggering.get("specificity_non_inferiority_margin"),
+            defaults.specificity_non_inferiority_margin,
+            location="review_policy.triggering.specificity_non_inferiority_margin",
+        ),
+        minimum_context_reductions=reductions,
+        allowed_fixture_fidelity=allowed_fidelity,
+        require_fixture_parity=policy_bool(
+            "require_fixture_parity",
+            defaults.require_fixture_parity,
+        ),
+        require_blind_grading=policy_bool(
+            "require_blind_grading",
+            defaults.require_blind_grading,
+        ),
+    )
 
 
 def discover_repository_skills(repo_root: Path) -> tuple[Path, ...]:
@@ -171,6 +518,10 @@ def load_eval_spec(skill_dir: Path, evals_root: Path) -> EvalSpec:
 
     if not isinstance(payload, dict):
         raise EvalError(f"Eval definition must be a JSON object: {eval_path}")
+    allowed_keys = {"skill_name", "trigger_evals", "behavior_evals", "review_policy"}
+    unexpected = sorted(set(payload) - allowed_keys)
+    if unexpected:
+        raise EvalError(f"Unexpected eval definition keys in {eval_path}: {', '.join(unexpected)}")
     name = payload.get("skill_name")
     if name != skill_dir.name:
         raise EvalError(
@@ -196,6 +547,7 @@ def load_eval_spec(skill_dir: Path, evals_root: Path) -> EvalSpec:
 
     behavior_cases: list[BehaviorCase] = []
     seen_behavior_ids: set[str] = set()
+    seen_structured_check_ids: set[str] = set()
     for index, item in enumerate(payload.get("behavior_evals", []), start=1):
         if not isinstance(item, dict):
             raise EvalError(f"behavior_evals[{index}] must be an object")
@@ -215,25 +567,48 @@ def load_eval_spec(skill_dir: Path, evals_root: Path) -> EvalSpec:
             isinstance(x, str) and x.strip() for x in fixtures
         ):
             raise EvalError(f"behavior_evals[{index}].fixtures must be a list of non-empty strings")
-        if (
-            not isinstance(checks, list)
-            or not checks
-            or not all(isinstance(x, str) and x.strip() for x in checks)
-        ):
-            raise EvalError(f"behavior_evals[{index}].checks must be a non-empty list of strings")
+        if not isinstance(checks, list) or not checks:
+            raise EvalError(
+                f"behavior_evals[{index}].checks must be a non-empty list of strings "
+                "or check objects"
+            )
+        parsed_checks = tuple(
+            parse_behavior_check(
+                check,
+                case_id=case_id,
+                index=check_index,
+                location=f"behavior_evals[{index}].checks[{check_index + 1}]",
+            )
+            for check_index, check in enumerate(checks)
+        )
+        for check in parsed_checks:
+            if not check.structured:
+                continue
+            if check.id in seen_structured_check_ids:
+                raise EvalError(f"Duplicate structured behavior check id: {check.id}")
+            seen_structured_check_ids.add(check.id)
         behavior_cases.append(
             BehaviorCase(
                 case_id,
                 prompt,
                 expected_behavior,
                 tuple(fixtures),
-                tuple(checks),
+                parsed_checks,
             )
         )
 
     if not trigger_cases and not behavior_cases:
         raise EvalError(f"No eval cases found in {eval_path}")
-    return EvalSpec(name, tuple(trigger_cases), tuple(behavior_cases), eval_path)
+    review_policy = (
+        parse_review_policy(payload["review_policy"]) if "review_policy" in payload else None
+    )
+    return EvalSpec(
+        name,
+        tuple(trigger_cases),
+        tuple(behavior_cases),
+        review_policy,
+        eval_path,
+    )
 
 
 def stable_digest(path: Path, *, exclude: Iterable[str] = ()) -> str:
@@ -425,6 +800,474 @@ def summarize_candidate_comparison(
             "ties": paired["ties"] if paired else 0,
             "unknown": paired["unknown"] if paired else 0,
         },
+    }
+
+
+def _is_number(value: object) -> TypeGuard[int | float]:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def summarize_optimisation_review(
+    *,
+    policy: ReviewPolicy | None,
+    behavior_cases: tuple[BehaviorCase, ...],
+    behavior_results: list[dict[str, Any]],
+    behavior_summary: dict[str, Any] | None,
+    current_trigger_summary: dict[str, Any] | None,
+    candidate_trigger_summary: dict[str, Any] | None,
+    candidate_comparison: dict[str, Any],
+    configured_trigger_case_ids: tuple[str, ...],
+    selected_trigger_case_ids: tuple[str, ...],
+    configured_behavior_case_ids: tuple[str, ...],
+    selected_behavior_case_ids: tuple[str, ...],
+    trigger_repeats: int,
+    behavior_repeats: int,
+    fixture_parity: bool | None,
+    blind_grading: bool,
+) -> dict[str, Any]:
+    """Evaluate independent hard gates for a candidate optimisation review."""
+    effective_policy = policy or ReviewPolicy()
+    dimensions: dict[str, dict[str, Any]] = {
+        name: {"status": "not-applicable", "gates": []}
+        for name in ("correctness", "safety", "triggering", "context", "integrity")
+    }
+
+    def add_gate(
+        dimension: str,
+        gate_id: str,
+        status: str,
+        *,
+        observed: object,
+        required: object,
+        detail: str,
+    ) -> None:
+        dimensions[dimension]["gates"].append(
+            {
+                "id": gate_id,
+                "status": status,
+                "hard": True,
+                "observed": observed,
+                "required": required,
+                "detail": detail,
+            }
+        )
+
+    comparisons = behavior_summary.get("comparisons", {}) if behavior_summary else {}
+    candidate_vs_current = comparisons.get("candidate_vs_current")
+    quality_delta = candidate_vs_current.get("absolute_lift") if candidate_vs_current else None
+    quality_required = -effective_policy.quality_non_inferiority_margin
+    quality_status = (
+        "pass"
+        if _is_number(quality_delta) and quality_delta >= quality_required
+        else "fail"
+        if _is_number(quality_delta)
+        else "insufficient-evidence"
+    )
+    add_gate(
+        "correctness",
+        "candidate-non-inferiority",
+        quality_status,
+        observed=quality_delta,
+        required={"minimum_candidate_minus_current": quality_required},
+        detail="Candidate quality must remain within the configured margin of Current.",
+    )
+
+    candidate_vs_baseline = comparisons.get("candidate_vs_baseline")
+    baseline_lift = candidate_vs_baseline.get("absolute_lift") if candidate_vs_baseline else None
+    baseline_status = (
+        "pass"
+        if _is_number(baseline_lift)
+        and baseline_lift >= effective_policy.minimum_lift_over_baseline
+        else "fail"
+        if _is_number(baseline_lift)
+        else "insufficient-evidence"
+    )
+    add_gate(
+        "correctness",
+        "retained-skill-baseline-value",
+        baseline_status,
+        observed=baseline_lift,
+        required={
+            "minimum_candidate_lift_over_baseline": (effective_policy.minimum_lift_over_baseline)
+        },
+        detail="A retained candidate must show the configured value over Baseline.",
+    )
+
+    def check_value(
+        items: list[dict[str, Any]],
+        check_id: str,
+        fallback_index: int,
+    ) -> bool | None:
+        identified = next(
+            (item for item in items if item.get("check_id") == check_id),
+            None,
+        )
+        if identified is not None:
+            return identified.get("passed")
+        if any("check_id" in item for item in items):
+            return None
+        return items[fallback_index].get("passed") if fallback_index < len(items) else None
+
+    for case in behavior_cases:
+        matching_results = [
+            result for result in behavior_results if result.get("case_id") == case.id
+        ]
+        for index, check in enumerate(case.checks):
+            if check.gate != "hard":
+                continue
+            current_values: list[bool | None] = []
+            candidate_values: list[bool | None] = []
+            for result in matching_results:
+                grades = result.get("grades", {})
+                current_items = grades.get("skill", [])
+                candidate_items = grades.get("candidate", [])
+                current_values.append(check_value(current_items, check.id, index))
+                candidate_values.append(check_value(candidate_items, check.id, index))
+            candidate_failures = sum(value is False for value in candidate_values)
+            regressions = sum(
+                current is True and candidate is False
+                for current, candidate in zip(
+                    current_values,
+                    candidate_values,
+                    strict=False,
+                )
+            )
+            unknown = sum(
+                current is None or candidate is None
+                for current, candidate in zip(
+                    current_values,
+                    candidate_values,
+                    strict=False,
+                )
+            )
+            protected_status = (
+                "fail"
+                if candidate_failures
+                else "insufficient-evidence"
+                if not matching_results or unknown
+                else "pass"
+            )
+            protected_dimension = "safety" if check.check_class == "safety" else "correctness"
+            add_gate(
+                protected_dimension,
+                f"protected-check:{check.id}",
+                protected_status,
+                observed={
+                    "candidate_failures": candidate_failures,
+                    "regressions": regressions,
+                    "unknown_pairs": unknown,
+                    "evaluated_pairs": len(matching_results),
+                },
+                required={
+                    "candidate_failures": 0,
+                    "regressions": 0,
+                    "unknown_pairs": 0,
+                },
+                detail=(
+                    f"Protected {check.check_class} check: {check.text} "
+                    "Unknown evidence never counts as a pass."
+                ),
+            )
+
+    def trigger_gate(metric: str, margin: float) -> None:
+        current_value = current_trigger_summary.get(metric) if current_trigger_summary else None
+        candidate_value = (
+            candidate_trigger_summary.get(metric) if candidate_trigger_summary else None
+        )
+        delta = (
+            candidate_value - current_value
+            if _is_number(current_value) and _is_number(candidate_value)
+            else None
+        )
+        status = (
+            "pass"
+            if _is_number(delta) and delta >= -margin
+            else "fail"
+            if _is_number(delta)
+            else "insufficient-evidence"
+        )
+        add_gate(
+            "triggering",
+            f"{metric}-non-inferiority",
+            status,
+            observed={
+                "current": current_value,
+                "candidate": candidate_value,
+                "candidate_minus_current": delta,
+            },
+            required={"minimum_candidate_minus_current": -margin},
+            detail=f"Candidate trigger {metric} must stay within the configured margin.",
+        )
+
+    trigger_gate("recall", effective_policy.recall_non_inferiority_margin)
+    trigger_gate("specificity", effective_policy.specificity_non_inferiority_margin)
+
+    reductions = {
+        **candidate_comparison.get("static_reductions", {}),
+        "dynamic_input_tokens": candidate_comparison.get("dynamic_input_token_reduction"),
+    }
+    thresholds = dict(effective_policy.minimum_context_reductions)
+    satisfied = [
+        metric
+        for metric, threshold in thresholds.items()
+        if _is_number(reductions.get(metric)) and reductions[metric] >= threshold
+    ]
+    known_reductions = [metric for metric in thresholds if _is_number(reductions.get(metric))]
+    context_status = (
+        "pass" if satisfied else "fail" if known_reductions else "insufficient-evidence"
+    )
+    add_gate(
+        "context",
+        "meaningful-context-reduction",
+        context_status,
+        observed={"reductions": reductions, "thresholds_met": satisfied},
+        required={"at_least_one_minimum_reduction": thresholds},
+        detail="At least one configured context reduction must be met.",
+    )
+
+    add_gate(
+        "integrity",
+        "repository-review-policy",
+        "pass" if policy is not None else "insufficient-evidence",
+        observed="configured" if policy is not None else "missing",
+        required="configured",
+        detail=(
+            "Missing policy uses conservative values for reporting only and can "
+            "never approve an optimisation."
+        ),
+    )
+    complete_trigger_suite = (
+        bool(configured_trigger_case_ids)
+        and len(selected_trigger_case_ids) == len(configured_trigger_case_ids)
+        and set(selected_trigger_case_ids) == set(configured_trigger_case_ids)
+    )
+    complete_behavior_suite = (
+        bool(configured_behavior_case_ids)
+        and len(selected_behavior_case_ids) == len(configured_behavior_case_ids)
+        and set(selected_behavior_case_ids) == set(configured_behavior_case_ids)
+    )
+    add_gate(
+        "integrity",
+        "complete-suite-coverage",
+        "pass"
+        if current_trigger_summary is not None
+        and candidate_trigger_summary is not None
+        and behavior_summary is not None
+        and complete_trigger_suite
+        and complete_behavior_suite
+        else "insufficient-evidence",
+        observed={
+            "trigger": {
+                "configured_case_ids": list(configured_trigger_case_ids),
+                "selected_case_ids": list(selected_trigger_case_ids),
+                "complete": complete_trigger_suite,
+                "current_summary": current_trigger_summary is not None,
+                "candidate_summary": candidate_trigger_summary is not None,
+            },
+            "behavior": {
+                "configured_case_ids": list(configured_behavior_case_ids),
+                "selected_case_ids": list(selected_behavior_case_ids),
+                "complete": complete_behavior_suite,
+                "summary": behavior_summary is not None,
+            },
+        },
+        required={
+            "all_configured_trigger_cases": True,
+            "all_configured_behavior_cases": True,
+            "current_trigger_summary": True,
+            "candidate_trigger_summary": True,
+            "behavior_summary": True,
+        },
+        detail=(
+            "Optimisation approval requires every configured trigger and behavior "
+            "case; filtered or capped suites remain report-only."
+        ),
+    )
+    add_gate(
+        "integrity",
+        "minimum-trigger-repeats",
+        "pass"
+        if current_trigger_summary is not None
+        and candidate_trigger_summary is not None
+        and trigger_repeats >= effective_policy.minimum_trigger_repeats
+        else "insufficient-evidence",
+        observed=trigger_repeats if current_trigger_summary is not None else None,
+        required=effective_policy.minimum_trigger_repeats,
+        detail="Trigger evidence must meet the policy's minimum repeat count.",
+    )
+    add_gate(
+        "integrity",
+        "minimum-behavior-repeats",
+        "pass"
+        if behavior_summary is not None
+        and behavior_repeats >= effective_policy.minimum_behavior_repeats
+        else "insufficient-evidence",
+        observed=behavior_repeats if behavior_summary is not None else None,
+        required=effective_policy.minimum_behavior_repeats,
+        detail="Behavior evidence must meet the policy's minimum repeat count.",
+    )
+
+    evidence_coverage = {
+        condition: (
+            behavior_summary.get(condition, {}).get("evidence_coverage")
+            if behavior_summary is not None
+            else None
+        )
+        for condition in ("skill", "baseline", "candidate")
+    }
+    coverage_values = list(evidence_coverage.values())
+    coverage_status = (
+        "pass"
+        if all(
+            _is_number(value) and value >= effective_policy.minimum_evidence_coverage
+            for value in coverage_values
+        )
+        else "fail"
+        if all(_is_number(value) for value in coverage_values)
+        else "insufficient-evidence"
+    )
+    add_gate(
+        "integrity",
+        "behavior-evidence-coverage",
+        coverage_status,
+        observed=evidence_coverage,
+        required={"minimum_each": effective_policy.minimum_evidence_coverage},
+        detail=(
+            "Current, Baseline, and Candidate need the configured evidence coverage independently."
+        ),
+    )
+
+    current_trigger_errors = (
+        current_trigger_summary.get("run_errors") if current_trigger_summary is not None else None
+    )
+    candidate_trigger_errors = (
+        candidate_trigger_summary.get("run_errors")
+        if candidate_trigger_summary is not None
+        else None
+    )
+    behavior_errors = (
+        {
+            condition: behavior_summary.get("efficiency", {}).get(condition, {}).get("failed_runs")
+            for condition in ("skill", "baseline", "candidate")
+        }
+        if behavior_summary is not None
+        else {}
+    )
+    execution_error_values = [
+        current_trigger_errors,
+        candidate_trigger_errors,
+        *behavior_errors.values(),
+    ]
+    execution_status = (
+        "pass"
+        if all(value == 0 for value in execution_error_values)
+        else "fail"
+        if all(isinstance(value, int) for value in execution_error_values)
+        else "insufficient-evidence"
+    )
+    add_gate(
+        "integrity",
+        "execution-completeness",
+        execution_status,
+        observed={
+            "current_trigger_errors": current_trigger_errors,
+            "candidate_trigger_errors": candidate_trigger_errors,
+            "behavior_failed_runs": behavior_errors,
+        },
+        required="zero run errors for every condition",
+        detail="Incomplete task runs cannot establish an optimisation result.",
+    )
+
+    judge_statuses = [result.get("judge", {}).get("status") for result in behavior_results]
+    add_gate(
+        "integrity",
+        "judgment-completeness",
+        "pass"
+        if judge_statuses and all(status == "completed" for status in judge_statuses)
+        else "fail"
+        if judge_statuses
+        else "insufficient-evidence",
+        observed=judge_statuses,
+        required="completed judgment for every behavior repeat",
+        detail="Every behavior repeat needs a valid condition-blind judgment.",
+    )
+
+    fixture_fidelity = sorted(
+        {
+            str(result.get("fixture_fidelity"))
+            for result in behavior_results
+            if result.get("fixture_fidelity") is not None
+        }
+    )
+    fidelity_status = (
+        "pass"
+        if fixture_fidelity
+        and set(fixture_fidelity).issubset(effective_policy.allowed_fixture_fidelity)
+        else "fail"
+        if fixture_fidelity
+        else "insufficient-evidence"
+    )
+    add_gate(
+        "integrity",
+        "fixture-fidelity",
+        fidelity_status,
+        observed=fixture_fidelity,
+        required={"allowed": list(effective_policy.allowed_fixture_fidelity)},
+        detail="Every behavior repeat must use a policy-allowed fixture fidelity.",
+    )
+    add_gate(
+        "integrity",
+        "fixture-parity",
+        "pass"
+        if not effective_policy.require_fixture_parity or fixture_parity is True
+        else "fail"
+        if fixture_parity is False
+        else "insufficient-evidence",
+        observed=fixture_parity,
+        required=effective_policy.require_fixture_parity,
+        detail="All conditions must receive equivalent fixture state when required.",
+    )
+    add_gate(
+        "integrity",
+        "condition-blind-grading",
+        "pass" if not effective_policy.require_blind_grading or blind_grading else "fail",
+        observed=blind_grading,
+        required=effective_policy.require_blind_grading,
+        detail="Condition identity must remain withheld from the judge when required.",
+    )
+
+    severity = {
+        "fail": 3,
+        "insufficient-evidence": 2,
+        "pass": 1,
+        "not-applicable": 0,
+    }
+    all_gates: list[dict[str, Any]] = []
+    for dimension in dimensions.values():
+        gates = dimension["gates"]
+        all_gates.extend(gates)
+        if gates:
+            dimension["status"] = max(
+                (gate["status"] for gate in gates),
+                key=lambda status: severity[status],
+            )
+    if any(gate["status"] == "fail" for gate in all_gates):
+        verdict = "rejected"
+    elif any(gate["status"] == "insufficient-evidence" for gate in all_gates):
+        verdict = "insufficient-evidence"
+    else:
+        verdict = "approved"
+    return {
+        "verdict": verdict,
+        "approved": verdict == "approved",
+        "hard_failure": any(gate["hard"] and gate["status"] == "fail" for gate in all_gates),
+        "hard_blocked": any(gate["hard"] and gate["status"] != "pass" for gate in all_gates),
+        "policy": {
+            "status": "configured" if policy is not None else "missing",
+            "effective": effective_policy.as_dict(),
+        },
+        "dimensions": dimensions,
+        "no_aggregate_override": True,
     }
 
 

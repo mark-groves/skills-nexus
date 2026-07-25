@@ -700,7 +700,8 @@ class CodexRunner:
             "task": behavior_case.prompt,
             "expected_behavior": behavior_case.expected_behavior,
             "checks": [
-                {"index": index, "text": check} for index, check in enumerate(behavior_case.checks)
+                {"index": index, **check.as_dict()}
+                for index, check in enumerate(behavior_case.checks)
             ],
             "candidates": candidates,
             "grading_policy": {
@@ -776,14 +777,17 @@ class CodexRunner:
                     for item in raw_checks
                     if isinstance(item, dict) and isinstance(item.get("index"), int)
                 }
-                for index, check_text in enumerate(behavior_case.checks):
+                for index, check in enumerate(behavior_case.checks):
                     item = indexed.get(index)
                     if item is None:
                         validation_errors.append(f"Candidate {label} missing check {index}")
                         mapped_grades[condition].append(
                             {
                                 "index": index,
-                                "check": check_text,
+                                "check_id": check.id,
+                                "check": check.text,
+                                "class": check.check_class,
+                                "gate": check.gate,
                                 "passed": None,
                                 "confidence": 0,
                                 "evidence": "Judge omitted this check",
@@ -794,7 +798,10 @@ class CodexRunner:
                     mapped_grades[condition].append(
                         {
                             "index": index,
-                            "check": check_text,
+                            "check_id": check.id,
+                            "check": check.text,
+                            "class": check.check_class,
+                            "gate": check.gate,
                             "passed": True
                             if outcome == "pass"
                             else False

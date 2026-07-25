@@ -25,6 +25,25 @@ EXPECTED_HARNESS_KEYS = {"user_install_root", "project_install_root"}
 REQUIRED_HARNESSES = {"agents", "claude-code", "codex", "copilot", "cursor", "kiro"}
 ALLOWED_FRONTMATTER_KEYS = {"name", "description"}
 REQUIRED_EVAL_KEYS = {"skill_name", "trigger_evals", "behavior_evals"}
+OPTIONAL_EVAL_KEYS = {"review_policy"}
+CHECK_ID_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$")
+CHECK_CLASSES = {"quality", "correctness", "safety", "local-contract"}
+CHECK_GATES = {"normal", "hard"}
+CONTEXT_REDUCTION_METRICS = {
+    "description_characters",
+    "skill_md_body_characters",
+    "runtime_package_bytes",
+    "dynamic_input_tokens",
+}
+FIXTURE_FIDELITIES = {
+    "none",
+    "files",
+    "executable",
+    "description-only",
+    "degraded",
+    "missing",
+    "setup-failed",
+}
 HARD_CODED_INSTALL_ROOTS = (
     "~/.agents/skills",
     "~/.claude/skills",
@@ -59,6 +78,125 @@ FrontmatterValue = str | dict[str, str]
 
 def fail(message: str) -> None:
     ERRORS.append(message)
+
+
+def validate_review_policy(value: object, rel: str) -> None:
+    if not isinstance(value, dict):
+        fail(f"review_policy must be an object in {rel}")
+        return
+    sections = {
+        "minimum_repeats": {"trigger", "behavior"},
+        "quality": {
+            "non_inferiority_margin",
+            "minimum_lift_over_baseline",
+            "minimum_evidence_coverage",
+        },
+        "triggering": {
+            "recall_non_inferiority_margin",
+            "specificity_non_inferiority_margin",
+        },
+        "context": {"minimum_reductions"},
+        "integrity": {
+            "allowed_fixture_fidelity",
+            "require_fixture_parity",
+            "require_blind_grading",
+        },
+    }
+    extra_sections = sorted(set(value) - set(sections))
+    if extra_sections:
+        fail(f"Unexpected review_policy keys in {rel}: {', '.join(extra_sections)}")
+    parsed_sections: dict[str, dict[str, object]] = {}
+    for section, allowed in sections.items():
+        supplied = value.get(section, {})
+        if not isinstance(supplied, dict):
+            fail(f"review_policy.{section} must be an object in {rel}")
+            continue
+        parsed_sections[section] = supplied
+        extra = sorted(set(supplied) - allowed)
+        if extra:
+            fail(f"Unexpected review_policy.{section} keys in {rel}: " + ", ".join(extra))
+
+    repeats = parsed_sections.get("minimum_repeats", {})
+    for key in ("trigger", "behavior"):
+        supplied = repeats.get(key)
+        if supplied is not None and (
+            isinstance(supplied, bool) or not isinstance(supplied, int) or supplied <= 0
+        ):
+            fail(f"review_policy.minimum_repeats.{key} must be a positive integer in {rel}")
+
+    for section, keys in (
+        (
+            "quality",
+            (
+                "non_inferiority_margin",
+                "minimum_lift_over_baseline",
+                "minimum_evidence_coverage",
+            ),
+        ),
+        (
+            "triggering",
+            (
+                "recall_non_inferiority_margin",
+                "specificity_non_inferiority_margin",
+            ),
+        ),
+    ):
+        supplied_section = parsed_sections.get(section, {})
+        for key in keys:
+            supplied = supplied_section.get(key)
+            if supplied is not None and (
+                isinstance(supplied, bool)
+                or not isinstance(supplied, (int, float))
+                or not 0 <= supplied <= 1
+            ):
+                fail(f"review_policy.{section}.{key} must be between 0 and 1 in {rel}")
+
+    context = parsed_sections.get("context", {})
+    reductions = context.get("minimum_reductions")
+    if reductions is not None:
+        if not isinstance(reductions, dict) or not reductions:
+            fail(f"review_policy.context.minimum_reductions must be a non-empty object in {rel}")
+        else:
+            unknown = sorted(set(reductions) - CONTEXT_REDUCTION_METRICS)
+            if unknown:
+                fail(
+                    "Unknown review_policy context reduction metrics in "
+                    f"{rel}: {', '.join(unknown)}"
+                )
+            for metric, threshold in reductions.items():
+                if isinstance(threshold, bool) or not isinstance(threshold, int) or threshold <= 0:
+                    fail(
+                        "review_policy.context.minimum_reductions values must be "
+                        f"positive integers in {rel}: {metric}"
+                    )
+
+    integrity = parsed_sections.get("integrity", {})
+    fidelity = integrity.get("allowed_fixture_fidelity")
+    if fidelity is not None:
+        if (
+            not isinstance(fidelity, list)
+            or not fidelity
+            or not all(isinstance(item, str) for item in fidelity)
+        ):
+            fail(
+                "review_policy.integrity.allowed_fixture_fidelity must be a "
+                f"non-empty list in {rel}"
+            )
+        else:
+            unknown = sorted(set(fidelity) - FIXTURE_FIDELITIES)
+            if unknown:
+                fail(
+                    f"Unknown review_policy fixture fidelity values in {rel}: {', '.join(unknown)}"
+                )
+            if len(set(fidelity)) != len(fidelity):
+                fail(
+                    "review_policy.integrity.allowed_fixture_fidelity must not "
+                    f"contain duplicates in {rel}"
+                )
+    for key in ("require_fixture_parity", "require_blind_grading"):
+        supplied = integrity.get(key)
+        if supplied is not None and not isinstance(supplied, bool):
+            fail(f"review_policy.integrity.{key} must be boolean in {rel}")
 
 
 def repo_relative(path: Path) -> str:
@@ -601,13 +739,16 @@ def validate_evals(skill_dir: Path, eval_dir: Path) -> None:
         return
 
     actual_keys = set(payload)
-    if actual_keys != REQUIRED_EVAL_KEYS:
-        extra = sorted(actual_keys - REQUIRED_EVAL_KEYS)
+    allowed_keys = REQUIRED_EVAL_KEYS | OPTIONAL_EVAL_KEYS
+    if not REQUIRED_EVAL_KEYS.issubset(actual_keys) or not actual_keys.issubset(allowed_keys):
+        extra = sorted(actual_keys - allowed_keys)
         missing = sorted(REQUIRED_EVAL_KEYS - actual_keys)
         if extra:
             fail(f"Unexpected keys in {rel}: {', '.join(extra)}")
         if missing:
             fail(f"Missing keys in {rel}: {', '.join(missing)}")
+    if "review_policy" in payload:
+        validate_review_policy(payload["review_policy"], rel)
 
     if payload.get("skill_name") != skill_dir.name:
         fail(
@@ -671,6 +812,7 @@ def validate_evals(skill_dir: Path, eval_dir: Path) -> None:
         fail(f"behavior_evals must be a non-empty list in {rel}")
     else:
         behavior_ids: set[str] = set()
+        structured_check_ids: set[str] = set()
         for item in behavior_evals:
             if not isinstance(item, dict):
                 fail(f"Each behavior eval must be an object in {rel}")
@@ -738,8 +880,45 @@ def validate_evals(skill_dir: Path, eval_dir: Path) -> None:
                 fail(f"Behavior eval checks must be a non-empty list in {rel}")
             else:
                 for check in item["checks"]:
-                    if not isinstance(check, str) or not check.strip():
-                        fail(f"Behavior eval checks must contain non-empty strings in {rel}")
+                    if isinstance(check, str):
+                        if not check.strip():
+                            fail(
+                                "Behavior eval checks must contain non-empty strings "
+                                f"or check objects in {rel}"
+                            )
+                        continue
+                    if not isinstance(check, dict):
+                        fail(
+                            "Behavior eval checks must contain non-empty strings "
+                            f"or check objects in {rel}"
+                        )
+                        continue
+                    required_check_keys = {"id", "text", "class", "gate"}
+                    if set(check) != required_check_keys:
+                        fail(f"Invalid structured behavior check shape in {rel}: {check!r}")
+                        continue
+                    check_id = check["id"]
+                    if not isinstance(check_id, str) or not CHECK_ID_RE.fullmatch(check_id):
+                        fail(
+                            "Structured behavior check id must be stable lowercase "
+                            f"kebab-case in {rel}: {check_id!r}"
+                        )
+                    elif check_id in structured_check_ids:
+                        fail(f"Duplicate structured behavior check id {check_id!r} in {rel}")
+                    else:
+                        structured_check_ids.add(check_id)
+                    if not isinstance(check["text"], str) or not check["text"].strip():
+                        fail(f"Structured behavior check text must be non-empty in {rel}")
+                    if check["class"] not in CHECK_CLASSES:
+                        fail(
+                            "Structured behavior check class must be one of "
+                            f"{', '.join(sorted(CHECK_CLASSES))} in {rel}"
+                        )
+                    if check["gate"] not in CHECK_GATES:
+                        fail(
+                            "Structured behavior check gate must be one of "
+                            f"{', '.join(sorted(CHECK_GATES))} in {rel}"
+                        )
 
 
 def validate_skill_contract(skill_dir: Path) -> None:
