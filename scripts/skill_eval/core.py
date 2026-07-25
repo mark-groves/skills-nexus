@@ -21,6 +21,18 @@ class EvalError(RuntimeError):
 
 
 RUNTIME_EXCLUDED_NAMES = frozenset({"evals", "working", "__pycache__", ".git"})
+BEHAVIOR_SUMMARY_RESERVED_KEYS = frozenset(
+    {
+        "absolute_lift",
+        "lift_percentage_points",
+        "paired_checks",
+        "case_pass_rate",
+        "behavior_activation_rate",
+        "efficiency",
+        "cases",
+        "graded_cases",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -45,6 +57,39 @@ class EvalSpec:
     trigger_cases: tuple[TriggerCase, ...]
     behavior_cases: tuple[BehaviorCase, ...]
     path: Path
+
+
+@dataclass(frozen=True)
+class EvaluationCondition:
+    """One immutable runtime package selection in an evaluation."""
+
+    id: str
+    runtime_skill_dir: Path | None
+    runtime_digest_sha256: str | None
+    installation_name: str
+    display_label: str
+
+    def __post_init__(self) -> None:
+        for value, field_name in (
+            (self.id, "condition id"),
+            (self.installation_name, "condition installation name"),
+            (self.display_label, "condition display label"),
+        ):
+            if not value.strip():
+                raise EvalError(f"{field_name} must not be empty")
+        if self.id in {".", ".."} or "/" in self.id or "\\" in self.id or "\0" in self.id:
+            raise EvalError("condition id must be a safe path segment")
+        if (
+            self.installation_name in {".", ".."}
+            or "/" in self.installation_name
+            or "\\" in self.installation_name
+            or "\0" in self.installation_name
+        ):
+            raise EvalError("condition installation name must be a safe path segment")
+        if self.runtime_skill_dir is None and self.runtime_digest_sha256 is not None:
+            raise EvalError("condition runtime digest requires a runtime skill directory")
+        if self.runtime_skill_dir is not None and not self.runtime_digest_sha256:
+            raise EvalError("condition runtime skill directory requires a runtime digest")
 
 
 def _case_id(value: object, *, location: str) -> str:
@@ -196,6 +241,31 @@ def stable_digest(path: Path, *, exclude: Iterable[str] = ()) -> str:
         digest.update(item.read_bytes())
         digest.update(b"\0")
     return digest.hexdigest()
+
+
+def default_evaluation_conditions(skill_dir: Path) -> tuple[EvaluationCondition, ...]:
+    """Return the ordered current-versus-baseline condition pair."""
+    runtime_skill_dir = skill_dir.resolve()
+    installation_name = runtime_skill_dir.name
+    return (
+        EvaluationCondition(
+            id="skill",
+            runtime_skill_dir=runtime_skill_dir,
+            runtime_digest_sha256=stable_digest(
+                runtime_skill_dir,
+                exclude=RUNTIME_EXCLUDED_NAMES,
+            ),
+            installation_name=installation_name,
+            display_label="Skill",
+        ),
+        EvaluationCondition(
+            id="baseline",
+            runtime_skill_dir=None,
+            runtime_digest_sha256=None,
+            installation_name=installation_name,
+            display_label="Baseline",
+        ),
+    )
 
 
 def runtime_skill_copy(skill_dir: Path, destination: Path) -> None:
@@ -662,27 +732,50 @@ def _grade_counts(
     }
 
 
-def summarize_behavior_results(results: list[dict[str, Any]]) -> dict[str, Any]:
-    skill_grades: list[dict[str, Any]] = []
-    baseline_grades: list[dict[str, Any]] = []
+def summarize_behavior_results(
+    results: list[dict[str, Any]],
+    conditions: tuple[EvaluationCondition, ...],
+) -> dict[str, Any]:
+    condition_ids = tuple(condition.id for condition in conditions)
+    if len(conditions) != 2 or len(set(condition_ids)) != len(condition_ids):
+        raise EvalError("paired behavior summaries require exactly two distinct conditions")
+    reserved_ids = sorted(set(condition_ids) & BEHAVIOR_SUMMARY_RESERVED_KEYS)
+    if reserved_ids:
+        raise EvalError(
+            "condition id(s) collide with reserved behavior summary keys: "
+            + ", ".join(reserved_ids)
+        )
+    primary, comparison = conditions
+    grades_by_condition: dict[str, list[dict[str, Any]]] = {
+        condition.id: [] for condition in conditions
+    }
     wins = regressions = ties = unknown_pairs = 0
-    skill_case_passes = baseline_case_passes = 0
+    case_passes = {condition.id: 0 for condition in conditions}
     graded_cases = 0
     case_summaries: list[dict[str, Any]] = []
 
     for result in results:
-        skill = result.get("grades", {}).get("skill", [])
-        baseline = result.get("grades", {}).get("baseline", [])
-        skill_grades.extend(skill)
-        baseline_grades.extend(baseline)
-        if skill or baseline:
+        result_grades = result.get("grades", {})
+        primary_grades = result_grades.get(primary.id, [])
+        comparison_grades = result_grades.get(comparison.id, [])
+        grades_by_condition[primary.id].extend(primary_grades)
+        grades_by_condition[comparison.id].extend(comparison_grades)
+        if primary_grades or comparison_grades:
             graded_cases += 1
-        skill_case_pass = bool(skill) and all(item.get("passed") is True for item in skill)
-        baseline_case_pass = bool(baseline) and all(item.get("passed") is True for item in baseline)
-        skill_case_passes += skill_case_pass
-        baseline_case_passes += baseline_case_pass
-        for skill_item, baseline_item in zip(skill, baseline, strict=False):
-            pair = (skill_item.get("passed"), baseline_item.get("passed"))
+        condition_case_passes = {
+            primary.id: bool(primary_grades)
+            and all(item.get("passed") is True for item in primary_grades),
+            comparison.id: bool(comparison_grades)
+            and all(item.get("passed") is True for item in comparison_grades),
+        }
+        for condition in conditions:
+            case_passes[condition.id] += condition_case_passes[condition.id]
+        for primary_item, comparison_item in zip(
+            primary_grades,
+            comparison_grades,
+            strict=False,
+        ):
+            pair = (primary_item.get("passed"), comparison_item.get("passed"))
             if pair == (True, False):
                 wins += 1
             elif pair == (False, True):
@@ -695,28 +788,31 @@ def summarize_behavior_results(results: list[dict[str, Any]]) -> dict[str, Any]:
             {
                 "id": result["case_id"],
                 "repeat": result["repeat"],
-                "skill_case_pass": skill_case_pass,
-                "baseline_case_pass": baseline_case_pass,
-                "skill_status": result["skill_run"]["status"],
-                "baseline_status": result["baseline_run"]["status"],
-                "skill_activated": result["skill_run"].get("activated"),
+                f"{primary.id}_case_pass": condition_case_passes[primary.id],
+                f"{comparison.id}_case_pass": condition_case_passes[comparison.id],
+                f"{primary.id}_status": result[f"{primary.id}_run"]["status"],
+                f"{comparison.id}_status": result[f"{comparison.id}_run"]["status"],
+                f"{primary.id}_activated": result[f"{primary.id}_run"].get("activated"),
                 "fixture_fidelity": result.get("fixture_fidelity"),
                 "judge_status": result.get("judge", {}).get("status"),
             }
         )
 
-    skill_counts = _grade_counts(skill_grades)
-    baseline_counts = _grade_counts(baseline_grades)
-    skill_rate = skill_counts["pass_rate"]
-    baseline_rate = baseline_counts["pass_rate"]
+    counts = {
+        condition.id: _grade_counts(grades_by_condition[condition.id]) for condition in conditions
+    }
+    primary_rate = counts[primary.id]["pass_rate"]
+    comparison_rate = counts[comparison.id]["pass_rate"]
     lift = (
-        skill_rate - baseline_rate
-        if isinstance(skill_rate, float) and isinstance(baseline_rate, float)
+        primary_rate - comparison_rate
+        if isinstance(primary_rate, float) and isinstance(comparison_rate, float)
         else None
     )
 
-    skill_runs = [result["skill_run"] for result in results]
-    baseline_runs = [result["baseline_run"] for result in results]
+    runs_by_condition = {
+        condition.id: [result[f"{condition.id}_run"] for result in results]
+        for condition in conditions
+    }
 
     def efficiency(runs: list[dict[str, Any]]) -> dict[str, Any]:
         completed = [run for run in runs if run["status"] == "completed"]
@@ -735,10 +831,11 @@ def summarize_behavior_results(results: list[dict[str, Any]]) -> dict[str, Any]:
             "tool_calls": sum(int(run.get("tool_calls", 0)) for run in completed),
         }
 
-    activation_completed = [run for run in skill_runs if run["status"] == "completed"]
+    activation_completed = [
+        run for run in runs_by_condition[primary.id] if run["status"] == "completed"
+    ]
     return {
-        "skill": skill_counts,
-        "baseline": baseline_counts,
+        **counts,
         "absolute_lift": lift,
         "lift_percentage_points": lift * 100 if lift is not None else None,
         "paired_checks": {
@@ -748,8 +845,10 @@ def summarize_behavior_results(results: list[dict[str, Any]]) -> dict[str, Any]:
             "unknown": unknown_pairs,
         },
         "case_pass_rate": {
-            "skill": _rate(skill_case_passes, graded_cases),
-            "baseline": _rate(baseline_case_passes, graded_cases),
+            **{
+                condition.id: _rate(case_passes[condition.id], graded_cases)
+                for condition in conditions
+            },
             "graded_cases": graded_cases,
         },
         "behavior_activation_rate": _rate(
@@ -757,8 +856,7 @@ def summarize_behavior_results(results: list[dict[str, Any]]) -> dict[str, Any]:
             len(activation_completed),
         ),
         "efficiency": {
-            "skill": efficiency(skill_runs),
-            "baseline": efficiency(baseline_runs),
+            condition.id: efficiency(runs_by_condition[condition.id]) for condition in conditions
         },
         "cases": case_summaries,
     }
@@ -767,14 +865,20 @@ def summarize_behavior_results(results: list[dict[str, Any]]) -> dict[str, Any]:
 def efficacy_profile(
     trigger_summary: dict[str, Any] | None,
     behavior_summary: dict[str, Any] | None,
+    conditions: tuple[EvaluationCondition, ...],
 ) -> dict[str, Any]:
+    if not conditions:
+        raise EvalError("efficacy profiles require at least one condition")
+    primary = conditions[0]
     activation = trigger_summary.get("balanced_accuracy") if trigger_summary is not None else None
     execution = (
-        behavior_summary.get("skill", {}).get("pass_rate") if behavior_summary is not None else None
+        behavior_summary.get(primary.id, {}).get("pass_rate")
+        if behavior_summary is not None
+        else None
     )
     lift = behavior_summary.get("absolute_lift") if behavior_summary is not None else None
     coverage = (
-        behavior_summary.get("skill", {}).get("evidence_coverage")
+        behavior_summary.get(primary.id, {}).get("evidence_coverage")
         if behavior_summary is not None
         else None
     )
@@ -809,7 +913,10 @@ def efficacy_profile(
         "incremental_lift": lift,
         "evidence_coverage": coverage,
         "verdict": verdict,
-        "formula": "40% trigger balanced accuracy + 60% skill check pass rate; available components are renormalized",
+        "formula": (
+            "40% trigger balanced accuracy + 60% "
+            f"{primary.display_label.lower()} check pass rate; available components are renormalized"
+        ),
         "note": "Incremental lift is reported separately so a strong general model is not mistaken for skill value.",
     }
 

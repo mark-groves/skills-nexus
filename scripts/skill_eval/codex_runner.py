@@ -12,12 +12,14 @@ import subprocess
 import tempfile
 import threading
 import time
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, TextIO
 
 from .core import (
     BehaviorCase,
     EvalError,
+    EvaluationCondition,
     git_observations,
     json_dump,
     runtime_skill_copy,
@@ -184,7 +186,7 @@ class CodexRunner:
     def __init__(
         self,
         *,
-        skill_dir: Path,
+        conditions: tuple[EvaluationCondition, ...],
         codex_binary: str,
         model: str | None,
         judge_model: str | None,
@@ -195,15 +197,32 @@ class CodexRunner:
         resolved_binary = shutil.which(codex_binary)
         if resolved_binary is None:
             raise EvalError(f"Codex executable not found: {codex_binary}")
-        self.skill_dir = skill_dir.resolve()
+        if len(conditions) != 2:
+            raise EvalError("paired evaluation requires exactly two conditions")
+        if len({condition.id for condition in conditions}) != len(conditions):
+            raise EvalError("evaluation condition ids must be unique")
+        self.conditions = conditions
         self.codex_binary = resolved_binary
         self.model = model
         self.judge_model = judge_model or model
         self.timeout_seconds = timeout_seconds
         self.sandbox = sandbox
         self.peer_skills = tuple(path.resolve() for path in peer_skills)
-        self.runtime_skill_names = {self.skill_dir.name, *(path.name for path in self.peer_skills)}
-        runtime_skills = (self.skill_dir, *self.peer_skills)
+        runtime_conditions = tuple(
+            condition for condition in conditions if condition.runtime_skill_dir is not None
+        )
+        self.runtime_skill_names = {
+            *(condition.installation_name for condition in runtime_conditions),
+            *(path.name for path in self.peer_skills),
+        }
+        runtime_skills = (
+            tuple(
+                runtime_skill
+                for condition in runtime_conditions
+                if (runtime_skill := condition.runtime_skill_dir) is not None
+            )
+            + self.peer_skills
+        )
         self.runtime_instruction_texts = tuple(skill_instructions(path) for path in runtime_skills)
         configured_home = Path(os.environ.get("CODEX_HOME", Path.home() / ".codex"))
         self.auth_source = configured_home / "auth.json"
@@ -243,17 +262,24 @@ class CodexRunner:
         )
         self.version = (version.stdout or version.stderr).strip()
 
-    def _prepare_home(self, *, with_skill: bool, include_peers: bool) -> Path:
+    def _prepare_home(
+        self,
+        *,
+        condition: EvaluationCondition | None,
+        include_peers: bool,
+    ) -> Path:
         home = Path(tempfile.mkdtemp(prefix="skill-eval-codex-home-"))
         try:
-            skills_to_install = list(self.peer_skills) if include_peers else []
-            if with_skill:
-                skills_to_install.append(self.skill_dir)
+            skills_to_install = (
+                [(skill, skill.name) for skill in self.peer_skills] if include_peers else []
+            )
+            if condition is not None and condition.runtime_skill_dir is not None:
+                skills_to_install.append((condition.runtime_skill_dir, condition.installation_name))
             if skills_to_install:
                 skills_dir = home / ".agents" / "skills"
                 skills_dir.mkdir(parents=True)
-                for skill in skills_to_install:
-                    runtime_skill_copy(skill, skills_dir / skill.name)
+                for skill, installation_name in skills_to_install:
+                    runtime_skill_copy(skill, skills_dir / installation_name)
         except Exception:
             shutil.rmtree(home, ignore_errors=True)
             raise
@@ -286,7 +312,7 @@ class CodexRunner:
         run_dir: Path,
         workspace: Path,
         prompt: str,
-        with_skill: bool,
+        condition: EvaluationCondition | None,
         sandbox: str,
         model: str | None,
         output_schema: Path | None = None,
@@ -295,7 +321,7 @@ class CodexRunner:
         run_dir.mkdir(parents=True, exist_ok=True)
         prompt_path = run_dir / "prompt.txt"
         prompt_path.write_text(prompt, encoding="utf-8")
-        home = self._prepare_home(with_skill=with_skill, include_peers=include_peers)
+        home = self._prepare_home(condition=condition, include_peers=include_peers)
         auth_path = home / "auth.json"
         try:
             descriptor = os.open(
@@ -413,11 +439,18 @@ class CodexRunner:
         events_path.write_text(stdout, encoding="utf-8")
         stderr_path.write_text(stderr, encoding="utf-8")
         events, parse_errors = _load_events(stdout)
-        activation_marker = f"skills/{self.skill_dir.name}/SKILL.md" if with_skill else None
+        runtime_installed = condition is not None and condition.runtime_skill_dir is not None
+        activation_marker = (
+            f"skills/{condition.installation_name}/SKILL.md"
+            if runtime_installed and condition is not None
+            else None
+        )
         summary = _event_summary(
             events,
             activation_marker=activation_marker,
-            activation_name=self.skill_dir.name if with_skill else None,
+            activation_name=condition.installation_name
+            if runtime_installed and condition is not None
+            else None,
         )
         if output_message.is_file():
             summary["final_response"] = output_message.read_text(encoding="utf-8", errors="replace")
@@ -448,8 +481,14 @@ class CodexRunner:
         case_type: str,
         case_id: str,
         repeat: int,
-        condition: str,
+        condition: EvaluationCondition,
     ) -> dict[str, Any]:
+        configured_condition = next(
+            (configured for configured in self.conditions if configured.id == condition.id),
+            None,
+        )
+        if configured_condition != condition:
+            raise EvalError("task condition must exactly match a configured evaluation condition")
         run_dir.mkdir(parents=True, exist_ok=True)
         workspace_root = Path(tempfile.mkdtemp(prefix="skill-eval-task-workspace-"))
         workspace = workspace_root / "workspace"
@@ -463,12 +502,11 @@ class CodexRunner:
             else:
                 shutil.copytree(workspace_template, workspace, symlinks=False)
             before = snapshot_workspace(workspace)
-            with_skill = condition == "skill"
             executed = self._execute(
                 run_dir=run_dir,
                 workspace=workspace,
                 prompt=prompt,
-                with_skill=with_skill,
+                condition=condition,
                 sandbox="read-only" if case_type == "trigger" else self.sandbox,
                 model=self.model,
             )
@@ -484,7 +522,7 @@ class CodexRunner:
                 "case_type": case_type,
                 "case_id": case_id,
                 "repeat": repeat,
-                "condition": condition,
+                "condition": condition.id,
                 "workspace": str(preserved_workspace),
                 "execution_workspace": str(workspace),
                 "artifact_delta": artifacts,
@@ -626,26 +664,22 @@ class CodexRunner:
         grade_dir: Path,
         behavior_case: BehaviorCase,
         repeat: int,
-        skill_run: dict[str, Any],
-        baseline_run: dict[str, Any],
+        runs_by_condition: Mapping[str, dict[str, Any]],
     ) -> dict[str, Any]:
+        condition_ids = tuple(condition.id for condition in self.conditions)
+        if set(runs_by_condition) != set(condition_ids):
+            raise EvalError("paired grading runs must match the configured conditions")
         grade_dir.mkdir(parents=True, exist_ok=True)
         workspace_root = Path(tempfile.mkdtemp(prefix="skill-eval-judge-workspace-"))
         workspace = workspace_root / "workspace"
         workspace.mkdir()
         flip = int(hashlib.sha256(f"{behavior_case.id}:{repeat}".encode()).hexdigest(), 16) % 2
-        if flip:
-            candidates = {
-                "A": self._evidence_bundle(baseline_run),
-                "B": self._evidence_bundle(skill_run),
-            }
-            blind_map = {"A": "baseline", "B": "skill"}
-        else:
-            candidates = {
-                "A": self._evidence_bundle(skill_run),
-                "B": self._evidence_bundle(baseline_run),
-            }
-            blind_map = {"A": "skill", "B": "baseline"}
+        blinded_ids = tuple(reversed(condition_ids)) if flip else condition_ids
+        blind_map = dict(zip(("A", "B"), blinded_ids, strict=True))
+        candidates = {
+            label: self._evidence_bundle(runs_by_condition[condition_id])
+            for label, condition_id in blind_map.items()
+        }
 
         evidence = {
             "task": behavior_case.prompt,
@@ -677,7 +711,7 @@ class CodexRunner:
                 run_dir=grade_dir,
                 workspace=workspace,
                 prompt=prompt,
-                with_skill=False,
+                condition=None,
                 sandbox="read-only",
                 model=self.judge_model,
                 output_schema=schema_path,
@@ -696,7 +730,9 @@ class CodexRunner:
             except (json.JSONDecodeError, ValueError) as exc:
                 parse_error = str(exc)
 
-        mapped_grades: dict[str, list[dict[str, Any]]] = {"skill": [], "baseline": []}
+        mapped_grades: dict[str, list[dict[str, Any]]] = {
+            condition.id: [] for condition in self.conditions
+        }
         validation_errors: list[str] = []
         if judgment is not None:
             by_label = {

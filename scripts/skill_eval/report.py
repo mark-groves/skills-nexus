@@ -6,6 +6,8 @@ import html
 from pathlib import Path
 from typing import Any
 
+from .core import EvalError, EvaluationCondition
+
 
 def _percent(value: object) -> str:
     return "—" if not isinstance(value, (int, float)) else f"{value * 100:.1f}%"
@@ -19,7 +21,23 @@ def _mark(value: object) -> str:
     return "✅" if value is True else "❌" if value is False else "❔"
 
 
-def render_markdown(result: dict[str, Any]) -> str:
+def _markdown_label(value: str) -> str:
+    return value.replace("|", "\\|").replace("\r", " ").replace("\n", " ")
+
+
+def _condition_pair(
+    conditions: tuple[EvaluationCondition, ...],
+) -> tuple[EvaluationCondition, EvaluationCondition]:
+    if len(conditions) != 2 or conditions[0].id == conditions[1].id:
+        raise EvalError("paired reports require exactly two distinct conditions")
+    return conditions
+
+
+def render_markdown(
+    result: dict[str, Any],
+    conditions: tuple[EvaluationCondition, ...],
+) -> str:
+    primary, comparison = _condition_pair(conditions)
     profile = result["efficacy"]
     lines = [
         f"# Skill efficacy report: `{result['skill']['name']}`",
@@ -69,28 +87,38 @@ def render_markdown(result: dict[str, Any]) -> str:
     if behavior:
         summary = behavior["summary"]
         pairs = summary["paired_checks"]
-        skill_efficiency = summary["efficiency"]["skill"]
-        baseline_efficiency = summary["efficiency"]["baseline"]
+        primary_efficiency = summary["efficiency"][primary.id]
+        comparison_efficiency = summary["efficiency"][comparison.id]
+        primary_label = _markdown_label(primary.display_label)
+        comparison_label = _markdown_label(comparison.display_label)
+        comparison_phrase = (
+            f"without the {primary_label.lower()}"
+            if comparison.runtime_skill_dir is None
+            else f"for {comparison_label.lower()}"
+        )
         lines.extend(
             [
                 "## Behavior and lift",
                 "",
-                f"The skill passed {_percent(summary['skill']['pass_rate'])} of checks versus "
-                f"{_percent(summary['baseline']['pass_rate'])} without the skill "
+                f"The {primary_label.lower()} passed "
+                f"{_percent(summary[primary.id]['pass_rate'])} of checks versus "
+                f"{_percent(summary[comparison.id]['pass_rate'])} {comparison_phrase} "
                 f"({_number(summary['lift_percentage_points'])} percentage-point lift). "
                 f"Paired checks: {pairs['skill_wins']} wins, {pairs['regressions']} regressions, "
                 f"{pairs['ties']} ties, {pairs['unknown']} unknown.",
                 "",
                 "| Condition | Check pass | Evidence | Median time | Median tokens | Tool calls |",
                 "|---|---:|---:|---:|---:|---:|",
-                f"| Skill | {_percent(summary['skill']['pass_rate'])} | "
-                f"{_percent(summary['skill']['evidence_coverage'])} | "
-                f"{_number(skill_efficiency['median_duration_seconds'])}s | "
-                f"{_number(skill_efficiency['median_tokens'], 0)} | {skill_efficiency['tool_calls']} |",
-                f"| Baseline | {_percent(summary['baseline']['pass_rate'])} | "
-                f"{_percent(summary['baseline']['evidence_coverage'])} | "
-                f"{_number(baseline_efficiency['median_duration_seconds'])}s | "
-                f"{_number(baseline_efficiency['median_tokens'], 0)} | {baseline_efficiency['tool_calls']} |",
+                f"| {primary_label} | {_percent(summary[primary.id]['pass_rate'])} | "
+                f"{_percent(summary[primary.id]['evidence_coverage'])} | "
+                f"{_number(primary_efficiency['median_duration_seconds'])}s | "
+                f"{_number(primary_efficiency['median_tokens'], 0)} | "
+                f"{primary_efficiency['tool_calls']} |",
+                f"| {comparison_label} | {_percent(summary[comparison.id]['pass_rate'])} | "
+                f"{_percent(summary[comparison.id]['evidence_coverage'])} | "
+                f"{_number(comparison_efficiency['median_duration_seconds'])}s | "
+                f"{_number(comparison_efficiency['median_tokens'], 0)} | "
+                f"{comparison_efficiency['tool_calls']} |",
                 "",
             ]
         )
@@ -100,25 +128,28 @@ def render_markdown(result: dict[str, Any]) -> str:
                     f"### Behavior {case['case_id']} · repeat {case['repeat']}",
                     "",
                     f"Fixture fidelity: `{case['fixture_fidelity']}` · judge: "
-                    f"`{case.get('judge', {}).get('status', 'not-run')}` · skill activated: "
-                    f"`{case['skill_run'].get('activated')}`",
+                    f"`{case.get('judge', {}).get('status', 'not-run')}` · "
+                    f"{primary_label.lower()} activated: "
+                    f"`{case[f'{primary.id}_run'].get('activated')}`",
                     "",
-                    "| Check | Skill | Baseline | Skill evidence |",
+                    f"| Check | {primary_label} | {comparison_label} | {primary_label} evidence |",
                     "|---|---:|---:|---|",
                 ]
             )
-            skill_grades = case.get("grades", {}).get("skill", [])
-            baseline_grades = case.get("grades", {}).get("baseline", [])
+            primary_grades = case.get("grades", {}).get(primary.id, [])
+            comparison_grades = case.get("grades", {}).get(comparison.id, [])
             for index, check in enumerate(case["checks"]):
-                skill_grade = skill_grades[index] if index < len(skill_grades) else {}
-                base_grade = baseline_grades[index] if index < len(baseline_grades) else {}
+                primary_grade = primary_grades[index] if index < len(primary_grades) else {}
+                comparison_grade = (
+                    comparison_grades[index] if index < len(comparison_grades) else {}
+                )
                 escaped_check = check.replace("|", "\\|")
                 evidence = (
-                    str(skill_grade.get("evidence", "")).replace("|", "\\|").replace("\n", " ")
+                    str(primary_grade.get("evidence", "")).replace("|", "\\|").replace("\n", " ")
                 )
                 lines.append(
-                    f"| {escaped_check} | {_mark(skill_grade.get('passed'))} | "
-                    f"{_mark(base_grade.get('passed'))} | {evidence} |"
+                    f"| {escaped_check} | {_mark(primary_grade.get('passed'))} | "
+                    f"{_mark(comparison_grade.get('passed'))} | {evidence} |"
                 )
             lines.append("")
 
@@ -128,7 +159,9 @@ def render_markdown(result: dict[str, Any]) -> str:
             "## Integrity and limitations",
             "",
             f"- Eval ground truth withheld from task agents: `{integrity['evals_withheld']}`",
-            f"- Skill and baseline ran in fresh isolated contexts: `{integrity['fresh_contexts']}`",
+            f"- {_markdown_label(primary.display_label)} and "
+            f"{_markdown_label(comparison.display_label).lower()} ran in fresh "
+            f"isolated contexts: `{integrity['fresh_contexts']}`",
             f"- Repository peer skills were held constant across conditions: `{integrity['peer_skill_parity']}`",
             f"- Paired grading used randomized labels: `{integrity['blind_paired_grading']}`",
         ]
@@ -149,7 +182,11 @@ def render_markdown(result: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def render_html(result: dict[str, Any]) -> str:
+def render_html(
+    result: dict[str, Any],
+    conditions: tuple[EvaluationCondition, ...],
+) -> str:
+    primary, comparison = _condition_pair(conditions)
     profile = result["efficacy"]
     trigger = result.get("trigger")
     behavior = result.get("behavior")
@@ -171,26 +208,28 @@ def render_html(result: dict[str, Any]) -> str:
     if behavior:
         for case in behavior["results"]:
             rows = ""
-            skill_grades = case.get("grades", {}).get("skill", [])
-            baseline_grades = case.get("grades", {}).get("baseline", [])
+            primary_grades = case.get("grades", {}).get(primary.id, [])
+            comparison_grades = case.get("grades", {}).get(comparison.id, [])
             for index, check in enumerate(case["checks"]):
-                skill_grade = skill_grades[index] if index < len(skill_grades) else {}
-                baseline_grade = baseline_grades[index] if index < len(baseline_grades) else {}
+                primary_grade = primary_grades[index] if index < len(primary_grades) else {}
+                comparison_grade = (
+                    comparison_grades[index] if index < len(comparison_grades) else {}
+                )
                 rows += (
                     "<tr>"
                     f"<td>{html.escape(check)}</td>"
-                    f"<td>{_mark(skill_grade.get('passed'))}</td>"
-                    f"<td>{_mark(baseline_grade.get('passed'))}</td>"
-                    f"<td>{html.escape(str(skill_grade.get('evidence', '')))}</td>"
+                    f"<td>{_mark(primary_grade.get('passed'))}</td>"
+                    f"<td>{_mark(comparison_grade.get('passed'))}</td>"
+                    f"<td>{html.escape(str(primary_grade.get('evidence', '')))}</td>"
                     "</tr>"
                 )
-            skill_final = html.escape(case["skill_run"].get("final_response", ""))
-            baseline_final = html.escape(case["baseline_run"].get("final_response", ""))
+            primary_final = html.escape(case[f"{primary.id}_run"].get("final_response", ""))
+            comparison_final = html.escape(case[f"{comparison.id}_run"].get("final_response", ""))
             behavior_sections += f"""
             <details>
               <summary>Behavior {html.escape(str(case["case_id"]))} · repeat {case["repeat"]} · fidelity {html.escape(case["fixture_fidelity"])}</summary>
-              <table><thead><tr><th>Check</th><th>Skill</th><th>Baseline</th><th>Skill evidence</th></tr></thead><tbody>{rows}</tbody></table>
-              <div class="columns"><div><h4>Skill response</h4><pre>{skill_final}</pre></div><div><h4>Baseline response</h4><pre>{baseline_final}</pre></div></div>
+              <table><thead><tr><th>Check</th><th>{html.escape(primary.display_label)}</th><th>{html.escape(comparison.display_label)}</th><th>{html.escape(primary.display_label)} evidence</th></tr></thead><tbody>{rows}</tbody></table>
+              <div class="columns"><div><h4>{html.escape(primary.display_label)} response</h4><pre>{primary_final}</pre></div><div><h4>{html.escape(comparison.display_label)} response</h4><pre>{comparison_final}</pre></div></div>
             </details>
             """
 
@@ -225,8 +264,10 @@ def render_html(result: dict[str, Any]) -> str:
     if behavior:
         summary = behavior["summary"]
         behavior_intro = (
-            f"<p>Skill check pass {_percent(summary['skill']['pass_rate'])}; baseline "
-            f"{_percent(summary['baseline']['pass_rate'])}; lift "
+            f"<p>{html.escape(primary.display_label)} check pass "
+            f"{_percent(summary[primary.id]['pass_rate'])}; "
+            f"{html.escape(comparison.display_label.lower())} "
+            f"{_percent(summary[comparison.id]['pass_rate'])}; lift "
             f"{_number(summary['lift_percentage_points'])} percentage points.</p>"
         )
 
@@ -253,9 +294,13 @@ details{{background:var(--panel);border:1px solid var(--line);border-radius:10px
 </main></body></html>"""
 
 
-def write_reports(output_dir: Path, result: dict[str, Any]) -> tuple[Path, Path]:
+def write_reports(
+    output_dir: Path,
+    result: dict[str, Any],
+    conditions: tuple[EvaluationCondition, ...],
+) -> tuple[Path, Path]:
     markdown_path = output_dir / "report.md"
     html_path = output_dir / "report.html"
-    markdown_path.write_text(render_markdown(result), encoding="utf-8")
-    html_path.write_text(render_html(result), encoding="utf-8")
+    markdown_path.write_text(render_markdown(result, conditions), encoding="utf-8")
+    html_path.write_text(render_html(result, conditions), encoding="utf-8")
     return markdown_path, html_path

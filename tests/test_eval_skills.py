@@ -10,6 +10,7 @@ import sys
 import tempfile
 import textwrap
 import unittest
+from dataclasses import FrozenInstanceError
 from pathlib import Path
 from unittest import mock
 
@@ -24,8 +25,11 @@ SPEC.loader.exec_module(eval_skills)
 
 from skill_eval.codex_runner import CodexRunner, _event_summary, _scrub  # noqa: E402
 from skill_eval.core import (  # noqa: E402
+    BehaviorCase,
     EvalError,
+    EvaluationCondition,
     TriggerCase,
+    default_evaluation_conditions,
     discover_repository_skills,
     git_observations,
     initialize_fixture_repository,
@@ -34,11 +38,78 @@ from skill_eval.core import (  # noqa: E402
     run_fixture_setups,
     runtime_skill_copy,
     snapshot_workspace,
+    summarize_behavior_results,
     summarize_trigger_results,
 )
 
 
 class EvalCoreTests(unittest.TestCase):
+    def test_default_conditions_are_immutable_ordered_and_digest_the_runtime(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            skill = Path(temp_dir) / "source-package"
+            skill.mkdir()
+            (skill / "SKILL.md").write_text("# Demo\n", encoding="utf-8")
+
+            conditions = default_evaluation_conditions(skill)
+
+            self.assertEqual(tuple(condition.id for condition in conditions), ("skill", "baseline"))
+            self.assertEqual(
+                tuple(condition.display_label for condition in conditions),
+                ("Skill", "Baseline"),
+            )
+            self.assertEqual(conditions[0].runtime_skill_dir, skill.resolve())
+            self.assertIsNotNone(conditions[0].runtime_digest_sha256)
+            self.assertEqual(conditions[0].installation_name, "source-package")
+            self.assertIsNone(conditions[1].runtime_skill_dir)
+            self.assertIsNone(conditions[1].runtime_digest_sha256)
+            self.assertEqual(conditions[1].installation_name, "source-package")
+            with self.assertRaises(FrozenInstanceError):
+                conditions[0].id = "changed"  # type: ignore[misc]
+
+    def test_behavior_summary_uses_condition_ids_instead_of_fixed_keys(self) -> None:
+        conditions = (
+            EvaluationCondition("current", None, None, "demo", "Current"),
+            EvaluationCondition("control", None, None, "demo", "Control"),
+        )
+        run = {
+            "status": "completed",
+            "duration_seconds": 1.0,
+            "usage": {"input_tokens": 2, "output_tokens": 1},
+            "tool_calls": 1,
+        }
+        results = [
+            {
+                "case_id": "case",
+                "repeat": 1,
+                "current_run": {**run, "activated": True},
+                "control_run": {**run, "activated": False},
+                "grades": {
+                    "current": [{"passed": True}],
+                    "control": [{"passed": False}],
+                },
+                "judge": {"status": "completed"},
+            }
+        ]
+
+        summary = summarize_behavior_results(results, conditions)
+
+        self.assertEqual(summary["current"]["pass_rate"], 1.0)
+        self.assertEqual(summary["control"]["pass_rate"], 0.0)
+        self.assertEqual(summary["absolute_lift"], 1.0)
+        self.assertEqual(summary["paired_checks"]["skill_wins"], 1)
+        self.assertEqual(summary["cases"][0]["current_status"], "completed")
+
+    def test_behavior_summary_rejects_condition_ids_that_collide_with_output_keys(
+        self,
+    ) -> None:
+        conditions = (
+            EvaluationCondition("efficiency", None, None, "demo", "Current"),
+            EvaluationCondition("control", None, None, "demo", "Control"),
+        )
+
+        with self.assertRaisesRegex(EvalError, "reserved behavior summary keys: efficiency"):
+            summarize_behavior_results([], conditions)
+
     def test_duplicate_case_filters_are_rejected(self) -> None:
         case = TriggerCase("1", "demo", True)
 
@@ -329,15 +400,56 @@ class EvalCoreTests(unittest.TestCase):
             runner = object.__new__(CodexRunner)
             runner.auth_source = auth
             runner.peer_skills = ()
-            runner.skill_dir = skill
 
-            home = runner._prepare_home(with_skill=False, include_peers=False)
+            home = runner._prepare_home(condition=None, include_peers=False)
             try:
                 self.assertNotIn(run_dir, home.parents)
                 self.assertNotIn(root, home.parents)
                 self.assertFalse((home / "auth.json").exists())
             finally:
                 shutil.rmtree(home, ignore_errors=True)
+
+    def test_codex_home_installs_selected_runtime_by_logical_name_with_peer_parity(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            runtime = root / "candidate-source"
+            peer = root / "peer"
+            runtime.mkdir()
+            peer.mkdir()
+            (runtime / "SKILL.md").write_text("# Candidate\n", encoding="utf-8")
+            (peer / "SKILL.md").write_text("# Peer\n", encoding="utf-8")
+            condition = EvaluationCondition(
+                id="current",
+                runtime_skill_dir=runtime,
+                runtime_digest_sha256="digest",
+                installation_name="demo",
+                display_label="Current",
+            )
+            baseline = EvaluationCondition(
+                id="control",
+                runtime_skill_dir=None,
+                runtime_digest_sha256=None,
+                installation_name="demo",
+                display_label="Control",
+            )
+            runner = object.__new__(CodexRunner)
+            runner.peer_skills = (peer,)
+
+            current_home = runner._prepare_home(condition=condition, include_peers=True)
+            control_home = runner._prepare_home(condition=baseline, include_peers=True)
+            try:
+                self.assertTrue(
+                    (current_home / ".agents" / "skills" / "demo" / "SKILL.md").is_file()
+                )
+                self.assertFalse((current_home / ".agents" / "skills" / runtime.name).exists())
+                self.assertFalse((control_home / ".agents" / "skills" / "demo").exists())
+                for home in (current_home, control_home):
+                    self.assertTrue((home / ".agents" / "skills" / "peer" / "SKILL.md").is_file())
+            finally:
+                shutil.rmtree(current_home, ignore_errors=True)
+                shutil.rmtree(control_home, ignore_errors=True)
 
     def test_codex_api_key_is_wrapped_as_ephemeral_auth(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -353,7 +465,7 @@ class EvalCoreTests(unittest.TestCase):
                 {"CODEX_HOME": str(codex_home), "CODEX_API_KEY": "ci-test-key"},
             ):
                 runner = CodexRunner(
-                    skill_dir=skill,
+                    conditions=default_evaluation_conditions(skill),
                     codex_binary="/bin/true",
                     model=None,
                     judge_model=None,
@@ -393,7 +505,6 @@ class EvalCoreTests(unittest.TestCase):
             )
             runner = object.__new__(CodexRunner)
             runner.runtime_skill_names = {"commit"}
-            runner.skill_dir = Path("/skills/commit")
             run = {
                 "events_path": str(events_path),
                 "workspace": str(workspace),
@@ -425,7 +536,6 @@ class EvalCoreTests(unittest.TestCase):
         runner.runtime_instruction_texts = (
             "# Commit workflow\nAlways inspect the repository before creating a commit.\n",
         )
-        runner.skill_dir = Path("/skills/commit")
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             workspace = root / "workspace"
@@ -467,6 +577,23 @@ class EvalCoreTests(unittest.TestCase):
         runner = object.__new__(CodexRunner)
         runner.sandbox = "workspace-write"
         runner.model = None
+        condition = EvaluationCondition(
+            id="baseline",
+            runtime_skill_dir=None,
+            runtime_digest_sha256=None,
+            installation_name="demo",
+            display_label="Baseline",
+        )
+        runner.conditions = (
+            EvaluationCondition(
+                id="skill",
+                runtime_skill_dir=Path("/unused"),
+                runtime_digest_sha256="unused",
+                installation_name="demo",
+                display_label="Skill",
+            ),
+            condition,
+        )
         with tempfile.TemporaryDirectory() as temp_dir:
             run_dir = Path(temp_dir) / "run"
 
@@ -486,13 +613,77 @@ class EvalCoreTests(unittest.TestCase):
                     case_type="behavior",
                     case_id="binary",
                     repeat=1,
-                    condition="baseline",
+                    condition=condition,
                 )
 
             preserved = Path(run["workspace"])
             executed = Path(run["execution_workspace"])
             self.assertEqual((preserved / "deliverable.bin").read_bytes(), bytes(range(256)) * 64)
             self.assertFalse(executed.exists())
+
+    def test_task_rejects_condition_object_that_differs_from_configuration(self) -> None:
+        configured = EvaluationCondition(
+            id="skill",
+            runtime_skill_dir=Path("/configured"),
+            runtime_digest_sha256="configured-digest",
+            installation_name="demo",
+            display_label="Skill",
+        )
+        supplied = EvaluationCondition(
+            id="skill",
+            runtime_skill_dir=Path("/different"),
+            runtime_digest_sha256="different-digest",
+            installation_name="demo",
+            display_label="Skill",
+        )
+        runner = object.__new__(CodexRunner)
+        runner.conditions = (
+            configured,
+            EvaluationCondition(
+                id="baseline",
+                runtime_skill_dir=None,
+                runtime_digest_sha256=None,
+                installation_name="demo",
+                display_label="Baseline",
+            ),
+        )
+
+        with self.assertRaisesRegex(EvalError, "exactly match"):
+            runner.run_task(
+                run_dir=Path("/unused"),
+                workspace_template=None,
+                prompt="unused",
+                case_type="trigger",
+                case_id="condition",
+                repeat=1,
+                condition=supplied,
+            )
+
+    def test_grading_validates_condition_keys_before_allocating_workspace(self) -> None:
+        conditions = (
+            EvaluationCondition("current", None, None, "demo", "Current"),
+            EvaluationCondition("control", None, None, "demo", "Control"),
+        )
+        runner = object.__new__(CodexRunner)
+        runner.conditions = conditions
+        behavior_case = BehaviorCase(
+            id="case",
+            prompt="demo",
+            expected_behavior="works",
+            fixtures=(),
+            checks=("works",),
+        )
+
+        with mock.patch("skill_eval.codex_runner.tempfile.mkdtemp") as make_temp:
+            with self.assertRaisesRegex(EvalError, "must match the configured conditions"):
+                runner.grade_pair(
+                    grade_dir=Path("/unused"),
+                    behavior_case=behavior_case,
+                    repeat=1,
+                    runs_by_condition={"current": {}},
+                )
+
+        make_temp.assert_not_called()
 
     def test_shell_expanded_skill_read_redacts_command_output(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -518,7 +709,6 @@ class EvalCoreTests(unittest.TestCase):
             )
             runner = object.__new__(CodexRunner)
             runner.runtime_skill_names = {"commit"}
-            runner.skill_dir = Path("/skills/commit")
             run = {
                 "events_path": str(events_path),
                 "workspace": str(workspace),
@@ -564,7 +754,6 @@ class EvalCoreTests(unittest.TestCase):
             )
             runner = object.__new__(CodexRunner)
             runner.runtime_skill_names = {"skill-architect"}
-            runner.skill_dir = Path("/skills/skill-architect")
             run = {
                 "events_path": str(events_path),
                 "workspace": str(workspace),
@@ -828,12 +1017,17 @@ class EvalCliIntegrationTests(unittest.TestCase):
                                 "id": 1,
                                 "prompt": "produce a demo result",
                                 "expected_behavior": "Produces the result.",
-                                "fixtures": [],
+                                "fixtures": ["input.txt"],
                                 "checks": ["Final response contains a result"],
                             }
                         ],
                     }
                 ),
+                encoding="utf-8",
+            )
+            (eval_dir / "fixtures").mkdir()
+            (eval_dir / "fixtures" / "input.txt").write_text(
+                "equivalent fixture\n",
                 encoding="utf-8",
             )
             peer = repo / "skills" / "peer"
@@ -860,6 +1054,26 @@ class EvalCliIntegrationTests(unittest.TestCase):
             fake_codex = self._write_fake_codex(root)
             output_root = repo / ".skill-evals-test"
 
+            plan_output = io.StringIO()
+            with contextlib.redirect_stdout(plan_output):
+                plan_status = eval_skills.main(
+                    [
+                        "--repo-root",
+                        str(repo),
+                        "--skill",
+                        "demo",
+                        "--suite",
+                        "all",
+                        "--plan",
+                    ]
+                )
+            self.assertEqual(plan_status, 0)
+            self.assertIn(
+                "Behavior cases (maximum): 1 × 1 × (skill + baseline + paired judge) = 3 turns",
+                plan_output.getvalue(),
+            )
+            self.assertIn("Maximum agent turns: 5", plan_output.getvalue())
+
             with mock.patch.dict(os.environ, {"CODEX_HOME": str(codex_home)}):
                 with contextlib.redirect_stdout(io.StringIO()):
                     status = eval_skills.main(
@@ -881,6 +1095,34 @@ class EvalCliIntegrationTests(unittest.TestCase):
             result_paths = list(output_root.glob("demo/*/results.json"))
             self.assertEqual(len(result_paths), 1)
             result = json.loads(result_paths[0].read_text(encoding="utf-8"))
+            self.assertEqual(
+                set(result),
+                {
+                    "schema_version",
+                    "run_id",
+                    "generated_at",
+                    "repository",
+                    "skill",
+                    "runtime",
+                    "config",
+                    "integrity",
+                    "trigger",
+                    "behavior",
+                    "efficacy",
+                    "reproduce_command",
+                },
+            )
+            self.assertEqual(
+                set(result["skill"]),
+                {
+                    "name",
+                    "path",
+                    "eval_path",
+                    "runtime_digest_sha256",
+                    "eval_spec_digest_sha256",
+                },
+            )
+            self.assertEqual(result["schema_version"], 1)
             self.assertTrue(result["integrity"]["evals_withheld"])
             self.assertTrue(result["integrity"]["peer_skill_parity"])
             self.assertEqual(result["runtime"]["codex_version"], "fake-codex 1.0")
@@ -888,6 +1130,42 @@ class EvalCliIntegrationTests(unittest.TestCase):
             self.assertEqual(len(result["behavior"]["results"]), 1)
             self.assertEqual(result["behavior"]["results"][0]["judge"]["status"], "completed")
             behavior = result["behavior"]["results"][0]
+            self.assertEqual(
+                set(behavior),
+                {
+                    "case_id",
+                    "repeat",
+                    "prompt",
+                    "expected_behavior",
+                    "checks",
+                    "fixture_fidelity",
+                    "fixture",
+                    "skill_run",
+                    "baseline_run",
+                    "grades",
+                    "judge",
+                },
+            )
+            self.assertEqual(set(behavior["grades"]), {"skill", "baseline"})
+            self.assertEqual(
+                set(behavior["judge"]["blind_map"].values()),
+                {"skill", "baseline"},
+            )
+            self.assertTrue(all(run["condition"] == "skill" for run in result["trigger"]["runs"]))
+            self.assertEqual(behavior["skill_run"]["condition"], "skill")
+            self.assertEqual(behavior["baseline_run"]["condition"], "baseline")
+            self.assertEqual(
+                (Path(behavior["skill_run"]["workspace"]) / "input.txt").read_text(
+                    encoding="utf-8"
+                ),
+                "equivalent fixture\n",
+            )
+            self.assertEqual(
+                (Path(behavior["baseline_run"]["workspace"]) / "input.txt").read_text(
+                    encoding="utf-8"
+                ),
+                "equivalent fixture\n",
+            )
             self.assertIn("peer=True", behavior["skill_run"]["final_response"])
             self.assertIn("peer=True", behavior["baseline_run"]["final_response"])
             self.assertIn("home_in_run=False", behavior["skill_run"]["final_response"])
