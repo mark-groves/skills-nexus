@@ -25,6 +25,7 @@ SPEC.loader.exec_module(eval_skills)
 
 from skill_eval.codex_runner import CodexRunner, _event_summary, _scrub  # noqa: E402
 from skill_eval.core import (  # noqa: E402
+    BehaviorCase,
     EvalError,
     EvaluationCondition,
     TriggerCase,
@@ -97,6 +98,17 @@ class EvalCoreTests(unittest.TestCase):
         self.assertEqual(summary["absolute_lift"], 1.0)
         self.assertEqual(summary["paired_checks"]["skill_wins"], 1)
         self.assertEqual(summary["cases"][0]["current_status"], "completed")
+
+    def test_behavior_summary_rejects_condition_ids_that_collide_with_output_keys(
+        self,
+    ) -> None:
+        conditions = (
+            EvaluationCondition("efficiency", None, None, "demo", "Current"),
+            EvaluationCondition("control", None, None, "demo", "Control"),
+        )
+
+        with self.assertRaisesRegex(EvalError, "reserved behavior summary keys: efficiency"):
+            summarize_behavior_results([], conditions)
 
     def test_duplicate_case_filters_are_rejected(self) -> None:
         case = TriggerCase("1", "demo", True)
@@ -646,6 +658,32 @@ class EvalCoreTests(unittest.TestCase):
                 repeat=1,
                 condition=supplied,
             )
+
+    def test_grading_validates_condition_keys_before_allocating_workspace(self) -> None:
+        conditions = (
+            EvaluationCondition("current", None, None, "demo", "Current"),
+            EvaluationCondition("control", None, None, "demo", "Control"),
+        )
+        runner = object.__new__(CodexRunner)
+        runner.conditions = conditions
+        behavior_case = BehaviorCase(
+            id="case",
+            prompt="demo",
+            expected_behavior="works",
+            fixtures=(),
+            checks=("works",),
+        )
+
+        with mock.patch("skill_eval.codex_runner.tempfile.mkdtemp") as make_temp:
+            with self.assertRaisesRegex(EvalError, "must match the configured conditions"):
+                runner.grade_pair(
+                    grade_dir=Path("/unused"),
+                    behavior_case=behavior_case,
+                    repeat=1,
+                    runs_by_condition={"current": {}},
+                )
+
+        make_temp.assert_not_called()
 
     def test_shell_expanded_skill_read_redacts_command_output(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

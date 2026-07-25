@@ -21,6 +21,18 @@ class EvalError(RuntimeError):
 
 
 RUNTIME_EXCLUDED_NAMES = frozenset({"evals", "working", "__pycache__", ".git"})
+BEHAVIOR_SUMMARY_RESERVED_KEYS = frozenset(
+    {
+        "absolute_lift",
+        "lift_percentage_points",
+        "paired_checks",
+        "case_pass_rate",
+        "behavior_activation_rate",
+        "efficiency",
+        "cases",
+        "graded_cases",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -724,8 +736,15 @@ def summarize_behavior_results(
     results: list[dict[str, Any]],
     conditions: tuple[EvaluationCondition, ...],
 ) -> dict[str, Any]:
-    if len(conditions) != 2:
-        raise EvalError("paired behavior summaries require exactly two conditions")
+    condition_ids = tuple(condition.id for condition in conditions)
+    if len(conditions) != 2 or len(set(condition_ids)) != len(condition_ids):
+        raise EvalError("paired behavior summaries require exactly two distinct conditions")
+    reserved_ids = sorted(set(condition_ids) & BEHAVIOR_SUMMARY_RESERVED_KEYS)
+    if reserved_ids:
+        raise EvalError(
+            "condition id(s) collide with reserved behavior summary keys: "
+            + ", ".join(reserved_ids)
+        )
     primary, comparison = conditions
     grades_by_condition: dict[str, list[dict[str, Any]]] = {
         condition.id: [] for condition in conditions

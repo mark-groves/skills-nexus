@@ -666,13 +666,13 @@ class CodexRunner:
         repeat: int,
         runs_by_condition: Mapping[str, dict[str, Any]],
     ) -> dict[str, Any]:
+        condition_ids = tuple(condition.id for condition in self.conditions)
+        if set(runs_by_condition) != set(condition_ids):
+            raise EvalError("paired grading runs must match the configured conditions")
         grade_dir.mkdir(parents=True, exist_ok=True)
         workspace_root = Path(tempfile.mkdtemp(prefix="skill-eval-judge-workspace-"))
         workspace = workspace_root / "workspace"
         workspace.mkdir()
-        condition_ids = tuple(condition.id for condition in self.conditions)
-        if set(runs_by_condition) != set(condition_ids):
-            raise EvalError("paired grading runs must match the configured conditions")
         flip = int(hashlib.sha256(f"{behavior_case.id}:{repeat}".encode()).hexdigest(), 16) % 2
         blinded_ids = tuple(reversed(condition_ids)) if flip else condition_ids
         blind_map = dict(zip(("A", "B"), blinded_ids, strict=True))
