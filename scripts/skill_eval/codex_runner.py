@@ -197,8 +197,8 @@ class CodexRunner:
         resolved_binary = shutil.which(codex_binary)
         if resolved_binary is None:
             raise EvalError(f"Codex executable not found: {codex_binary}")
-        if len(conditions) != 2:
-            raise EvalError("paired evaluation requires exactly two conditions")
+        if len(conditions) not in {2, 3}:
+            raise EvalError("evaluation requires two or three conditions")
         if len({condition.id for condition in conditions}) != len(conditions):
             raise EvalError("evaluation condition ids must be unique")
         self.conditions = conditions
@@ -604,7 +604,7 @@ class CodexRunner:
         }
 
     @staticmethod
-    def _judge_schema() -> dict[str, Any]:
+    def _judge_schema(labels: tuple[str, ...] = ("A", "B")) -> dict[str, Any]:
         check = {
             "type": "object",
             "properties": {
@@ -619,7 +619,7 @@ class CodexRunner:
         candidate = {
             "type": "object",
             "properties": {
-                "label": {"type": "string", "enum": ["A", "B"]},
+                "label": {"type": "string", "enum": list(labels)},
                 "checks": {"type": "array", "items": check},
                 "summary": {"type": "string"},
                 "strengths": {"type": "array", "items": {"type": "string"}},
@@ -628,33 +628,37 @@ class CodexRunner:
             "required": ["label", "checks", "summary", "strengths", "weaknesses"],
             "additionalProperties": False,
         }
+        properties: dict[str, Any] = {
+            "candidates": {
+                "type": "array",
+                "items": candidate,
+                "minItems": len(labels),
+                "maxItems": len(labels),
+            },
+        }
+        required = ["candidates"]
+        if len(labels) == 2:
+            properties["comparison"] = {
+                "type": "object",
+                "properties": {
+                    "verdict": {
+                        "type": "string",
+                        "enum": ["A_better", "B_better", "tie", "insufficient"],
+                    },
+                    "rationale": {"type": "string"},
+                    "material_differences": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                    },
+                },
+                "required": ["verdict", "rationale", "material_differences"],
+                "additionalProperties": False,
+            }
+            required.append("comparison")
         return {
             "type": "object",
-            "properties": {
-                "candidates": {
-                    "type": "array",
-                    "items": candidate,
-                    "minItems": 2,
-                    "maxItems": 2,
-                },
-                "comparison": {
-                    "type": "object",
-                    "properties": {
-                        "verdict": {
-                            "type": "string",
-                            "enum": ["A_better", "B_better", "tie", "insufficient"],
-                        },
-                        "rationale": {"type": "string"},
-                        "material_differences": {
-                            "type": "array",
-                            "items": {"type": "string"},
-                        },
-                    },
-                    "required": ["verdict", "rationale", "material_differences"],
-                    "additionalProperties": False,
-                },
-            },
-            "required": ["candidates", "comparison"],
+            "properties": properties,
+            "required": required,
             "additionalProperties": False,
         }
 
@@ -668,14 +672,25 @@ class CodexRunner:
     ) -> dict[str, Any]:
         condition_ids = tuple(condition.id for condition in self.conditions)
         if set(runs_by_condition) != set(condition_ids):
-            raise EvalError("paired grading runs must match the configured conditions")
+            raise EvalError("grading runs must match the configured conditions")
         grade_dir.mkdir(parents=True, exist_ok=True)
         workspace_root = Path(tempfile.mkdtemp(prefix="skill-eval-judge-workspace-"))
         workspace = workspace_root / "workspace"
         workspace.mkdir()
-        flip = int(hashlib.sha256(f"{behavior_case.id}:{repeat}".encode()).hexdigest(), 16) % 2
-        blinded_ids = tuple(reversed(condition_ids)) if flip else condition_ids
-        blind_map = dict(zip(("A", "B"), blinded_ids, strict=True))
+        labels = tuple(chr(ord("A") + index) for index in range(len(condition_ids)))
+        if len(condition_ids) == 2:
+            flip = int(hashlib.sha256(f"{behavior_case.id}:{repeat}".encode()).hexdigest(), 16) % 2
+            blinded_ids = tuple(reversed(condition_ids)) if flip else condition_ids
+        else:
+            blinded_ids = tuple(
+                sorted(
+                    condition_ids,
+                    key=lambda condition_id: hashlib.sha256(
+                        f"{behavior_case.id}:{repeat}:{condition_id}".encode()
+                    ).digest(),
+                )
+            )
+        blind_map = dict(zip(labels, blinded_ids, strict=True))
         candidates = {
             label: self._evidence_bundle(runs_by_condition[condition_id])
             for label, condition_id in blind_map.items()
@@ -693,19 +708,29 @@ class CodexRunner:
                 "fail": "Evidence contradicts the check or proves it was not satisfied",
                 "unknown": "Available evidence is insufficient; never assume success",
             },
+            "integrity": {
+                "condition_identities_withheld": True,
+                "labels_randomized": True,
+            },
         }
         evidence_path = workspace / "evidence.json"
         schema_path = workspace / "schema.json"
         try:
             json_dump(evidence_path, evidence)
-            json_dump(schema_path, self._judge_schema())
+            json_dump(schema_path, self._judge_schema(labels))
+            label_text = ", ".join(labels)
             prompt = (
                 "Act as an evidence-bound, condition-blind evaluator. Read evidence.json. "
-                "Grade candidates A and B independently against every numbered check, using the "
-                "same standard. Do not reward verbosity, claims of skill use, or plausible intent. "
-                "A check passes only when the supplied transcript, Git state, or artifact evidence "
-                "proves it. Use unknown when evidence is insufficient. Then compare material task "
-                "quality. Return only the required structured result."
+                f"Grade candidates {label_text} independently against every numbered check, using "
+                "the same standard. Do not reward verbosity, claims of skill use, or plausible "
+                "intent. A check passes only when the supplied transcript, Git state, or artifact "
+                "evidence proves it. Use unknown when evidence is insufficient. "
+                + (
+                    "Then compare material task quality. "
+                    if len(labels) == 2
+                    else "Do not infer or name the hidden evaluation conditions. "
+                )
+                + "Return only the required structured result."
             )
             executed = self._execute(
                 run_dir=grade_dir,

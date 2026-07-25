@@ -25,21 +25,27 @@ SPEC.loader.exec_module(eval_skills)
 
 from skill_eval.codex_runner import CodexRunner, _event_summary, _scrub  # noqa: E402
 from skill_eval.core import (  # noqa: E402
+    RUNTIME_EXCLUDED_NAMES,
     BehaviorCase,
     EvalError,
     EvaluationCondition,
     TriggerCase,
+    candidate_evaluation_conditions,
     default_evaluation_conditions,
     discover_repository_skills,
     git_observations,
     initialize_fixture_repository,
     load_eval_spec,
     materialize_fixtures,
+    resolve_candidate_skill,
     run_fixture_setups,
     runtime_skill_copy,
+    snapshot_candidate_skill,
     snapshot_workspace,
+    stable_digest,
     summarize_behavior_results,
     summarize_trigger_results,
+    validate_candidate_separation,
 )
 
 
@@ -65,6 +71,325 @@ class EvalCoreTests(unittest.TestCase):
             self.assertEqual(conditions[1].installation_name, "source-package")
             with self.assertRaises(FrozenInstanceError):
                 conditions[0].id = "changed"  # type: ignore[misc]
+
+    def test_candidate_conditions_share_one_logical_install_slot_and_separate_digests(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            current = root / "demo"
+            candidate = root / "candidate-package"
+            current.mkdir()
+            candidate.mkdir()
+            (current / "SKILL.md").write_text("current\n", encoding="utf-8")
+            (candidate / "SKILL.md").write_text("candidate\n", encoding="utf-8")
+
+            conditions = candidate_evaluation_conditions(current, candidate)
+
+            self.assertEqual(
+                tuple(condition.id for condition in conditions),
+                ("skill", "baseline", "candidate"),
+            )
+            self.assertEqual(
+                tuple(condition.display_label for condition in conditions),
+                ("Current", "Baseline", "Candidate"),
+            )
+            self.assertEqual(
+                {condition.installation_name for condition in conditions},
+                {"demo"},
+            )
+            self.assertNotEqual(
+                conditions[0].runtime_digest_sha256,
+                conditions[2].runtime_digest_sha256,
+            )
+
+    def test_candidate_resolution_accepts_repo_relative_and_absolute_packages(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo = Path(temp_dir)
+            candidate = repo / "working" / "next-demo"
+            candidate.mkdir(parents=True)
+            (candidate / "SKILL.md").write_text(
+                "---\nname: demo\ndescription: Use for improved demo tasks.\n---\n\n# Demo\n",
+                encoding="utf-8",
+            )
+
+            relative = resolve_candidate_skill(repo, Path("working/next-demo"), "demo")
+            absolute = resolve_candidate_skill(repo, candidate, "demo")
+
+            self.assertEqual(relative, candidate.resolve())
+            self.assertEqual(absolute, candidate.resolve())
+
+    def test_candidate_resolution_rejects_missing_malformed_and_mismatched_packages(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo = Path(temp_dir)
+
+            with self.assertRaisesRegex(EvalError, "does not exist"):
+                resolve_candidate_skill(repo, Path("missing"), "demo")
+
+            malformed = repo / "malformed"
+            malformed.mkdir()
+            (malformed / "SKILL.md").write_text("name: demo\n", encoding="utf-8")
+            with self.assertRaisesRegex(EvalError, "must start with YAML frontmatter"):
+                resolve_candidate_skill(repo, Path("malformed"), "demo")
+
+            mismatched = repo / "mismatched"
+            mismatched.mkdir()
+            (mismatched / "SKILL.md").write_text(
+                "---\nname: other\ndescription: Use for other tasks.\n---\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(EvalError, "logical skill identity mismatch"):
+                resolve_candidate_skill(repo, Path("mismatched"), "demo")
+
+            extra_metadata = repo / "extra-metadata"
+            extra_metadata.mkdir()
+            (extra_metadata / "SKILL.md").write_text(
+                "---\nname: demo\ndescription: Use for demo tasks.\nallowed-tools: Bash\n---\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(EvalError, "unsupported canonical frontmatter"):
+                resolve_candidate_skill(repo, Path("extra-metadata"), "demo")
+
+            missing_reference = repo / "missing-reference"
+            missing_reference.mkdir()
+            (missing_reference / "SKILL.md").write_text(
+                "---\nname: demo\ndescription: Use for demo tasks.\n---\n\n"
+                "Read `references/missing.md` before acting.\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(EvalError, "missing local path"):
+                resolve_candidate_skill(repo, Path("missing-reference"), "demo")
+
+            nonportable = repo / "working" / "nonportable"
+            nonportable.mkdir(parents=True)
+            (nonportable / "SKILL.md").write_text(
+                "---\nname: demo\ndescription: Use for demo tasks.\n---\n\n"
+                "Read ~/.codex/skills directly.\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(EvalError, "not portable"):
+                resolve_candidate_skill(repo, Path("working/nonportable"), "demo")
+
+    def test_candidate_validation_ignores_all_runtime_excluded_directories(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo = Path(temp_dir)
+            candidate = repo / "candidate"
+            candidate.mkdir()
+            (candidate / "SKILL.md").write_text(
+                "---\nname: demo\ndescription: Use for demo tasks.\n---\n",
+                encoding="utf-8",
+            )
+            for excluded_name in RUNTIME_EXCLUDED_NAMES:
+                excluded = candidate / excluded_name
+                excluded.mkdir()
+                (excluded / "note.txt").write_text(
+                    "Development-only note mentioning ~/.codex/skills.\n",
+                    encoding="utf-8",
+                )
+
+            resolved = resolve_candidate_skill(repo, candidate, "demo")
+            runtime = repo / "runtime"
+            runtime_skill_copy(resolved, runtime)
+
+            self.assertEqual(resolved, candidate.resolve())
+            for excluded_name in RUNTIME_EXCLUDED_NAMES:
+                self.assertFalse((runtime / excluded_name).exists())
+
+    def test_candidate_snapshot_is_immutable_and_digest_matches_runtime(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            current = root / "current"
+            candidate = root / "candidate"
+            snapshot = root / "snapshot" / "demo"
+            current.mkdir()
+            candidate.mkdir()
+            snapshot.parent.mkdir()
+            (current / "SKILL.md").write_text("current\n", encoding="utf-8")
+            original = (
+                "---\nname: demo\ndescription: Use for candidate demo tasks.\n---\n"
+                "\n# Candidate Demo\n"
+            )
+            (candidate / "SKILL.md").write_text(original, encoding="utf-8")
+
+            snapshot_candidate_skill(candidate, snapshot, "demo")
+            conditions = candidate_evaluation_conditions(current, snapshot)
+            (candidate / "SKILL.md").write_text("changed during evaluation\n", encoding="utf-8")
+
+            candidate_condition = conditions[2]
+            self.assertEqual(candidate_condition.runtime_skill_dir, snapshot.resolve())
+            self.assertEqual(
+                candidate_condition.runtime_digest_sha256,
+                stable_digest(snapshot, exclude=RUNTIME_EXCLUDED_NAMES),
+            )
+            self.assertEqual((snapshot / "SKILL.md").read_text(encoding="utf-8"), original)
+
+    def test_candidate_and_current_packages_must_not_be_nested(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            current = root / "current"
+            nested_candidate = current / "candidate"
+            sibling_candidate = root / "candidate"
+            nested_current = sibling_candidate / "current"
+
+            with self.assertRaisesRegex(EvalError, "must not be nested"):
+                validate_candidate_separation(current, nested_candidate)
+            with self.assertRaisesRegex(EvalError, "must not be nested"):
+                validate_candidate_separation(nested_current, sibling_candidate)
+            validate_candidate_separation(current, sibling_candidate)
+
+    def test_candidate_nested_in_repository_peer_fails_before_runner_creation(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo = Path(temp_dir)
+            skill = repo / "skills" / "demo"
+            peer = repo / "skills" / "peer"
+            candidate = peer / "candidate"
+            skill.mkdir(parents=True)
+            candidate.mkdir(parents=True)
+            (skill / "SKILL.md").write_text(
+                "---\nname: demo\ndescription: Use for demo tasks.\n---\n",
+                encoding="utf-8",
+            )
+            (peer / "SKILL.md").write_text(
+                "---\nname: peer\ndescription: Use for peer tasks.\n---\n",
+                encoding="utf-8",
+            )
+            (candidate / "SKILL.md").write_text(
+                "---\nname: demo\ndescription: Use for candidate demo tasks.\n---\n",
+                encoding="utf-8",
+            )
+
+            with (
+                mock.patch.object(eval_skills, "CodexRunner") as runner,
+                contextlib.redirect_stderr(io.StringIO()) as stderr,
+            ):
+                status = eval_skills.main(
+                    [
+                        "--repo-root",
+                        str(repo),
+                        "--skill",
+                        "demo",
+                        "--candidate",
+                        str(candidate),
+                        "--plan",
+                    ]
+                )
+
+            self.assertEqual(status, 1)
+            self.assertIn("must not be nested", stderr.getvalue())
+            runner.assert_not_called()
+
+    def test_candidate_mode_snapshots_current_and_candidate_for_the_whole_run(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo = Path(temp_dir)
+            current = repo / "skills" / "demo"
+            candidate = repo / "candidate"
+            current.mkdir(parents=True)
+            candidate.mkdir()
+            current_text = "---\nname: demo\ndescription: Current demo.\n---\n\n# Current\n"
+            candidate_text = "---\nname: demo\ndescription: Candidate demo.\n---\n\n# Candidate\n"
+            (current / "SKILL.md").write_text(current_text, encoding="utf-8")
+            (candidate / "SKILL.md").write_text(candidate_text, encoding="utf-8")
+            args = eval_skills.build_parser().parse_args(
+                [
+                    "--repo-root",
+                    str(repo),
+                    "--skill",
+                    "demo",
+                    "--candidate",
+                    str(candidate),
+                    "--plan",
+                ]
+            )
+
+            def inspect_snapshots(
+                _args,
+                _repo_root,
+                source_current,
+                current_runtime,
+                source_candidate,
+                candidate_runtime,
+            ):
+                self.assertNotEqual(current_runtime, source_current)
+                self.assertNotEqual(candidate_runtime, source_candidate)
+                (source_current / "SKILL.md").write_text("changed current\n", encoding="utf-8")
+                (source_candidate / "SKILL.md").write_text("changed candidate\n", encoding="utf-8")
+                self.assertEqual(
+                    (current_runtime / "SKILL.md").read_text(encoding="utf-8"),
+                    current_text,
+                )
+                self.assertEqual(
+                    (candidate_runtime / "SKILL.md").read_text(encoding="utf-8"),
+                    candidate_text,
+                )
+                return {}, Path()
+
+            with mock.patch.object(
+                eval_skills,
+                "_run_evaluation",
+                side_effect=inspect_snapshots,
+            ) as evaluate:
+                result, output = eval_skills.run_evaluation(args)
+
+            self.assertEqual(result, {})
+            self.assertEqual(output, Path())
+            evaluate.assert_called_once()
+
+    def test_candidate_validation_failure_precedes_runner_creation(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo = Path(temp_dir)
+            skill = repo / "skills" / "demo"
+            candidate = repo / "candidate"
+            eval_dir = repo / "evals" / "demo"
+            skill.mkdir(parents=True)
+            candidate.mkdir()
+            eval_dir.mkdir(parents=True)
+            (skill / "SKILL.md").write_text(
+                "---\nname: demo\ndescription: Use for demo tasks.\n---\n",
+                encoding="utf-8",
+            )
+            (candidate / "SKILL.md").write_text(
+                "---\nname: other\ndescription: Use for other tasks.\n---\n",
+                encoding="utf-8",
+            )
+            (eval_dir / "evals.json").write_text(
+                json.dumps(
+                    {
+                        "skill_name": "demo",
+                        "trigger_evals": [
+                            {
+                                "id": "1",
+                                "query": "Use the demo skill.",
+                                "should_trigger": True,
+                            }
+                        ],
+                        "behavior_evals": [],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with (
+                mock.patch.object(eval_skills, "CodexRunner") as runner,
+                contextlib.redirect_stderr(io.StringIO()) as stderr,
+            ):
+                status = eval_skills.main(
+                    [
+                        "--repo-root",
+                        str(repo),
+                        "--skill",
+                        "demo",
+                        "--candidate",
+                        str(candidate),
+                        "--output-root",
+                        str(repo / "output"),
+                    ]
+                )
+
+            self.assertEqual(status, 1)
+            self.assertIn("logical skill identity mismatch", stderr.getvalue())
+            runner.assert_not_called()
 
     def test_behavior_summary_uses_condition_ids_instead_of_fixed_keys(self) -> None:
         conditions = (
@@ -109,6 +434,56 @@ class EvalCoreTests(unittest.TestCase):
 
         with self.assertRaisesRegex(EvalError, "reserved behavior summary keys: efficiency"):
             summarize_behavior_results([], conditions)
+
+    def test_behavior_summary_reports_all_candidate_pairwise_comparisons(self) -> None:
+        conditions = (
+            EvaluationCondition("skill", None, None, "demo", "Current"),
+            EvaluationCondition("baseline", None, None, "demo", "Baseline"),
+            EvaluationCondition("candidate", None, None, "demo", "Candidate"),
+        )
+        run = {
+            "status": "completed",
+            "duration_seconds": 1.0,
+            "usage": {},
+            "tool_calls": 0,
+            "activated": False,
+        }
+        summary = summarize_behavior_results(
+            [
+                {
+                    "case_id": "case",
+                    "repeat": 1,
+                    "skill_run": run,
+                    "baseline_run": run,
+                    "candidate_run": run,
+                    "grades": {
+                        "skill": [{"passed": True}],
+                        "baseline": [{"passed": False}],
+                        "candidate": [{"passed": False}],
+                    },
+                    "judge": {"status": "completed"},
+                }
+            ],
+            conditions,
+        )
+
+        self.assertEqual(
+            set(summary["comparisons"]),
+            {
+                "current_vs_baseline",
+                "candidate_vs_baseline",
+                "candidate_vs_current",
+            },
+        )
+        self.assertEqual(summary["absolute_lift"], 1.0)
+        self.assertEqual(
+            summary["comparisons"]["candidate_vs_current"]["absolute_lift"],
+            -1.0,
+        )
+        self.assertEqual(
+            summary["comparisons"]["candidate_vs_current"]["paired_checks"]["right_wins"],
+            1,
+        )
 
     def test_duplicate_case_filters_are_rejected(self) -> None:
         case = TriggerCase("1", "demo", True)
@@ -910,7 +1285,8 @@ class EvalCliIntegrationTests(unittest.TestCase):
                 if "--output-schema" in args:
                     evidence = json.loads((Path.cwd() / "evidence.json").read_text())
                     candidates = []
-                    for candidate_number, label in enumerate(("A", "B")):
+                    labels = sorted(evidence["candidates"])
+                    for candidate_number, label in enumerate(labels):
                         checks = [
                             {
                                 "index": item["index"],
@@ -929,20 +1305,26 @@ class EvalCliIntegrationTests(unittest.TestCase):
                                 "weaknesses": [],
                             }
                         )
-                    final = json.dumps(
-                        {
-                            "candidates": candidates,
-                            "comparison": {
-                                "verdict": "A_better",
-                                "rationale": "fake comparison",
-                                "material_differences": [],
-                            },
+                    judgment = {"candidates": candidates}
+                    if len(labels) == 2:
+                        judgment["comparison"] = {
+                            "verdict": "A_better",
+                            "rationale": "fake comparison",
+                            "material_differences": [],
                         }
-                    )
+                    final = json.dumps(judgment)
                 else:
                     skill_file = home / ".agents" / "skills" / "demo" / "SKILL.md"
                     peer_file = home / ".agents" / "skills" / "peer" / "SKILL.md"
-                    final = "skill-assisted result" if skill_file.is_file() else "baseline result"
+                    skill_text = (
+                        skill_file.read_text(encoding="utf-8") if skill_file.is_file() else ""
+                    )
+                    if "# Candidate Demo" in skill_text:
+                        final = "candidate-assisted result"
+                    elif skill_file.is_file():
+                        final = "skill-assisted result"
+                    else:
+                        final = "baseline result"
                     final += f" peer={peer_file.is_file()}"
                     final += f" home_in_run={str(home).startswith(str(Path.cwd().parent))}"
                     final += f" auth_ephemeral={auth_is_regular and auth_removed}"
@@ -1187,6 +1569,161 @@ class EvalCliIntegrationTests(unittest.TestCase):
             self.assertTrue((result_paths[0].parent / "report.md").is_file())
             self.assertTrue((result_paths[0].parent / "report.html").is_file())
             self.assertEqual(list(result_paths[0].parent.glob("**/codex-home")), [])
+            default_report = (result_paths[0].parent / "report.md").read_text(encoding="utf-8")
+            self.assertIn("| Check | Skill | Baseline | Skill evidence |", default_report)
+            self.assertIn(
+                "- Skill and baseline ran in fresh isolated contexts: `True`",
+                default_report,
+            )
+            self.assertIn(
+                "- Paired grading used randomized labels: `True`",
+                default_report,
+            )
+            self.assertNotIn(
+                "<h3>Skill</h3>",
+                (result_paths[0].parent / "report.html").read_text(encoding="utf-8"),
+            )
+
+            candidate = repo / "skills" / "demo-next"
+            candidate.mkdir()
+            (candidate / "SKILL.md").write_text(
+                "---\n"
+                "name: demo\n"
+                "description: Use for candidate demo tasks with narrower triggering.\n"
+                "---\n\n"
+                "# Candidate Demo\n",
+                encoding="utf-8",
+            )
+            candidate_plan_output = io.StringIO()
+            with contextlib.redirect_stdout(candidate_plan_output):
+                candidate_plan_status = eval_skills.main(
+                    [
+                        "--repo-root",
+                        str(repo),
+                        "--skill",
+                        "demo",
+                        "--candidate",
+                        "skills/demo-next",
+                        "--suite",
+                        "all",
+                        "--plan",
+                    ]
+                )
+            self.assertEqual(candidate_plan_status, 0)
+            self.assertIn(
+                "Trigger cases: 2 × 1 × (current + candidate) = 4 turns",
+                candidate_plan_output.getvalue(),
+            )
+            self.assertIn(
+                "Behavior cases (maximum): 1 × 1 × "
+                "(current + baseline + candidate + condition-blind judge) = 4 turns",
+                candidate_plan_output.getvalue(),
+            )
+            self.assertIn("Maximum agent turns: 8", candidate_plan_output.getvalue())
+
+            candidate_output_root = repo / ".skill-evals-candidate"
+            with mock.patch.dict(os.environ, {"CODEX_HOME": str(codex_home)}):
+                with contextlib.redirect_stdout(io.StringIO()):
+                    candidate_status = eval_skills.main(
+                        [
+                            "--repo-root",
+                            str(repo),
+                            "--skill",
+                            "demo",
+                            "--candidate",
+                            "skills/demo-next",
+                            "--suite",
+                            "all",
+                            "--codex-binary",
+                            str(fake_codex),
+                            "--output-root",
+                            str(candidate_output_root),
+                        ]
+                    )
+
+            self.assertEqual(candidate_status, 0)
+            candidate_result_path = next(candidate_output_root.glob("demo/*/results.json"))
+            candidate_result = json.loads(candidate_result_path.read_text(encoding="utf-8"))
+            self.assertEqual(candidate_result["schema_version"], 2)
+            self.assertEqual(
+                set(candidate_result)
+                - {
+                    "candidate",
+                    "candidate_trigger",
+                },
+                set(result),
+            )
+            self.assertEqual(candidate_result["candidate"]["name"], "demo")
+            self.assertEqual(candidate_result["candidate"]["path"], str(candidate.resolve()))
+            self.assertNotEqual(
+                candidate_result["skill"]["runtime_digest_sha256"],
+                candidate_result["candidate"]["runtime_digest_sha256"],
+            )
+            self.assertEqual(candidate_result["runtime"]["peer_skills"], ["peer"])
+            self.assertEqual(len(candidate_result["trigger"]["runs"]), 2)
+            self.assertEqual(len(candidate_result["candidate_trigger"]["runs"]), 2)
+            self.assertTrue(
+                all(run["condition"] == "skill" for run in candidate_result["trigger"]["runs"])
+            )
+            self.assertTrue(
+                all(
+                    run["condition"] == "candidate"
+                    for run in candidate_result["candidate_trigger"]["runs"]
+                )
+            )
+            candidate_behavior = candidate_result["behavior"]["results"][0]
+            self.assertEqual(
+                set(candidate_behavior["grades"]),
+                {"skill", "baseline", "candidate"},
+            )
+            self.assertEqual(
+                set(candidate_behavior["judge"]["blind_map"].values()),
+                {"skill", "baseline", "candidate"},
+            )
+            self.assertEqual(candidate_behavior["skill_run"]["condition"], "skill")
+            self.assertEqual(
+                candidate_behavior["candidate_run"]["condition"],
+                "candidate",
+            )
+            self.assertEqual(
+                candidate_behavior["baseline_run"]["condition"],
+                "baseline",
+            )
+            for condition_id in ("skill", "baseline", "candidate"):
+                run = candidate_behavior[f"{condition_id}_run"]
+                self.assertEqual(
+                    (Path(run["workspace"]) / "input.txt").read_text(encoding="utf-8"),
+                    "equivalent fixture\n",
+                )
+                self.assertIn("peer=True", run["final_response"])
+            self.assertIn(
+                "skill-assisted result",
+                candidate_behavior["skill_run"]["final_response"],
+            )
+            self.assertIn(
+                "candidate-assisted result",
+                candidate_behavior["candidate_run"]["final_response"],
+            )
+            self.assertEqual(
+                set(candidate_result["behavior"]["summary"]["comparisons"]),
+                {
+                    "current_vs_baseline",
+                    "candidate_vs_baseline",
+                    "candidate_vs_current",
+                },
+            )
+            candidate_report = (candidate_result_path.parent / "report.md").read_text(
+                encoding="utf-8"
+            )
+            self.assertIn("### Pairwise comparisons", candidate_report)
+            self.assertIn("Candidate vs Current", candidate_report)
+            self.assertIn("### Current", candidate_report)
+            self.assertIn("### Candidate", candidate_report)
+            candidate_reproduce = shlex.split(candidate_result["reproduce_command"])
+            self.assertEqual(
+                candidate_reproduce[candidate_reproduce.index("--candidate") + 1],
+                "skills/demo-next",
+            )
 
             isolated_output_root = repo / ".skill-evals-isolated"
             with mock.patch.dict(os.environ, {"CODEX_HOME": str(codex_home)}):
@@ -1253,6 +1790,39 @@ class EvalCliIntegrationTests(unittest.TestCase):
                 self.assertIn(option, reproduce)
                 self.assertEqual(reproduce[reproduce.index(option) + 1], expected_value)
             self.assertIn("--no-allow-fixture-scripts", reproduce)
+
+            candidate_isolated_output = repo / ".skill-evals-candidate-isolated"
+            with mock.patch.dict(os.environ, {"CODEX_HOME": str(codex_home)}):
+                with contextlib.redirect_stdout(io.StringIO()):
+                    candidate_isolated_status = eval_skills.main(
+                        [
+                            "--repo-root",
+                            str(repo),
+                            "--skill",
+                            "demo",
+                            "--candidate",
+                            str(candidate),
+                            "--suite",
+                            "trigger",
+                            "--skill-universe",
+                            "isolated",
+                            "--codex-binary",
+                            str(fake_codex),
+                            "--output-root",
+                            str(candidate_isolated_output),
+                        ]
+                    )
+            self.assertEqual(candidate_isolated_status, 0)
+            candidate_isolated_result = json.loads(
+                next(candidate_isolated_output.glob("demo/*/results.json")).read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertFalse(candidate_isolated_result["integrity"]["peer_skill_parity"])
+            self.assertEqual(candidate_isolated_result["runtime"]["peer_skills"], [])
+            for trigger_group in ("trigger", "candidate_trigger"):
+                for run in candidate_isolated_result[trigger_group]["runs"]:
+                    self.assertIn("peer=False", run["final_response"])
 
 
 if __name__ == "__main__":

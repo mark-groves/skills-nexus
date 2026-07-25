@@ -35,7 +35,7 @@ verified contract; an unchecked item remains planned work.
 
 ## Phase 4 — Prove candidate improvements
 
-- [ ] Add current-versus-candidate evaluation alongside skill-versus-baseline.
+- [x] Add current-versus-candidate evaluation alongside skill-versus-baseline.
 - [ ] Require a reported corrective failure to reproduce against the current
       skill first.
 - [ ] Run the candidate against the new regression and the complete existing suite.
@@ -45,15 +45,17 @@ verified contract; an unchecked item remains planned work.
 
 ## Phase 5 — Optimise capability and context
 
-The implementation items below are ordered by dependency. The checked contract
-item is documentation only; current evaluator behavior remains unchanged.
+The implementation items below are ordered by dependency. The default
+two-condition evaluator behavior remains unchanged; candidate mode now adds the
+baseline/current/candidate comparison, while later optimisation tooling remains
+planned.
 
 - [x] Define separate corrective-improvement and context-reduction evidence
       paths, context budgets, review verdicts, and the higher retirement bar
       (#22).
-- [ ] Generalise evaluator condition handling without changing the default
+- [x] Generalise evaluator condition handling without changing the default
       two-condition behavior (#23).
-- [ ] Compare baseline, current, and candidate conditions (#24).
+- [x] Compare baseline, current, and candidate conditions (#24).
 - [ ] Report discovery, activation, conditional, and dynamic context costs
       separately (#25).
 - [ ] Add protected checks, skill-specific non-inferiority rules, and

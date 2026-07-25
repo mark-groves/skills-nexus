@@ -10,6 +10,7 @@ import re
 import shutil
 import statistics
 import subprocess
+import tempfile
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
@@ -26,6 +27,7 @@ BEHAVIOR_SUMMARY_RESERVED_KEYS = frozenset(
         "absolute_lift",
         "lift_percentage_points",
         "paired_checks",
+        "comparisons",
         "case_pass_rate",
         "behavior_activation_rate",
         "efficiency",
@@ -266,6 +268,181 @@ def default_evaluation_conditions(skill_dir: Path) -> tuple[EvaluationCondition,
             display_label="Baseline",
         ),
     )
+
+
+def candidate_evaluation_conditions(
+    skill_dir: Path,
+    candidate_dir: Path,
+) -> tuple[EvaluationCondition, ...]:
+    """Return current, baseline, and candidate conditions for one logical skill."""
+    runtime_skill_dir = skill_dir.resolve()
+    candidate_skill_dir = candidate_dir.resolve()
+    installation_name = runtime_skill_dir.name
+    return (
+        EvaluationCondition(
+            id="skill",
+            runtime_skill_dir=runtime_skill_dir,
+            runtime_digest_sha256=stable_digest(
+                runtime_skill_dir,
+                exclude=RUNTIME_EXCLUDED_NAMES,
+            ),
+            installation_name=installation_name,
+            display_label="Current",
+        ),
+        EvaluationCondition(
+            id="baseline",
+            runtime_skill_dir=None,
+            runtime_digest_sha256=None,
+            installation_name=installation_name,
+            display_label="Baseline",
+        ),
+        EvaluationCondition(
+            id="candidate",
+            runtime_skill_dir=candidate_skill_dir,
+            runtime_digest_sha256=stable_digest(
+                candidate_skill_dir,
+                exclude=RUNTIME_EXCLUDED_NAMES,
+            ),
+            installation_name=installation_name,
+            display_label="Candidate",
+        ),
+    )
+
+
+def validate_candidate_separation(skill_dir: Path, candidate_dir: Path) -> None:
+    """Reject nested packages whose runtime trees would contaminate one another."""
+    current = skill_dir.resolve()
+    candidate = candidate_dir.resolve()
+    if current == candidate:
+        return
+    if current in candidate.parents or candidate in current.parents:
+        raise EvalError(
+            f"Candidate and current skill packages must not be nested: {candidate} and {current}"
+        )
+
+
+def resolve_candidate_skill(repo_root: Path, selector: Path, logical_name: str) -> Path:
+    """Resolve and validate a publishable candidate for the selected logical skill."""
+    supplied = selector.expanduser()
+    candidate = supplied if supplied.is_absolute() else repo_root.resolve() / supplied
+    if candidate.is_symlink():
+        raise EvalError(f"Candidate skill directory may not be a symlink: {candidate}")
+    candidate = candidate.resolve()
+    if not candidate.is_dir():
+        raise EvalError(f"Candidate skill directory does not exist: {candidate}")
+
+    skill_md = candidate / "SKILL.md"
+    if skill_md.is_symlink():
+        raise EvalError(f"Candidate SKILL.md may not be a symlink: {skill_md}")
+    if not skill_md.is_file():
+        raise EvalError(f"Candidate is not a publishable skill package: missing {skill_md}")
+    try:
+        text = skill_md.read_text(encoding="utf-8")
+    except UnicodeDecodeError as exc:
+        raise EvalError(f"Candidate SKILL.md must be UTF-8: {skill_md}") from exc
+    lines = text.splitlines()
+    if not lines or lines[0].strip() != "---":
+        raise EvalError(f"Candidate SKILL.md must start with YAML frontmatter: {skill_md}")
+    closing = next(
+        (
+            index
+            for index, line in enumerate(lines[1:], start=1)
+            if line.strip() == "---" and not line.startswith((" ", "\t"))
+        ),
+        None,
+    )
+    if closing is None:
+        raise EvalError(
+            f"Candidate SKILL.md frontmatter is missing a closing delimiter: {skill_md}"
+        )
+
+    # Reuse the repository's canonical, dependency-free YAML subset parser so
+    # candidate packages obey the same publishable metadata contract.
+    import validate_repo
+
+    previous_error_count = len(validate_repo.ERRORS)
+    payload = validate_repo.parse_yaml_string_map(
+        "\n".join(lines[1:closing]),
+        str(skill_md),
+    )
+    parse_errors = validate_repo.ERRORS[previous_error_count:]
+    del validate_repo.ERRORS[previous_error_count:]
+    if payload is None or parse_errors:
+        detail = "; ".join(parse_errors) or "invalid YAML frontmatter"
+        raise EvalError(f"Candidate SKILL.md is malformed: {detail}")
+
+    extra_keys = sorted(set(payload) - validate_repo.ALLOWED_FRONTMATTER_KEYS)
+    if extra_keys:
+        raise EvalError(
+            "Candidate SKILL.md has unsupported canonical frontmatter keys: "
+            + ", ".join(extra_keys)
+        )
+    name_value = payload.get("name", "")
+    name = name_value.strip() if isinstance(name_value, str) else ""
+    if not name or not validate_repo.NAME_RE.fullmatch(name):
+        raise EvalError(f"Candidate SKILL.md has an invalid name: {name!r}")
+    if name != logical_name:
+        raise EvalError(
+            f"Candidate logical skill identity mismatch: expected {logical_name!r}, found {name!r}"
+        )
+    description_value = payload.get("description", "")
+    description = description_value.strip() if isinstance(description_value, str) else ""
+    if not description:
+        raise EvalError("Candidate SKILL.md is missing a non-empty description")
+    if len(description) > 1024:
+        raise EvalError("Candidate SKILL.md description exceeds 1024 characters")
+
+    for file_path in candidate.rglob("*"):
+        relative = file_path.relative_to(candidate)
+        if (
+            not file_path.is_file()
+            or file_path.is_symlink()
+            or any(part in RUNTIME_EXCLUDED_NAMES for part in relative.parts)
+        ):
+            continue
+        try:
+            file_text = file_path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            continue
+        for pattern in (
+            *validate_repo.HARD_CODED_INSTALL_ROOTS,
+            *validate_repo.FORBIDDEN_DISCOVERY_PATTERNS,
+        ):
+            if pattern in file_text:
+                raise EvalError(
+                    f"Candidate package is not portable: {file_path} contains {pattern!r}"
+                )
+        parent_ref = validate_repo.PARENT_PATH_RE.search(file_text)
+        if parent_ref is not None:
+            raise EvalError(
+                "Candidate package is not portable: "
+                f"{file_path} contains parent path {parent_ref.group(1)!r}"
+            )
+
+    for token in validate_repo.iter_inline_code_tokens(text):
+        if not validate_repo.is_explicit_skill_local_path(token):
+            continue
+        local_path = (candidate / token).resolve()
+        try:
+            local_path.relative_to(candidate)
+        except ValueError as exc:
+            raise EvalError(f"Candidate SKILL.md path escapes the package: `{token}`") from exc
+        if not local_path.exists():
+            raise EvalError(f"Candidate SKILL.md references a missing local path: `{token}`")
+
+    with tempfile.TemporaryDirectory(prefix="skill-eval-candidate-validation-") as temp_dir:
+        runtime_skill_copy(candidate, Path(temp_dir) / logical_name)
+    return candidate
+
+
+def snapshot_candidate_skill(
+    candidate_dir: Path,
+    destination: Path,
+    logical_name: str,
+) -> Path:
+    """Create and validate the immutable candidate runtime used for one evaluation."""
+    runtime_skill_copy(candidate_dir, destination)
+    return resolve_candidate_skill(destination.parent, destination, logical_name)
 
 
 def runtime_skill_copy(skill_dir: Path, destination: Path) -> None:
@@ -737,62 +914,51 @@ def summarize_behavior_results(
     conditions: tuple[EvaluationCondition, ...],
 ) -> dict[str, Any]:
     condition_ids = tuple(condition.id for condition in conditions)
-    if len(conditions) != 2 or len(set(condition_ids)) != len(condition_ids):
-        raise EvalError("paired behavior summaries require exactly two distinct conditions")
+    if len(conditions) not in {2, 3} or len(set(condition_ids)) != len(condition_ids):
+        raise EvalError("behavior summaries require two or three distinct conditions")
     reserved_ids = sorted(set(condition_ids) & BEHAVIOR_SUMMARY_RESERVED_KEYS)
     if reserved_ids:
         raise EvalError(
             "condition id(s) collide with reserved behavior summary keys: "
             + ", ".join(reserved_ids)
         )
-    primary, comparison = conditions
+    primary, comparison = conditions[:2]
     grades_by_condition: dict[str, list[dict[str, Any]]] = {
         condition.id: [] for condition in conditions
     }
-    wins = regressions = ties = unknown_pairs = 0
     case_passes = {condition.id: 0 for condition in conditions}
     graded_cases = 0
     case_summaries: list[dict[str, Any]] = []
 
     for result in results:
         result_grades = result.get("grades", {})
-        primary_grades = result_grades.get(primary.id, [])
-        comparison_grades = result_grades.get(comparison.id, [])
-        grades_by_condition[primary.id].extend(primary_grades)
-        grades_by_condition[comparison.id].extend(comparison_grades)
-        if primary_grades or comparison_grades:
+        for condition in conditions:
+            grades_by_condition[condition.id].extend(result_grades.get(condition.id, []))
+        if any(result_grades.get(condition.id, []) for condition in conditions):
             graded_cases += 1
         condition_case_passes = {
-            primary.id: bool(primary_grades)
-            and all(item.get("passed") is True for item in primary_grades),
-            comparison.id: bool(comparison_grades)
-            and all(item.get("passed") is True for item in comparison_grades),
+            condition.id: bool(result_grades.get(condition.id, []))
+            and all(item.get("passed") is True for item in result_grades.get(condition.id, []))
+            for condition in conditions
         }
         for condition in conditions:
             case_passes[condition.id] += condition_case_passes[condition.id]
-        for primary_item, comparison_item in zip(
-            primary_grades,
-            comparison_grades,
-            strict=False,
-        ):
-            pair = (primary_item.get("passed"), comparison_item.get("passed"))
-            if pair == (True, False):
-                wins += 1
-            elif pair == (False, True):
-                regressions += 1
-            elif None in pair:
-                unknown_pairs += 1
-            else:
-                ties += 1
         case_summaries.append(
             {
                 "id": result["case_id"],
                 "repeat": result["repeat"],
-                f"{primary.id}_case_pass": condition_case_passes[primary.id],
-                f"{comparison.id}_case_pass": condition_case_passes[comparison.id],
-                f"{primary.id}_status": result[f"{primary.id}_run"]["status"],
-                f"{comparison.id}_status": result[f"{comparison.id}_run"]["status"],
-                f"{primary.id}_activated": result[f"{primary.id}_run"].get("activated"),
+                **{
+                    f"{condition.id}_case_pass": condition_case_passes[condition.id]
+                    for condition in conditions
+                },
+                **{
+                    f"{condition.id}_status": result[f"{condition.id}_run"]["status"]
+                    for condition in conditions
+                },
+                **{
+                    f"{condition.id}_activated": result[f"{condition.id}_run"].get("activated")
+                    for condition in conditions
+                },
                 "fixture_fidelity": result.get("fixture_fidelity"),
                 "judge_status": result.get("judge", {}).get("status"),
             }
@@ -801,13 +967,48 @@ def summarize_behavior_results(
     counts = {
         condition.id: _grade_counts(grades_by_condition[condition.id]) for condition in conditions
     }
-    primary_rate = counts[primary.id]["pass_rate"]
-    comparison_rate = counts[comparison.id]["pass_rate"]
-    lift = (
-        primary_rate - comparison_rate
-        if isinstance(primary_rate, float) and isinstance(comparison_rate, float)
-        else None
-    )
+
+    def compare(
+        left: EvaluationCondition,
+        right: EvaluationCondition,
+    ) -> dict[str, Any]:
+        left_rate = counts[left.id]["pass_rate"]
+        right_rate = counts[right.id]["pass_rate"]
+        lift = (
+            left_rate - right_rate
+            if isinstance(left_rate, float) and isinstance(right_rate, float)
+            else None
+        )
+        left_wins = right_wins = ties = unknown = 0
+        for result in results:
+            left_grades = result.get("grades", {}).get(left.id, [])
+            right_grades = result.get("grades", {}).get(right.id, [])
+            for left_item, right_item in zip(left_grades, right_grades, strict=False):
+                pair = (left_item.get("passed"), right_item.get("passed"))
+                if pair == (True, False):
+                    left_wins += 1
+                elif pair == (False, True):
+                    right_wins += 1
+                elif None in pair:
+                    unknown += 1
+                else:
+                    ties += 1
+        return {
+            "left_condition": left.id,
+            "left_label": left.display_label,
+            "right_condition": right.id,
+            "right_label": right.display_label,
+            "absolute_lift": lift,
+            "lift_percentage_points": lift * 100 if lift is not None else None,
+            "paired_checks": {
+                "left_wins": left_wins,
+                "right_wins": right_wins,
+                "ties": ties,
+                "unknown": unknown,
+            },
+        }
+
+    current_vs_baseline = compare(primary, comparison)
 
     runs_by_condition = {
         condition.id: [result[f"{condition.id}_run"] for result in results]
@@ -834,15 +1035,15 @@ def summarize_behavior_results(
     activation_completed = [
         run for run in runs_by_condition[primary.id] if run["status"] == "completed"
     ]
-    return {
+    summary = {
         **counts,
-        "absolute_lift": lift,
-        "lift_percentage_points": lift * 100 if lift is not None else None,
+        "absolute_lift": current_vs_baseline["absolute_lift"],
+        "lift_percentage_points": current_vs_baseline["lift_percentage_points"],
         "paired_checks": {
-            "skill_wins": wins,
-            "regressions": regressions,
-            "ties": ties,
-            "unknown": unknown_pairs,
+            "skill_wins": current_vs_baseline["paired_checks"]["left_wins"],
+            "regressions": current_vs_baseline["paired_checks"]["right_wins"],
+            "ties": current_vs_baseline["paired_checks"]["ties"],
+            "unknown": current_vs_baseline["paired_checks"]["unknown"],
         },
         "case_pass_rate": {
             **{
@@ -860,6 +1061,14 @@ def summarize_behavior_results(
         },
         "cases": case_summaries,
     }
+    if len(conditions) == 3:
+        candidate = conditions[2]
+        summary["comparisons"] = {
+            "current_vs_baseline": current_vs_baseline,
+            "candidate_vs_baseline": compare(candidate, comparison),
+            "candidate_vs_current": compare(candidate, primary),
+        }
+    return summary
 
 
 def efficacy_profile(
