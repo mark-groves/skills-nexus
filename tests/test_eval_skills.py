@@ -158,6 +158,16 @@ class EvalCoreTests(unittest.TestCase):
             with self.assertRaisesRegex(EvalError, "missing local path"):
                 resolve_candidate_skill(repo, Path("missing-reference"), "demo")
 
+            nonportable = repo / "working" / "nonportable"
+            nonportable.mkdir(parents=True)
+            (nonportable / "SKILL.md").write_text(
+                "---\nname: demo\ndescription: Use for demo tasks.\n---\n\n"
+                "Read ~/.codex/skills directly.\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(EvalError, "not portable"):
+                resolve_candidate_skill(repo, Path("working/nonportable"), "demo")
+
     def test_candidate_validation_failure_precedes_runner_creation(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             repo = Path(temp_dir)

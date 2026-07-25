@@ -5,11 +5,11 @@ runtime cost as models and harnesses change. It complements corrective
 improvement; it does not lower the evidence standard or turn the absence of a
 known failure into proof that instructions are redundant.
 
-This guide defines the repository contract for future capability-review
-tooling. The current evaluator still compares a complete skill with a no-skill
-baseline. It does not yet execute current-versus-candidate reviews, enforce the
-gates below, or perform component ablation. Those implementation steps are
-tracked in the [roadmap](../ROADMAP.md).
+This guide defines the repository contract for capability-review tooling. The
+current evaluator can compare baseline, current, and candidate packages, but it
+does not yet enforce the gates below, report context metrics, run required model
+profiles, or perform component ablation. Those implementation steps are tracked
+in the [roadmap](../ROADMAP.md).
 
 ## Two evidence paths
 

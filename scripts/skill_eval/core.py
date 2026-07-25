@@ -381,11 +381,12 @@ def resolve_candidate_skill(repo_root: Path, selector: Path, logical_name: str) 
         raise EvalError("Candidate SKILL.md description exceeds 1024 characters")
 
     for file_path in candidate.rglob("*"):
+        relative = file_path.relative_to(candidate)
         if (
             not file_path.is_file()
             or file_path.is_symlink()
-            or "working" in file_path.parts
-            or "__pycache__" in file_path.parts
+            or "working" in relative.parts
+            or "__pycache__" in relative.parts
         ):
             continue
         try:
