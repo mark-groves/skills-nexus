@@ -936,6 +936,10 @@ class EvalCoreTests(unittest.TestCase):
                 },
                 "dynamic_input_token_reduction": 100,
             },
+            configured_trigger_case_ids=("positive", "negative"),
+            selected_trigger_case_ids=("positive", "negative"),
+            configured_behavior_case_ids=("detached",),
+            selected_behavior_case_ids=("detached",),
             trigger_repeats=2,
             behavior_repeats=2,
             fixture_parity=True,
@@ -1006,6 +1010,10 @@ class EvalCoreTests(unittest.TestCase):
                 },
                 "dynamic_input_token_reduction": 1,
             },
+            "configured_trigger_case_ids": ("positive", "negative"),
+            "selected_trigger_case_ids": ("positive", "negative"),
+            "configured_behavior_case_ids": ("contract",),
+            "selected_behavior_case_ids": ("contract",),
             "trigger_repeats": 2,
             "behavior_repeats": 2,
             "fixture_parity": True,
@@ -1032,6 +1040,21 @@ class EvalCoreTests(unittest.TestCase):
         )
         self.assertEqual(approved["verdict"], "approved")
         self.assertTrue(approved["approved"])
+
+        base_arguments["selected_behavior_case_ids"] = ()
+        filtered_suite = summarize_optimisation_review(
+            policy=ReviewPolicy(minimum_lift_over_baseline=0.0),
+            **base_arguments,
+        )
+        self.assertEqual(filtered_suite["verdict"], "insufficient-evidence")
+        suite_gate = next(
+            gate
+            for gate in filtered_suite["dimensions"]["integrity"]["gates"]
+            if gate["id"] == "complete-suite-coverage"
+        )
+        self.assertEqual(suite_gate["status"], "insufficient-evidence")
+        self.assertFalse(suite_gate["observed"]["behavior"]["complete"])
+        base_arguments["selected_behavior_case_ids"] = ("contract",)
 
         missing_policy = summarize_optimisation_review(
             policy=None,

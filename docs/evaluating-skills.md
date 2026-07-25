@@ -150,6 +150,12 @@ so results remain inspectable, but the policy gate is
 Unknown evidence on a hard protected check is also
 `insufficient-evidence`, never a pass.
 
+Approval also requires the exact full configured trigger and behavior case
+sets. `--trigger-case`, `--behavior-case`, `--max-trigger-cases`, and
+`--max-behavior-cases` remain useful for diagnostic candidate runs, but any
+filtered or capped suite receives an `insufficient-evidence` complete-suite
+gate and cannot exit as approved.
+
 ## Fixtures and isolation
 
 Fixture references in `evals/<name>/evals.json` are relative to that eval

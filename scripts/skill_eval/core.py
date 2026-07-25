@@ -812,6 +812,10 @@ def summarize_optimisation_review(
     current_trigger_summary: dict[str, Any] | None,
     candidate_trigger_summary: dict[str, Any] | None,
     candidate_comparison: dict[str, Any],
+    configured_trigger_case_ids: tuple[str, ...],
+    selected_trigger_case_ids: tuple[str, ...],
+    configured_behavior_case_ids: tuple[str, ...],
+    selected_behavior_case_ids: tuple[str, ...],
     trigger_repeats: int,
     behavior_repeats: int,
     fixture_parity: bool,
@@ -1023,6 +1027,16 @@ def summarize_optimisation_review(
             "never approve an optimisation."
         ),
     )
+    complete_trigger_suite = (
+        bool(configured_trigger_case_ids)
+        and len(selected_trigger_case_ids) == len(configured_trigger_case_ids)
+        and set(selected_trigger_case_ids) == set(configured_trigger_case_ids)
+    )
+    complete_behavior_suite = (
+        bool(configured_behavior_case_ids)
+        and len(selected_behavior_case_ids) == len(configured_behavior_case_ids)
+        and set(selected_behavior_case_ids) == set(configured_behavior_case_ids)
+    )
     add_gate(
         "integrity",
         "complete-suite-coverage",
@@ -1030,14 +1044,35 @@ def summarize_optimisation_review(
         if current_trigger_summary is not None
         and candidate_trigger_summary is not None
         and behavior_summary is not None
+        and complete_trigger_suite
+        and complete_behavior_suite
         else "insufficient-evidence",
         observed={
-            "current_trigger": current_trigger_summary is not None,
-            "candidate_trigger": candidate_trigger_summary is not None,
-            "behavior": behavior_summary is not None,
+            "trigger": {
+                "configured_case_ids": list(configured_trigger_case_ids),
+                "selected_case_ids": list(selected_trigger_case_ids),
+                "complete": complete_trigger_suite,
+                "current_summary": current_trigger_summary is not None,
+                "candidate_summary": candidate_trigger_summary is not None,
+            },
+            "behavior": {
+                "configured_case_ids": list(configured_behavior_case_ids),
+                "selected_case_ids": list(selected_behavior_case_ids),
+                "complete": complete_behavior_suite,
+                "summary": behavior_summary is not None,
+            },
         },
-        required={"current_trigger": True, "candidate_trigger": True, "behavior": True},
-        detail="Optimisation approval requires both trigger and behavior suites.",
+        required={
+            "all_configured_trigger_cases": True,
+            "all_configured_behavior_cases": True,
+            "current_trigger_summary": True,
+            "candidate_trigger_summary": True,
+            "behavior_summary": True,
+        },
+        detail=(
+            "Optimisation approval requires every configured trigger and behavior "
+            "case; filtered or capped suites remain report-only."
+        ),
     )
     add_gate(
         "integrity",
