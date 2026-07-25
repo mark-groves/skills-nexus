@@ -17,6 +17,18 @@ def _number(value: object, digits: int = 1) -> str:
     return "—" if not isinstance(value, (int, float)) else f"{value:.{digits}f}"
 
 
+def _integer(value: object) -> str:
+    return "—" if not isinstance(value, int) or isinstance(value, bool) else f"{value:,}"
+
+
+def _signed(value: object, digits: int = 0) -> str:
+    return (
+        "—"
+        if not isinstance(value, (int, float)) or isinstance(value, bool)
+        else f"{value:+.{digits}f}"
+    )
+
+
 def _mark(value: object) -> str:
     return "✅" if value is True else "❌" if value is False else "❔"
 
@@ -61,6 +73,69 @@ def _comparison_rows(summary: dict[str, Any]) -> list[str]:
     return rows
 
 
+def _static_markdown_rows(
+    result: dict[str, Any],
+    conditions: tuple[EvaluationCondition, ...],
+) -> list[str]:
+    footprints = result["context_footprint"]
+    rows: list[str] = []
+    for condition in conditions:
+        footprint = footprints[condition.id]
+        description = footprint["description"]
+        body = footprint["skill_md_body"]
+        package = footprint["runtime_package"]
+        digest = package["digest_sha256"]
+        rows.append(
+            f"| {_markdown_label(condition.display_label)} | "
+            f"{_integer(description['characters'])} / {_integer(description['utf8_bytes'])} | "
+            f"{_integer(body['characters'])} / {_integer(body['utf8_bytes'])} | "
+            f"{_integer(package['file_count'])} / {_integer(package['bytes'])} | "
+            f"`{digest[:12]}` |"
+            if digest
+            else f"| {_markdown_label(condition.display_label)} | "
+            f"{_integer(description['characters'])} / {_integer(description['utf8_bytes'])} | "
+            f"{_integer(body['characters'])} / {_integer(body['utf8_bytes'])} | "
+            f"{_integer(package['file_count'])} / {_integer(package['bytes'])} | — |"
+        )
+    return rows
+
+
+def _candidate_markdown(result: dict[str, Any]) -> list[str]:
+    comparison = result.get("candidate_comparison")
+    if not comparison:
+        return []
+    reductions = comparison["static_reductions"]
+    paired = comparison["paired_checks"]
+    return [
+        "## Candidate change",
+        "",
+        "Quality is Candidate minus comparison; reductions are Current minus Candidate. "
+        "Positive values therefore mean higher candidate quality or a smaller candidate context.",
+        "",
+        "| Measure | Candidate change |",
+        "|---|---:|",
+        f"| Quality vs Current | "
+        f"{_signed(comparison['candidate_minus_current_quality_percentage_points'], 1)} pp |",
+        f"| Lift over Baseline | "
+        f"{_signed(comparison['candidate_lift_over_baseline_percentage_points'], 1)} pp |",
+        f"| Description characters / UTF-8 bytes | "
+        f"{_signed(reductions['description_characters'])} / "
+        f"{_signed(reductions['description_utf8_bytes'])} |",
+        f"| `SKILL.md` body characters / UTF-8 bytes | "
+        f"{_signed(reductions['skill_md_body_characters'])} / "
+        f"{_signed(reductions['skill_md_body_utf8_bytes'])} |",
+        f"| Runtime-package files / bytes | "
+        f"{_signed(reductions['runtime_package_files'])} / "
+        f"{_signed(reductions['runtime_package_bytes'])} |",
+        f"| Dynamic input tokens | {_signed(comparison['dynamic_input_token_reduction'])} |",
+        "",
+        f"Paired checks: {paired['wins']} candidate wins, "
+        f"{paired['regressions']} regressions, {paired['ties']} ties, "
+        f"{paired['unknown']} unknown.",
+        "",
+    ]
+
+
 def render_markdown(
     result: dict[str, Any],
     conditions: tuple[EvaluationCondition, ...],
@@ -85,7 +160,16 @@ def render_markdown(
         "",
         f"> {profile['formula']} {profile['note']}",
         "",
+        "## Context footprint",
+        "",
+        "Portable static measurements are canonical; token counts come only from runner usage.",
+        "",
+        "| Condition | Description chars / bytes | Body chars / bytes | Package files / bytes | Digest |",
+        "|---|---:|---:|---:|---|",
+        *_static_markdown_rows(result, conditions),
+        "",
     ]
+    lines.extend(_candidate_markdown(result))
 
     trigger_entries = _trigger_entries(result, conditions)
     if trigger_entries:
@@ -153,8 +237,9 @@ def render_markdown(
             )
         lines.extend(
             [
-                "| Condition | Check pass | Evidence | Median time | Median tokens | Tool calls |",
-                "|---|---:|---:|---:|---:|---:|",
+                "| Condition | Check pass | Evidence | Input tokens | Output tokens | "
+                "Total tokens | Median time | Tool calls | Runs complete / failed |",
+                "|---|---:|---:|---:|---:|---:|---:|---:|---:|",
             ]
         )
         for condition in conditions:
@@ -164,9 +249,12 @@ def render_markdown(
                 f"| {_markdown_label(condition.display_label)} | "
                 f"{_percent(condition_summary['pass_rate'])} | "
                 f"{_percent(condition_summary['evidence_coverage'])} | "
+                f"{_integer(efficiency['input_tokens'])} | "
+                f"{_integer(efficiency['output_tokens'])} | "
+                f"{_integer(efficiency['total_tokens'])} | "
                 f"{_number(efficiency['median_duration_seconds'])}s | "
-                f"{_number(efficiency['median_tokens'], 0)} | "
-                f"{efficiency['tool_calls']} |"
+                f"{_integer(efficiency['tool_calls'])} | "
+                f"{efficiency['completed_runs']} / {efficiency['failed_runs']} |"
             )
         lines.append("")
 
@@ -275,6 +363,80 @@ def render_html(
 ) -> str:
     conditions = _validated_conditions(conditions)
     profile = result["efficacy"]
+    footprints = result["context_footprint"]
+    footprint_rows = ""
+    for condition in conditions:
+        footprint = footprints[condition.id]
+        description = footprint["description"]
+        body = footprint["skill_md_body"]
+        package = footprint["runtime_package"]
+        digest = package["digest_sha256"]
+        footprint_rows += (
+            "<tr>"
+            f"<td>{html.escape(condition.display_label)}</td>"
+            f"<td>{_integer(description['characters'])} / "
+            f"{_integer(description['utf8_bytes'])}</td>"
+            f"<td>{_integer(body['characters'])} / {_integer(body['utf8_bytes'])}</td>"
+            f"<td>{_integer(package['file_count'])} / {_integer(package['bytes'])}</td>"
+            f"<td>{f'<code>{digest[:12]}</code>' if digest else '—'}</td>"
+            "</tr>"
+        )
+    footprint_section = (
+        "<section><h2>Context footprint</h2>"
+        "<p>Portable static measurements are canonical; token counts come only "
+        "from runner usage.</p>"
+        "<table><thead><tr><th>Condition</th><th>Description chars / bytes</th>"
+        "<th>Body chars / bytes</th><th>Package files / bytes</th><th>Digest</th>"
+        f"</tr></thead><tbody>{footprint_rows}</tbody></table></section>"
+    )
+    candidate_section = ""
+    candidate_comparison = result.get("candidate_comparison")
+    if candidate_comparison:
+        reductions = candidate_comparison["static_reductions"]
+        paired = candidate_comparison["paired_checks"]
+        candidate_rows = "".join(
+            f"<tr><td>{html.escape(label)}</td><td>{value}</td></tr>"
+            for label, value in (
+                (
+                    "Quality vs Current",
+                    f"{_signed(candidate_comparison['candidate_minus_current_quality_percentage_points'], 1)} pp",
+                ),
+                (
+                    "Lift over Baseline",
+                    f"{_signed(candidate_comparison['candidate_lift_over_baseline_percentage_points'], 1)} pp",
+                ),
+                (
+                    "Description characters / UTF-8 bytes",
+                    f"{_signed(reductions['description_characters'])} / "
+                    f"{_signed(reductions['description_utf8_bytes'])}",
+                ),
+                (
+                    "SKILL.md body characters / UTF-8 bytes",
+                    f"{_signed(reductions['skill_md_body_characters'])} / "
+                    f"{_signed(reductions['skill_md_body_utf8_bytes'])}",
+                ),
+                (
+                    "Runtime-package files / bytes",
+                    f"{_signed(reductions['runtime_package_files'])} / "
+                    f"{_signed(reductions['runtime_package_bytes'])}",
+                ),
+                (
+                    "Dynamic input tokens",
+                    _signed(candidate_comparison["dynamic_input_token_reduction"]),
+                ),
+            )
+        )
+        candidate_section = (
+            "<section><h2>Candidate change</h2>"
+            "<p>Quality is Candidate minus comparison; reductions are Current minus "
+            "Candidate. Positive values mean higher candidate quality or smaller "
+            "candidate context.</p>"
+            "<table><thead><tr><th>Measure</th><th>Candidate change</th></tr></thead>"
+            f"<tbody>{candidate_rows}</tbody></table>"
+            f"<p>Paired checks: {paired['wins']} candidate wins, "
+            f"{paired['regressions']} regressions, {paired['ties']} ties, "
+            f"{paired['unknown']} unknown.</p></section>"
+        )
     trigger_sections = ""
     trigger_entries = _trigger_entries(result, conditions)
     for condition, trigger in trigger_entries:
@@ -338,6 +500,29 @@ def render_html(
                 "<th>Lift</th><th>Left wins</th><th>Right wins</th><th>Ties</th>"
                 f"<th>Unknown</th></tr></thead><tbody>{comparison_rows}</tbody></table>"
             )
+        efficiency_rows = ""
+        for condition in conditions:
+            condition_summary = summary[condition.id]
+            efficiency = summary["efficiency"][condition.id]
+            efficiency_rows += (
+                "<tr>"
+                f"<td>{html.escape(condition.display_label)}</td>"
+                f"<td>{_percent(condition_summary['pass_rate'])}</td>"
+                f"<td>{_percent(condition_summary['evidence_coverage'])}</td>"
+                f"<td>{_integer(efficiency['input_tokens'])}</td>"
+                f"<td>{_integer(efficiency['output_tokens'])}</td>"
+                f"<td>{_integer(efficiency['total_tokens'])}</td>"
+                f"<td>{_number(efficiency['median_duration_seconds'])}s</td>"
+                f"<td>{_integer(efficiency['tool_calls'])}</td>"
+                f"<td>{efficiency['completed_runs']} / {efficiency['failed_runs']}</td>"
+                "</tr>"
+            )
+        behavior_intro += (
+            "<table><thead><tr><th>Condition</th><th>Check pass</th><th>Evidence</th>"
+            "<th>Input tokens</th><th>Output tokens</th><th>Total tokens</th>"
+            "<th>Median time</th><th>Tool calls</th><th>Runs complete / failed</th>"
+            f"</tr></thead><tbody>{efficiency_rows}</tbody></table>"
+        )
         for case in behavior["results"]:
             grades = case.get("grades", {})
             header = "".join(
@@ -425,6 +610,8 @@ details{{background:var(--panel);border:1px solid var(--line);border-radius:10px
 <div class="eyebrow">Skills Nexus evaluation</div><h1>{html.escape(result["skill"]["name"])}</h1>
 <p><span class="verdict">{html.escape(profile["verdict"])}</span> Run <code>{html.escape(result["run_id"])}</code> · {html.escape(result["generated_at"])}</p>
 <div class="cards">{cards}</div><p>{html.escape(profile["formula"])} {html.escape(profile["note"])}</p>
+{footprint_section}
+{candidate_section}
 {trigger_section}
 <section><h2>Behavior and lift</h2>{behavior_intro}{behavior_sections or "<p>Behavior suite was not selected.</p>"}</section>
 <section><h2>Integrity and limitations</h2><ul>{warnings}</ul><p>Eval ground truth withheld: <code>{result["integrity"]["evals_withheld"]}</code> · fresh contexts: <code>{result["integrity"]["fresh_contexts"]}</code> · peer parity: <code>{result["integrity"]["peer_skill_parity"]}</code> · {grading_integrity_label}: <code>{result["integrity"]["blind_paired_grading"]}</code></p></section>

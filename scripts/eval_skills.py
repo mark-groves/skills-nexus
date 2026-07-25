@@ -22,6 +22,7 @@ from skill_eval.core import (
     EvaluationCondition,
     TriggerCase,
     candidate_evaluation_conditions,
+    condition_static_footprints,
     default_evaluation_conditions,
     discover_repository_skills,
     efficacy_profile,
@@ -37,6 +38,7 @@ from skill_eval.core import (
     snapshot_workspace,
     stable_digest,
     summarize_behavior_results,
+    summarize_candidate_comparison,
     summarize_trigger_results,
     validate_candidate_separation,
 )
@@ -388,6 +390,7 @@ def _run_evaluation(
         (condition for condition in conditions if condition.id == "candidate"),
         None,
     )
+    static_footprints = condition_static_footprints(conditions)
     spec = load_eval_spec(skill_dir, repo_root / "evals")
     eval_dir = spec.path.parent
     trigger_cases = (
@@ -700,6 +703,11 @@ def _run_evaluation(
     behavior_summary = (
         summarize_behavior_results(behavior_results, conditions) if behavior_results else None
     )
+    candidate_comparison = (
+        summarize_candidate_comparison(behavior_summary, static_footprints)
+        if candidate_condition is not None
+        else None
+    )
     profile = efficacy_profile(trigger_summary, behavior_summary, conditions)
 
     warnings = list(dict.fromkeys(fixture_warnings))
@@ -774,6 +782,7 @@ def _run_evaluation(
             "runtime_digest_sha256": runtime_digest,
             "eval_spec_digest_sha256": spec_digest,
         },
+        "context_footprint": static_footprints,
         "runtime": {
             "adapter": "codex",
             "codex_version": runner.version,
@@ -822,6 +831,7 @@ def _run_evaluation(
         )
         result["config"]["candidate"] = str(args.candidate)
         result["integrity"]["blind_condition_grading"] = True
+        result["candidate_comparison"] = candidate_comparison
     json_dump(output_dir / "results.json", result)
     markdown, html = write_reports(output_dir, result, conditions)
     print(f"Report: {markdown}", flush=True)
