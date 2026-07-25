@@ -14,7 +14,7 @@ import tempfile
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeGuard
 
 
 class EvalError(RuntimeError):
@@ -803,6 +803,10 @@ def summarize_candidate_comparison(
     }
 
 
+def _is_number(value: object) -> TypeGuard[int | float]:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
 def summarize_optimisation_review(
     *,
     policy: ReviewPolicy | None,
@@ -818,7 +822,7 @@ def summarize_optimisation_review(
     selected_behavior_case_ids: tuple[str, ...],
     trigger_repeats: int,
     behavior_repeats: int,
-    fixture_parity: bool,
+    fixture_parity: bool | None,
     blind_grading: bool,
 ) -> dict[str, Any]:
     """Evaluate independent hard gates for a candidate optimisation review."""
@@ -854,9 +858,9 @@ def summarize_optimisation_review(
     quality_required = -effective_policy.quality_non_inferiority_margin
     quality_status = (
         "pass"
-        if isinstance(quality_delta, float) and quality_delta >= quality_required
+        if _is_number(quality_delta) and quality_delta >= quality_required
         else "fail"
-        if isinstance(quality_delta, float)
+        if _is_number(quality_delta)
         else "insufficient-evidence"
     )
     add_gate(
@@ -872,10 +876,10 @@ def summarize_optimisation_review(
     baseline_lift = candidate_vs_baseline.get("absolute_lift") if candidate_vs_baseline else None
     baseline_status = (
         "pass"
-        if isinstance(baseline_lift, float)
+        if _is_number(baseline_lift)
         and baseline_lift >= effective_policy.minimum_lift_over_baseline
         else "fail"
-        if isinstance(baseline_lift, float)
+        if _is_number(baseline_lift)
         else "insufficient-evidence"
     )
     add_gate(
@@ -888,6 +892,21 @@ def summarize_optimisation_review(
         },
         detail="A retained candidate must show the configured value over Baseline.",
     )
+
+    def check_value(
+        items: list[dict[str, Any]],
+        check_id: str,
+        fallback_index: int,
+    ) -> bool | None:
+        identified = next(
+            (item for item in items if item.get("check_id") == check_id),
+            None,
+        )
+        if identified is not None:
+            return identified.get("passed")
+        if any("check_id" in item for item in items):
+            return None
+        return items[fallback_index].get("passed") if fallback_index < len(items) else None
 
     for case in behavior_cases:
         matching_results = [
@@ -902,12 +921,8 @@ def summarize_optimisation_review(
                 grades = result.get("grades", {})
                 current_items = grades.get("skill", [])
                 candidate_items = grades.get("candidate", [])
-                current_values.append(
-                    current_items[index].get("passed") if index < len(current_items) else None
-                )
-                candidate_values.append(
-                    candidate_items[index].get("passed") if index < len(candidate_items) else None
-                )
+                current_values.append(check_value(current_items, check.id, index))
+                candidate_values.append(check_value(candidate_items, check.id, index))
             candidate_failures = sum(value is False for value in candidate_values)
             regressions = sum(
                 current is True and candidate is False
@@ -961,14 +976,14 @@ def summarize_optimisation_review(
         )
         delta = (
             candidate_value - current_value
-            if isinstance(current_value, float) and isinstance(candidate_value, float)
+            if _is_number(current_value) and _is_number(candidate_value)
             else None
         )
         status = (
             "pass"
-            if isinstance(delta, float) and delta >= -margin
+            if _is_number(delta) and delta >= -margin
             else "fail"
-            if isinstance(delta, float)
+            if _is_number(delta)
             else "insufficient-evidence"
         )
         add_gate(
@@ -995,15 +1010,9 @@ def summarize_optimisation_review(
     satisfied = [
         metric
         for metric, threshold in thresholds.items()
-        if isinstance(reductions.get(metric), int)
-        and not isinstance(reductions.get(metric), bool)
-        and reductions[metric] >= threshold
+        if _is_number(reductions.get(metric)) and reductions[metric] >= threshold
     ]
-    known_reductions = [
-        metric
-        for metric in thresholds
-        if isinstance(reductions.get(metric), int) and not isinstance(reductions.get(metric), bool)
-    ]
+    known_reductions = [metric for metric in thresholds if _is_number(reductions.get(metric))]
     context_status = (
         "pass" if satisfied else "fail" if known_reductions else "insufficient-evidence"
     )
@@ -1081,8 +1090,6 @@ def summarize_optimisation_review(
         if current_trigger_summary is not None
         and candidate_trigger_summary is not None
         and trigger_repeats >= effective_policy.minimum_trigger_repeats
-        else "insufficient-evidence"
-        if current_trigger_summary is not None and candidate_trigger_summary is not None
         else "insufficient-evidence",
         observed=trigger_repeats if current_trigger_summary is not None else None,
         required=effective_policy.minimum_trigger_repeats,
@@ -1094,8 +1101,6 @@ def summarize_optimisation_review(
         "pass"
         if behavior_summary is not None
         and behavior_repeats >= effective_policy.minimum_behavior_repeats
-        else "insufficient-evidence"
-        if behavior_summary is not None
         else "insufficient-evidence",
         observed=behavior_repeats if behavior_summary is not None else None,
         required=effective_policy.minimum_behavior_repeats,
@@ -1114,11 +1119,11 @@ def summarize_optimisation_review(
     coverage_status = (
         "pass"
         if all(
-            isinstance(value, float) and value >= effective_policy.minimum_evidence_coverage
+            _is_number(value) and value >= effective_policy.minimum_evidence_coverage
             for value in coverage_values
         )
         else "fail"
-        if all(isinstance(value, float) for value in coverage_values)
+        if all(_is_number(value) for value in coverage_values)
         else "insufficient-evidence"
     )
     add_gate(
@@ -1213,7 +1218,11 @@ def summarize_optimisation_review(
     add_gate(
         "integrity",
         "fixture-parity",
-        "pass" if not effective_policy.require_fixture_parity or fixture_parity else "fail",
+        "pass"
+        if not effective_policy.require_fixture_parity or fixture_parity is True
+        else "fail"
+        if fixture_parity is False
+        else "insufficient-evidence",
         observed=fixture_parity,
         required=effective_policy.require_fixture_parity,
         detail="All conditions must receive equivalent fixture state when required.",

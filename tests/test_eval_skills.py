@@ -900,9 +900,15 @@ class EvalCoreTests(unittest.TestCase):
                 "baseline_run": run,
                 "candidate_run": run,
                 "grades": {
-                    "skill": [{"passed": True}],
+                    "skill": [
+                        {"check_id": "decoy", "passed": False},
+                        {"check_id": protected.id, "passed": True},
+                    ],
                     "baseline": [{"passed": False}],
-                    "candidate": [{"passed": False}],
+                    "candidate": [
+                        {"check_id": "decoy", "passed": True},
+                        {"check_id": protected.id, "passed": False},
+                    ],
                 },
                 "fixture_fidelity": "files",
                 "judge": {"status": "completed"},
@@ -1040,6 +1046,48 @@ class EvalCoreTests(unittest.TestCase):
         )
         self.assertEqual(approved["verdict"], "approved")
         self.assertTrue(approved["approved"])
+
+        for metric in ("recall", "specificity"):
+            base_arguments["candidate_trigger_summary"][metric] = 0.5
+            regressive_trigger = summarize_optimisation_review(
+                policy=ReviewPolicy(minimum_lift_over_baseline=0.0),
+                **base_arguments,
+            )
+            self.assertEqual(regressive_trigger["verdict"], "rejected")
+            trigger_gate = next(
+                gate
+                for gate in regressive_trigger["dimensions"]["triggering"]["gates"]
+                if gate["id"] == f"{metric}-non-inferiority"
+            )
+            self.assertEqual(trigger_gate["status"], "fail")
+            base_arguments["candidate_trigger_summary"][metric] = 1.0
+
+        reductions = base_arguments["candidate_comparison"]
+        base_arguments["candidate_comparison"] = {
+            "static_reductions": {
+                "description_characters": 0,
+                "skill_md_body_characters": 0,
+                "runtime_package_bytes": 0,
+            },
+            "dynamic_input_token_reduction": 0,
+        }
+        no_reduction = summarize_optimisation_review(
+            policy=ReviewPolicy(minimum_lift_over_baseline=0.0),
+            **base_arguments,
+        )
+        self.assertEqual(no_reduction["dimensions"]["context"]["status"], "fail")
+        self.assertEqual(no_reduction["verdict"], "rejected")
+        base_arguments["candidate_comparison"] = reductions
+
+        for integrity_key in ("fixture_parity", "blind_grading"):
+            base_arguments[integrity_key] = False
+            invalid_integrity = summarize_optimisation_review(
+                policy=ReviewPolicy(minimum_lift_over_baseline=0.0),
+                **base_arguments,
+            )
+            self.assertEqual(invalid_integrity["verdict"], "rejected")
+            self.assertFalse(invalid_integrity["approved"])
+            base_arguments[integrity_key] = True
 
         base_arguments["selected_behavior_case_ids"] = ()
         filtered_suite = summarize_optimisation_review(
@@ -1918,6 +1966,30 @@ class EvalCoreTests(unittest.TestCase):
                 check=True,
             )
             self.assertEqual(status.stdout, "M  README.md\n")
+
+    def test_fixture_parity_is_derived_from_per_condition_records(self) -> None:
+        conditions = (
+            EvaluationCondition("skill", None, None, "demo", "Current"),
+            EvaluationCondition("baseline", None, None, "demo", "Baseline"),
+            EvaluationCondition("candidate", None, None, "demo", "Candidate"),
+        )
+
+        def record(fidelity: str = "files") -> dict[str, str]:
+            return {
+                "template": "/tmp/template",
+                "fidelity": fidelity,
+                "initial_snapshot_sha256": "abc123",
+            }
+
+        jobs = [{"condition_fixtures": {condition.id: record() for condition in conditions}}]
+        self.assertTrue(eval_skills._fixture_parity(jobs, conditions))
+
+        jobs[0]["condition_fixtures"]["candidate"] = record("degraded")
+        self.assertFalse(eval_skills._fixture_parity(jobs, conditions))
+
+        del jobs[0]["condition_fixtures"]["candidate"]
+        self.assertIsNone(eval_skills._fixture_parity(jobs, conditions))
+        self.assertIsNone(eval_skills._fixture_parity([], conditions))
 
     def test_trigger_summary_uses_case_level_threshold(self) -> None:
         cases = (

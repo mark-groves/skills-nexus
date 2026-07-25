@@ -409,7 +409,7 @@ def render_markdown(
                         if grade.get("evidence")
                     )
                 )
-                escaped_check = _check_text(check).replace("|", "\\|")
+                escaped_check = _markdown_label(_check_text(check))
                 lines.append(
                     f"| {escaped_check} | "
                     + " | ".join(_mark(grade.get("passed")) for grade in condition_grades)

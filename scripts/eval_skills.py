@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import argparse
 import concurrent.futures
+import hashlib
+import json
 import shlex
 import subprocess
 import sys
@@ -202,6 +204,44 @@ def _fixture_fidelity(
     if any(record["mode"] == "executable" for record in records):
         return "executable"
     return "files" if records else "none"
+
+
+def _fixture_parity(
+    behavior_jobs: list[dict[str, Any]],
+    conditions: tuple[EvaluationCondition, ...],
+) -> bool | None:
+    """Verify that every condition was scheduled from the same fixture record."""
+    if not behavior_jobs:
+        return None
+    expected_conditions = {condition.id for condition in conditions}
+    for job in behavior_jobs:
+        records = job.get("condition_fixtures")
+        if not isinstance(records, dict) or set(records) != expected_conditions:
+            return None
+        templates: set[str] = set()
+        fidelities: set[str] = set()
+        snapshots: set[str] = set()
+        for record in records.values():
+            if not isinstance(record, dict):
+                return None
+            template = record.get("template")
+            fidelity = record.get("fidelity")
+            snapshot = record.get("initial_snapshot_sha256")
+            if (
+                not isinstance(template, str)
+                or not template
+                or not isinstance(fidelity, str)
+                or not fidelity
+                or not isinstance(snapshot, str)
+                or not snapshot
+            ):
+                return None
+            templates.add(template)
+            fidelities.add(fidelity)
+            snapshots.add(snapshot)
+        if len(templates) != 1 or len(fidelities) != 1 or len(snapshots) != 1:
+            return False
+    return True
 
 
 def _fixture_error_run(
@@ -531,11 +571,21 @@ def _run_evaluation(
             )
             repository = initialize_fixture_repository(template)
             setup_results = run_fixture_setups(setup_scripts, template, skill_dir)
+            initial_snapshot = snapshot_workspace(template)
+            initial_snapshot_sha256 = hashlib.sha256(
+                json.dumps(
+                    initial_snapshot,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode()
+            ).hexdigest()
             fixture_manifest = {
                 "records": records,
                 "repository": repository,
                 "setups": setup_results,
-                "initial_snapshot": snapshot_workspace(template),
+                "initial_snapshot": initial_snapshot,
+                "initial_snapshot_sha256": initial_snapshot_sha256,
             }
             fidelity = _fixture_fidelity(records, setup_results, repository)
             fixture_manifest["fidelity"] = fidelity
@@ -553,6 +603,7 @@ def _run_evaluation(
                     "fixture": fixture_manifest,
                     "fidelity": fidelity,
                     "runs": {},
+                    "condition_fixtures": {},
                 }
             )
 
@@ -566,6 +617,11 @@ def _run_evaluation(
             repeat = job["repeat"]
             fidelity = job["fidelity"]
             for condition in conditions:
+                job["condition_fixtures"][condition.id] = {
+                    "template": str(job["template"].resolve()),
+                    "fidelity": fidelity,
+                    "initial_snapshot_sha256": job["fixture"]["initial_snapshot_sha256"],
+                }
                 run_dir = job["root"] / condition.id
                 if fidelity in {"missing", "setup-failed"}:
                     job["runs"][condition.id] = _fixture_error_run(
@@ -712,7 +768,7 @@ def _run_evaluation(
         if candidate_condition is not None
         else None
     )
-    fixture_parity = True
+    fixture_parity = _fixture_parity(behavior_jobs, conditions)
     optimisation_review = (
         summarize_optimisation_review(
             policy=spec.review_policy,

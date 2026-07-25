@@ -95,6 +95,11 @@ Legacy strings are sent to the judge with generated case-and-position IDs,
 unchanged. The judge receives this metadata but only sees randomized condition
 labels, never Current, Baseline, or Candidate identities.
 
+Schema-version-3 judgments expose class and gate severity to the judge, which
+can change strictness relative to earlier candidate runs. Do not treat those
+grades as directly comparable with schema-version-2 evidence; condition
+identity remains blinded in both.
+
 Candidate optimisation reviews use the optional repository-owned
 `review_policy` block:
 
