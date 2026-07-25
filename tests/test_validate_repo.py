@@ -460,6 +460,123 @@ class ValidateRepoEvalTests(unittest.TestCase):
             validate_repo.ERRORS,
         )
 
+    def test_structured_checks_and_review_policy_validate(self) -> None:
+        with tempfile.TemporaryDirectory(dir=REPO_DIR) as temp_dir:
+            skill_dir = Path(temp_dir) / "protected-skill"
+            evals_dir = Path(temp_dir) / "eval-suite"
+            evals_dir.mkdir()
+            (evals_dir / "evals.json").write_text(
+                json.dumps(
+                    {
+                        "skill_name": skill_dir.name,
+                        "review_policy": {
+                            "minimum_repeats": {"trigger": 2, "behavior": 3},
+                            "quality": {
+                                "non_inferiority_margin": 0.05,
+                                "minimum_lift_over_baseline": 0.1,
+                                "minimum_evidence_coverage": 1.0,
+                            },
+                            "triggering": {
+                                "recall_non_inferiority_margin": 0.05,
+                                "specificity_non_inferiority_margin": 0.05,
+                            },
+                            "context": {"minimum_reductions": {"skill_md_body_characters": 100}},
+                            "integrity": {
+                                "allowed_fixture_fidelity": ["none", "files"],
+                                "require_fixture_parity": True,
+                                "require_blind_grading": True,
+                            },
+                        },
+                        "trigger_evals": [
+                            {"id": 1, "query": "one", "should_trigger": True},
+                            {"id": 2, "query": "two", "should_trigger": True},
+                            {"id": 3, "query": "three", "should_trigger": False},
+                            {"id": 4, "query": "four", "should_trigger": False},
+                        ],
+                        "behavior_evals": [
+                            {
+                                "id": 1,
+                                "prompt": "demo",
+                                "expected_behavior": "works",
+                                "fixtures": [],
+                                "checks": [
+                                    "Reports the result",
+                                    {
+                                        "id": "protect-scope",
+                                        "text": "Preserves repository scope",
+                                        "class": "local-contract",
+                                        "gate": "hard",
+                                    },
+                                ],
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            validate_repo.validate_evals(skill_dir, evals_dir)
+
+        self.assertEqual(validate_repo.ERRORS, [])
+
+    def test_invalid_structured_checks_and_policy_are_rejected(self) -> None:
+        with tempfile.TemporaryDirectory(dir=REPO_DIR) as temp_dir:
+            skill_dir = Path(temp_dir) / "protected-skill"
+            evals_dir = Path(temp_dir) / "eval-suite"
+            evals_dir.mkdir()
+            check = {
+                "id": "duplicate-check",
+                "text": "Preserves scope",
+                "class": "safety",
+                "gate": "hard",
+            }
+            (evals_dir / "evals.json").write_text(
+                json.dumps(
+                    {
+                        "skill_name": skill_dir.name,
+                        "review_policy": {
+                            "minimum_repeats": {"behavior": 0},
+                            "context": {"minimum_reductions": {"aggregate_score": 1}},
+                        },
+                        "trigger_evals": [
+                            {"id": 1, "query": "one", "should_trigger": True},
+                            {"id": 2, "query": "two", "should_trigger": True},
+                            {"id": 3, "query": "three", "should_trigger": False},
+                            {"id": 4, "query": "four", "should_trigger": False},
+                        ],
+                        "behavior_evals": [
+                            {
+                                "id": 1,
+                                "prompt": "demo",
+                                "expected_behavior": "works",
+                                "fixtures": [],
+                                "checks": [check, check],
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            validate_repo.validate_evals(skill_dir, evals_dir)
+
+        self.assertTrue(
+            any("must be a positive integer" in error for error in validate_repo.ERRORS),
+            validate_repo.ERRORS,
+        )
+        self.assertTrue(
+            any(
+                "Unknown review_policy context reduction" in error for error in validate_repo.ERRORS
+            ),
+            validate_repo.ERRORS,
+        )
+        self.assertTrue(
+            any(
+                "Duplicate structured behavior check id" in error for error in validate_repo.ERRORS
+            ),
+            validate_repo.ERRORS,
+        )
+
 
 class ValidateRepoSkillLayoutTests(unittest.TestCase):
     def setUp(self) -> None:

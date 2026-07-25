@@ -39,6 +39,7 @@ from skill_eval.core import (
     stable_digest,
     summarize_behavior_results,
     summarize_candidate_comparison,
+    summarize_optimisation_review,
     summarize_trigger_results,
     validate_candidate_separation,
 )
@@ -241,7 +242,10 @@ def _unknown_grades(
     values = [
         {
             "index": index,
-            "check": check,
+            "check_id": check.id,
+            "check": check.text,
+            "class": check.check_class,
+            "gate": check.gate,
             "passed": None,
             "confidence": 0,
             "evidence": reason,
@@ -613,7 +617,7 @@ def _run_evaluation(
                     "repeat": job["repeat"],
                     "prompt": behavior_case.prompt,
                     "expected_behavior": behavior_case.expected_behavior,
-                    "checks": list(behavior_case.checks),
+                    "checks": [check.report_value() for check in behavior_case.checks],
                     "fixture_fidelity": job["fidelity"],
                     "fixture": job["fixture"],
                     **{
@@ -664,7 +668,7 @@ def _run_evaluation(
                 "repeat": job["repeat"],
                 "prompt": behavior_case.prompt,
                 "expected_behavior": behavior_case.expected_behavior,
-                "checks": list(behavior_case.checks),
+                "checks": [check.report_value() for check in behavior_case.checks],
                 "fixture_fidelity": job["fidelity"],
                 "fixture": job["fixture"],
                 **{f"{condition.id}_run": job["runs"][condition.id] for condition in conditions},
@@ -706,6 +710,24 @@ def _run_evaluation(
     candidate_comparison = (
         summarize_candidate_comparison(behavior_summary, static_footprints)
         if candidate_condition is not None
+        else None
+    )
+    fixture_parity = True
+    optimisation_review = (
+        summarize_optimisation_review(
+            policy=spec.review_policy,
+            behavior_cases=behavior_cases,
+            behavior_results=behavior_results,
+            behavior_summary=behavior_summary,
+            current_trigger_summary=trigger_summary,
+            candidate_trigger_summary=candidate_trigger_summary,
+            candidate_comparison=candidate_comparison,
+            trigger_repeats=args.trigger_repeats,
+            behavior_repeats=args.behavior_repeats,
+            fixture_parity=fixture_parity,
+            blind_grading=True,
+        )
+        if candidate_condition is not None and candidate_comparison is not None
         else None
     )
     profile = efficacy_profile(trigger_summary, behavior_summary, conditions)
@@ -771,7 +793,7 @@ def _run_evaluation(
         reproduce.extend(["--fail-under", str(args.fail_under)])
 
     result: dict[str, Any] = {
-        "schema_version": 2 if candidate_condition is not None else 1,
+        "schema_version": 3 if candidate_condition is not None else 1,
         "run_id": run_id,
         "generated_at": timestamp.isoformat(),
         "repository": {"root": str(repo_root), **_git_metadata(repo_root)},
@@ -831,7 +853,9 @@ def _run_evaluation(
         )
         result["config"]["candidate"] = str(args.candidate)
         result["integrity"]["blind_condition_grading"] = True
+        result["integrity"]["fixture_parity"] = fixture_parity
         result["candidate_comparison"] = candidate_comparison
+        result["optimisation_review"] = optimisation_review
     json_dump(output_dir / "results.json", result)
     markdown, html = write_reports(output_dir, result, conditions)
     print(f"Report: {markdown}", flush=True)
@@ -843,6 +867,12 @@ def _run_evaluation(
         else f"Verdict: {profile['verdict']} · absolute efficacy unavailable",
         flush=True,
     )
+    if optimisation_review is not None:
+        print(
+            f"Optimisation review: {optimisation_review['verdict']} · "
+            "no aggregate score can override a hard gate",
+            flush=True,
+        )
     return result, output_dir
 
 
@@ -866,6 +896,9 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     if args.plan:
         return 0
+    review = result.get("optimisation_review")
+    if review is not None and not review.get("approved", False):
+        return 2
     if args.fail_under is not None:
         score = result["efficacy"]["absolute_efficacy_percent"]
         if score is None or score < args.fail_under:

@@ -47,8 +47,9 @@ verified contract; an unchecked item remains planned work.
 
 The implementation items below are ordered by dependency. The default
 two-condition evaluator behavior remains unchanged; candidate mode now adds the
-baseline/current/candidate comparison, while later optimisation tooling remains
-planned.
+baseline/current/candidate comparison, separate context evidence, and
+repository-owned optimisation gates. Model-profile orchestration and component
+ablation remain planned.
 
 - [x] Define separate corrective-improvement and context-reduction evidence
       paths, context budgets, review verdicts, and the higher retirement bar
@@ -58,7 +59,7 @@ planned.
 - [x] Compare baseline, current, and candidate conditions (#24).
 - [x] Report discovery, activation, conditional, and dynamic context costs
       separately (#25).
-- [ ] Add protected checks, skill-specific non-inferiority rules, and
+- [x] Add protected checks, skill-specific non-inferiority rules, and
       optimisation gates (#26).
 - [ ] Run required and observed Codex model profiles and export bounded durable
       summaries (#27).

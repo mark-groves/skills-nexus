@@ -28,8 +28,10 @@ from skill_eval.codex_runner import CodexRunner, _event_summary, _scrub  # noqa:
 from skill_eval.core import (  # noqa: E402
     RUNTIME_EXCLUDED_NAMES,
     BehaviorCase,
+    BehaviorCheck,
     EvalError,
     EvaluationCondition,
+    ReviewPolicy,
     TriggerCase,
     candidate_evaluation_conditions,
     default_evaluation_conditions,
@@ -39,6 +41,7 @@ from skill_eval.core import (  # noqa: E402
     load_eval_spec,
     materialize_fixtures,
     measure_static_footprint,
+    parse_review_policy,
     resolve_candidate_skill,
     run_fixture_setups,
     runtime_skill_copy,
@@ -47,6 +50,7 @@ from skill_eval.core import (  # noqa: E402
     stable_digest,
     summarize_behavior_results,
     summarize_candidate_comparison,
+    summarize_optimisation_review,
     summarize_trigger_results,
     validate_candidate_separation,
 )
@@ -735,6 +739,330 @@ class EvalCoreTests(unittest.TestCase):
 
         self.assertIsNone(comparison["dynamic_input_token_reduction"])
 
+    def test_behavior_checks_accept_legacy_strings_and_structured_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            skill_dir = root / "demo"
+            evals_root = root / "evals"
+            eval_path = evals_root / "demo" / "evals.json"
+            eval_path.parent.mkdir(parents=True)
+            eval_path.write_text(
+                json.dumps(
+                    {
+                        "skill_name": "demo",
+                        "trigger_evals": [],
+                        "behavior_evals": [
+                            {
+                                "id": "safe",
+                                "prompt": "demo",
+                                "expected_behavior": "works",
+                                "fixtures": [],
+                                "checks": [
+                                    "Reports the result",
+                                    {
+                                        "id": "never-write-secret",
+                                        "text": "Does not write a secret",
+                                        "class": "safety",
+                                        "gate": "hard",
+                                    },
+                                ],
+                            }
+                        ],
+                        "review_policy": {
+                            "minimum_repeats": {"trigger": 3},
+                            "context": {"minimum_reductions": {"skill_md_body_characters": 25}},
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            spec = load_eval_spec(skill_dir, evals_root)
+
+        legacy, protected = spec.behavior_cases[0].checks
+        self.assertEqual(legacy.id, "safe-check-1")
+        self.assertEqual(legacy.check_class, "quality")
+        self.assertEqual(legacy.gate, "normal")
+        self.assertFalse(legacy.structured)
+        self.assertEqual(
+            protected.as_dict(),
+            {
+                "id": "never-write-secret",
+                "text": "Does not write a secret",
+                "class": "safety",
+                "gate": "hard",
+            },
+        )
+        self.assertIsNotNone(spec.review_policy)
+        assert spec.review_policy is not None
+        self.assertEqual(spec.review_policy.minimum_trigger_repeats, 3)
+        self.assertEqual(spec.review_policy.minimum_behavior_repeats, 2)
+        self.assertEqual(
+            dict(spec.review_policy.minimum_context_reductions),
+            {"skill_md_body_characters": 25},
+        )
+
+    def test_structured_check_ids_are_valid_and_unique_across_the_skill(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            skill_dir = root / "demo"
+            evals_root = root / "evals"
+            eval_path = evals_root / "demo" / "evals.json"
+            eval_path.parent.mkdir(parents=True)
+            structured = {
+                "id": "same-check",
+                "text": "Works",
+                "class": "local-contract",
+                "gate": "hard",
+            }
+            eval_path.write_text(
+                json.dumps(
+                    {
+                        "skill_name": "demo",
+                        "trigger_evals": [],
+                        "behavior_evals": [
+                            {
+                                "id": "one",
+                                "prompt": "one",
+                                "expected_behavior": "works",
+                                "fixtures": [],
+                                "checks": [structured],
+                            },
+                            {
+                                "id": "two",
+                                "prompt": "two",
+                                "expected_behavior": "works",
+                                "fixtures": [],
+                                "checks": [structured],
+                            },
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(
+                EvalError,
+                "Duplicate structured behavior check id: same-check",
+            ):
+                load_eval_spec(skill_dir, evals_root)
+
+            structured["id"] = "Not Stable"
+            eval_path.write_text(
+                json.dumps(
+                    {
+                        "skill_name": "demo",
+                        "trigger_evals": [],
+                        "behavior_evals": [
+                            {
+                                "id": "one",
+                                "prompt": "one",
+                                "expected_behavior": "works",
+                                "fixtures": [],
+                                "checks": [structured],
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(EvalError, "stable lowercase kebab-case"):
+                load_eval_spec(skill_dir, evals_root)
+
+    def test_review_policy_rejects_implicit_or_invalid_thresholds(self) -> None:
+        with self.assertRaisesRegex(EvalError, "positive integers"):
+            parse_review_policy(
+                {"context": {"minimum_reductions": {"skill_md_body_characters": 0}}}
+            )
+        with self.assertRaisesRegex(EvalError, "between 0 and 1"):
+            parse_review_policy({"quality": {"non_inferiority_margin": 1.1}})
+        with self.assertRaisesRegex(EvalError, "unexpected keys"):
+            parse_review_policy({"quality": {"aggregate_score": 0.9}})
+
+    def test_protected_safety_failure_overrides_quality_and_context_gains(self) -> None:
+        protected = BehaviorCheck(
+            "never-commit-detached",
+            "Does not commit while HEAD is detached",
+            "safety",
+            "hard",
+        )
+        case = BehaviorCase("detached", "commit", "stops", (), (protected,))
+        run = {
+            "status": "completed",
+            "duration_seconds": 1.0,
+            "usage": {"input_tokens": 10, "output_tokens": 1},
+            "tool_calls": 0,
+        }
+        results = [
+            {
+                "case_id": "detached",
+                "repeat": repeat,
+                "skill_run": run,
+                "baseline_run": run,
+                "candidate_run": run,
+                "grades": {
+                    "skill": [{"passed": True}],
+                    "baseline": [{"passed": False}],
+                    "candidate": [{"passed": False}],
+                },
+                "fixture_fidelity": "files",
+                "judge": {"status": "completed"},
+            }
+            for repeat in (1, 2)
+        ]
+        review = summarize_optimisation_review(
+            policy=ReviewPolicy(
+                quality_non_inferiority_margin=1.0,
+                minimum_lift_over_baseline=0.0,
+                minimum_context_reductions=(("skill_md_body_characters", 100),),
+            ),
+            behavior_cases=(case,),
+            behavior_results=results,
+            behavior_summary={
+                "skill": {"evidence_coverage": 1.0},
+                "baseline": {"evidence_coverage": 1.0},
+                "candidate": {"evidence_coverage": 1.0},
+                "comparisons": {
+                    "candidate_vs_current": {"absolute_lift": 0.0},
+                    "candidate_vs_baseline": {"absolute_lift": 0.5},
+                },
+            },
+            current_trigger_summary={"recall": 1.0, "specificity": 1.0},
+            candidate_trigger_summary={"recall": 1.0, "specificity": 1.0},
+            candidate_comparison={
+                "static_reductions": {
+                    "description_characters": 0,
+                    "skill_md_body_characters": 250,
+                    "runtime_package_bytes": 250,
+                },
+                "dynamic_input_token_reduction": 100,
+            },
+            trigger_repeats=2,
+            behavior_repeats=2,
+            fixture_parity=True,
+            blind_grading=True,
+        )
+
+        self.assertEqual(review["verdict"], "rejected")
+        self.assertFalse(review["approved"])
+        self.assertTrue(review["hard_failure"])
+        self.assertEqual(review["dimensions"]["correctness"]["status"], "pass")
+        self.assertEqual(review["dimensions"]["context"]["status"], "pass")
+        self.assertEqual(review["dimensions"]["safety"]["status"], "fail")
+        safety_gate = review["dimensions"]["safety"]["gates"][0]
+        self.assertEqual(safety_gate["observed"]["regressions"], 2)
+
+    def test_unknown_protected_evidence_and_missing_policy_cannot_approve(self) -> None:
+        protected = BehaviorCheck(
+            "protect-contract",
+            "Preserves the repository contract",
+            "local-contract",
+            "hard",
+        )
+        case = BehaviorCase("contract", "work", "works", (), (protected,))
+        base_arguments: dict[str, Any] = {
+            "behavior_cases": (case,),
+            "behavior_results": [
+                {
+                    "case_id": "contract",
+                    "repeat": repeat,
+                    "grades": {
+                        "skill": [{"passed": True}],
+                        "candidate": [{"passed": None}],
+                    },
+                    "fixture_fidelity": "none",
+                    "judge": {"status": "completed"},
+                }
+                for repeat in (1, 2)
+            ],
+            "behavior_summary": {
+                "skill": {"evidence_coverage": 1.0},
+                "baseline": {"evidence_coverage": 1.0},
+                "candidate": {"evidence_coverage": 1.0},
+                "efficiency": {
+                    "skill": {"failed_runs": 0},
+                    "baseline": {"failed_runs": 0},
+                    "candidate": {"failed_runs": 0},
+                },
+                "comparisons": {
+                    "candidate_vs_current": {"absolute_lift": 0.0},
+                    "candidate_vs_baseline": {"absolute_lift": 0.5},
+                },
+            },
+            "current_trigger_summary": {
+                "recall": 1.0,
+                "specificity": 1.0,
+                "run_errors": 0,
+            },
+            "candidate_trigger_summary": {
+                "recall": 1.0,
+                "specificity": 1.0,
+                "run_errors": 0,
+            },
+            "candidate_comparison": {
+                "static_reductions": {
+                    "description_characters": 2,
+                    "skill_md_body_characters": 100,
+                    "runtime_package_bytes": 1,
+                },
+                "dynamic_input_token_reduction": 1,
+            },
+            "trigger_repeats": 2,
+            "behavior_repeats": 2,
+            "fixture_parity": True,
+            "blind_grading": True,
+        }
+
+        unknown = summarize_optimisation_review(
+            policy=ReviewPolicy(minimum_lift_over_baseline=0.0),
+            **base_arguments,
+        )
+        self.assertEqual(unknown["verdict"], "insufficient-evidence")
+        protected_gate = next(
+            gate
+            for gate in unknown["dimensions"]["correctness"]["gates"]
+            if gate["id"] == "protected-check:protect-contract"
+        )
+        self.assertEqual(protected_gate["status"], "insufficient-evidence")
+
+        for result in base_arguments["behavior_results"]:
+            result["grades"]["candidate"][0]["passed"] = True
+        approved = summarize_optimisation_review(
+            policy=ReviewPolicy(minimum_lift_over_baseline=0.0),
+            **base_arguments,
+        )
+        self.assertEqual(approved["verdict"], "approved")
+        self.assertTrue(approved["approved"])
+
+        missing_policy = summarize_optimisation_review(
+            policy=None,
+            **base_arguments,
+        )
+        self.assertEqual(missing_policy["verdict"], "insufficient-evidence")
+        self.assertEqual(missing_policy["policy"]["status"], "missing")
+
+        base_arguments["trigger_repeats"] = 1
+        base_arguments["behavior_repeats"] = 1
+        insufficient_repeats = summarize_optimisation_review(
+            policy=ReviewPolicy(minimum_lift_over_baseline=0.0),
+            **base_arguments,
+        )
+        self.assertEqual(
+            insufficient_repeats["verdict"],
+            "insufficient-evidence",
+        )
+        repeat_gates = {
+            gate["id"]: gate["status"]
+            for gate in insufficient_repeats["dimensions"]["integrity"]["gates"]
+            if "repeats" in gate["id"]
+        }
+        self.assertEqual(
+            repeat_gates,
+            {
+                "minimum-trigger-repeats": "insufficient-evidence",
+                "minimum-behavior-repeats": "insufficient-evidence",
+            },
+        )
+
     def test_duplicate_case_filters_are_rejected(self) -> None:
         case = TriggerCase("1", "demo", True)
 
@@ -1296,7 +1624,7 @@ class EvalCoreTests(unittest.TestCase):
             prompt="demo",
             expected_behavior="works",
             fixtures=(),
-            checks=("works",),
+            checks=(BehaviorCheck("case-check", "works", structured=False),),
         )
 
         with mock.patch("skill_eval.codex_runner.tempfile.mkdtemp") as make_temp:
@@ -1309,6 +1637,99 @@ class EvalCoreTests(unittest.TestCase):
                 )
 
         make_temp.assert_not_called()
+
+    def test_judge_receives_check_metadata_but_not_condition_identity(self) -> None:
+        conditions = (
+            EvaluationCondition("skill", None, None, "demo", "Current"),
+            EvaluationCondition("baseline", None, None, "demo", "Baseline"),
+            EvaluationCondition("candidate", None, None, "demo", "Candidate"),
+        )
+        runner = object.__new__(CodexRunner)
+        runner.conditions = conditions
+        runner.judge_model = None
+        behavior_case = BehaviorCase(
+            id="case",
+            prompt="demo",
+            expected_behavior="works",
+            fixtures=(),
+            checks=(
+                BehaviorCheck(
+                    "protect-scope",
+                    "Preserves scope",
+                    "local-contract",
+                    "hard",
+                ),
+            ),
+        )
+        captured: dict[str, Any] = {}
+
+        def fake_execute(**kwargs):
+            evidence = json.loads(
+                (kwargs["workspace"] / "evidence.json").read_text(encoding="utf-8")
+            )
+            captured.update(evidence)
+            candidates = [
+                {
+                    "label": label,
+                    "checks": [
+                        {
+                            "index": 0,
+                            "result": "pass",
+                            "confidence": 1.0,
+                            "evidence": f"evidence {label}",
+                        }
+                    ],
+                    "summary": "ok",
+                    "strengths": [],
+                    "weaknesses": [],
+                }
+                for label in evidence["candidates"]
+            ]
+            return {
+                "status": "completed",
+                "final_response": json.dumps({"candidates": candidates}),
+                "duration_seconds": 0.1,
+                "usage": {},
+                "events_path": "events.jsonl",
+                "stderr_path": "stderr.log",
+            }
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with (
+                mock.patch.object(
+                    runner,
+                    "_evidence_bundle",
+                    return_value={"status": "completed"},
+                ),
+                mock.patch.object(runner, "_execute", side_effect=fake_execute),
+            ):
+                result = runner.grade_pair(
+                    grade_dir=Path(temp_dir) / "judge",
+                    behavior_case=behavior_case,
+                    repeat=1,
+                    runs_by_condition={condition.id: {} for condition in conditions},
+                )
+
+        self.assertEqual(
+            captured["checks"],
+            [
+                {
+                    "index": 0,
+                    "id": "protect-scope",
+                    "text": "Preserves scope",
+                    "class": "local-contract",
+                    "gate": "hard",
+                }
+            ],
+        )
+        self.assertEqual(set(captured["candidates"]), {"A", "B", "C"})
+        self.assertNotIn("skill", captured["candidates"])
+        self.assertNotIn("candidate", captured["candidates"])
+        self.assertEqual(
+            result["grades"]["candidate"][0]["check_id"],
+            "protect-scope",
+        )
+        self.assertEqual(result["grades"]["candidate"][0]["gate"], "hard")
 
     def test_shell_expanded_skill_read_redacts_command_output(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1913,18 +2334,24 @@ class EvalCliIntegrationTests(unittest.TestCase):
                         ]
                     )
 
-            self.assertEqual(candidate_status, 0)
+            self.assertEqual(candidate_status, 2)
             candidate_result_path = next(candidate_output_root.glob("demo/*/results.json"))
             candidate_result = json.loads(candidate_result_path.read_text(encoding="utf-8"))
-            self.assertEqual(candidate_result["schema_version"], 2)
+            self.assertEqual(candidate_result["schema_version"], 3)
             self.assertEqual(
                 set(candidate_result)
                 - {
                     "candidate",
                     "candidate_trigger",
                     "candidate_comparison",
+                    "optimisation_review",
                 },
                 set(result),
+            )
+            self.assertFalse(candidate_result["optimisation_review"]["approved"])
+            self.assertEqual(
+                candidate_result["optimisation_review"]["policy"]["status"],
+                "missing",
             )
             self.assertEqual(candidate_result["candidate"]["name"], "demo")
             self.assertEqual(candidate_result["candidate"]["path"], str(candidate.resolve()))
@@ -2020,6 +2447,8 @@ class EvalCliIntegrationTests(unittest.TestCase):
             self.assertIn("### Pairwise comparisons", candidate_report)
             self.assertIn("Candidate vs Current", candidate_report)
             self.assertIn("## Candidate change", candidate_report)
+            self.assertIn("## Optimisation gates", candidate_report)
+            self.assertIn("No aggregate score can override a hard failure", candidate_report)
             self.assertIn("| Dynamic input tokens | — |", candidate_report)
             self.assertIn("### Current", candidate_report)
             self.assertIn("### Candidate", candidate_report)
@@ -2028,6 +2457,7 @@ class EvalCliIntegrationTests(unittest.TestCase):
             )
             self.assertIn("<h2>Context footprint</h2>", candidate_html)
             self.assertIn("<h2>Candidate change</h2>", candidate_html)
+            self.assertIn("<h2>Optimisation gates</h2>", candidate_html)
             self.assertIn("<th>Input tokens</th>", candidate_html)
             self.assertIn("<td>Dynamic input tokens</td><td>—</td>", candidate_html)
             candidate_reproduce = shlex.split(candidate_result["reproduce_command"])
@@ -2123,7 +2553,7 @@ class EvalCliIntegrationTests(unittest.TestCase):
                             str(candidate_isolated_output),
                         ]
                     )
-            self.assertEqual(candidate_isolated_status, 0)
+            self.assertEqual(candidate_isolated_status, 2)
             candidate_isolated_result = json.loads(
                 next(candidate_isolated_output.glob("demo/*/results.json")).read_text(
                     encoding="utf-8"

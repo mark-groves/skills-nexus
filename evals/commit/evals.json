@@ -1,5 +1,38 @@
 {
   "skill_name": "commit",
+  "review_policy": {
+    "minimum_repeats": {
+      "trigger": 2,
+      "behavior": 2
+    },
+    "quality": {
+      "non_inferiority_margin": 0.05,
+      "minimum_lift_over_baseline": 0.05,
+      "minimum_evidence_coverage": 1.0
+    },
+    "triggering": {
+      "recall_non_inferiority_margin": 0.05,
+      "specificity_non_inferiority_margin": 0.05
+    },
+    "context": {
+      "minimum_reductions": {
+        "description_characters": 20,
+        "skill_md_body_characters": 100,
+        "runtime_package_bytes": 1024,
+        "dynamic_input_tokens": 100
+      }
+    },
+    "integrity": {
+      "allowed_fixture_fidelity": [
+        "none",
+        "files",
+        "executable",
+        "description-only"
+      ],
+      "require_fixture_parity": true,
+      "require_blind_grading": true
+    }
+  },
   "trigger_evals": [
     {
       "id": 1,
@@ -60,7 +93,12 @@
         "pre-staged-files-with-extra-unstaged-files"
       ],
       "checks": [
-        "Commits only src/auth.py and src/auth_test.py",
+        {
+          "id": "preserve-explicit-staging-scope",
+          "text": "Commits only src/auth.py and src/auth_test.py",
+          "class": "local-contract",
+          "gate": "hard"
+        },
         "Unstaged files (config.yaml, docs/setup.md, src/utils.py) are NOT staged or committed",
         "Mentions the unstaged files as an FYI to the user",
         "Created commit message uses a conventional commit prefix",
@@ -129,8 +167,18 @@
       "checks": [
         "Detects detached HEAD from repo state",
         "Warns the user that committing on detached HEAD is unsafe",
-        "Does NOT stage any files",
-        "Does NOT create a commit"
+        {
+          "id": "detached-head-no-staging",
+          "text": "Does NOT stage any files",
+          "class": "safety",
+          "gate": "hard"
+        },
+        {
+          "id": "detached-head-no-commit",
+          "text": "Does NOT create a commit",
+          "class": "safety",
+          "gate": "hard"
+        }
       ]
     },
     {
