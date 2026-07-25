@@ -15,6 +15,21 @@ Trigger cases exercise skill selection. Behavior cases run from identical
 fixtures with and without the selected skill, then use a label-blinded judge to
 compare both results against the same checks.
 
+Candidate mode adds a third fresh condition without changing the default
+current-versus-baseline path:
+
+```bash
+python3 scripts/eval_skills.py \
+  --skill skill-architect \
+  --candidate /path/to/candidate-skill
+```
+
+`--candidate` accepts an absolute directory or a path relative to
+`--repo-root`. The directory may have any working name, but its canonical
+frontmatter `name` must match the selected skill. Before any agent turn, the
+evaluator verifies the minimal publishable metadata contract, rejects runtime
+symlinks, and creates a clean runtime copy.
+
 ## Plan and run
 
 Start with `--plan`. It validates selected cases and reports the number of agent
@@ -65,6 +80,22 @@ evidence cannot enter that copy because it lives outside the skill directory;
 or rejected. By default, peer skills are available to both test conditions so
 the comparison reflects normal deployment.
 
+In candidate mode, Baseline, Current, and Candidate each run in a fresh context
+from the same fixture template. Current and Candidate are installed separately
+under the selected skill's logical discovery name, even when the candidate
+source directory has a different working name. Repository peer skills are
+copied identically into all three conditions and the candidate source is never
+also installed as a peer.
+
+Current and Candidate trigger cases run independently because their
+descriptions may differ. For behavior grading, one structured judge turn sees
+all three evidence bundles under deterministic randomized labels such as `A`,
+`B`, and `C`; condition identities and runtime instructions are withheld. One
+judge turn costs less than three separately blinded pairwise turns and applies
+one grading standard to every output, while the shared turn means the grades
+are not statistically independent. Reports derive all three pairwise summaries
+from those independently assigned per-condition check grades.
+
 ## Results
 
 Runs are written to `.skill-evals/` by default:
@@ -79,16 +110,36 @@ workspace changes, Git state, timing, token use, tool calls, baseline lift, and
 confidence limitations. Missing or failed fixtures are reported as unknown
 instead of being treated as successful.
 
+Without `--candidate`, `results.json` remains schema version 1 with the existing
+top-level fields, two behavior runs, task counts, reports, reproduction command,
+and current-versus-baseline metrics. The `skill` condition ID and
+`skill.runtime_digest_sha256` continue to identify Current for existing
+consumers.
+
+Candidate runs use schema version 2 and add:
+
+- `candidate.path` and `candidate.runtime_digest_sha256`, separate from the
+  Current digest under `skill.runtime_digest_sha256`;
+- `candidate_trigger`, alongside the unchanged Current `trigger` path;
+- `candidate_run` and `candidate` grades for each behavior result;
+- `behavior.summary.comparisons` entries named `current_vs_baseline`,
+  `candidate_vs_baseline`, and `candidate_vs_current`.
+
+The existing `behavior.summary.absolute_lift`,
+`lift_percentage_points`, and `paired_checks` fields remain the unambiguous
+Current-versus-Baseline comparison in both schemas. Candidate mode reports use
+the user-facing labels Baseline, Current, and Candidate. It measures evidence;
+it does not decide whether to promote the candidate.
+
 Running evaluations requires an authenticated Codex CLI. The evaluator links
 the existing Codex authentication file into a temporary isolated home and
 removes that home after each turn.
 
-Current runs compare skill versus baseline. Current-versus-candidate proving,
-regression ingestion, capability-review gates, and component ablation are
-tracked in the [roadmap](../ROADMAP.md). The
+Candidate comparison is available through `--candidate`. Regression ingestion,
+capability-review gates, context metrics, model profiles, and component
+ablation remain separate work tracked in the [roadmap](../ROADMAP.md). The
 [capability-optimisation contract](capability-optimisation.md) defines the
-evidence standard for that planned tooling without changing current evaluator
-behavior.
+evidence standard for that planned tooling.
 
 ## Capability-review boundary
 

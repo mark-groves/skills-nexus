@@ -21,6 +21,7 @@ from skill_eval.core import (
     EvalError,
     EvaluationCondition,
     TriggerCase,
+    candidate_evaluation_conditions,
     default_evaluation_conditions,
     discover_repository_skills,
     efficacy_profile,
@@ -28,6 +29,7 @@ from skill_eval.core import (
     json_dump,
     load_eval_spec,
     materialize_fixtures,
+    resolve_candidate_skill,
     resolve_skill,
     run_fixture_setups,
     snapshot_workspace,
@@ -49,6 +51,14 @@ def build_parser() -> argparse.ArgumentParser:
         )
     )
     parser.add_argument("--skill", required=True, help="Short name, full skill id, or directory")
+    parser.add_argument(
+        "--candidate",
+        type=Path,
+        help=(
+            "Publishable candidate skill directory with the same logical skill identity; "
+            "repository-relative paths resolve from --repo-root"
+        ),
+    )
     parser.add_argument("--suite", choices=("all", "trigger", "behavior"), default="all")
     parser.add_argument("--trigger-case", action="append", default=[], metavar="ID")
     parser.add_argument("--behavior-case", action="append", default=[], metavar="ID")
@@ -278,15 +288,30 @@ def _print_plan(
     conditions: tuple[EvaluationCondition, ...],
     args: argparse.Namespace,
 ) -> None:
-    trigger_turns = len(trigger_cases) * args.trigger_repeats
+    trigger_conditions = tuple(
+        condition for condition in conditions if condition.runtime_skill_dir is not None
+    )
+    trigger_turns = len(trigger_cases) * args.trigger_repeats * len(trigger_conditions)
     behavior_pairs = len(behavior_cases) * args.behavior_repeats
     behavior_turns = behavior_pairs * (len(conditions) + 1)
     condition_labels = " + ".join(condition.display_label.lower() for condition in conditions)
     print(f"Skill: {skill_dir}")
-    print(f"Trigger cases: {len(trigger_cases)} × {args.trigger_repeats} = {trigger_turns} turns")
+    if len(trigger_conditions) == 1:
+        print(
+            f"Trigger cases: {len(trigger_cases)} × {args.trigger_repeats} = {trigger_turns} turns"
+        )
+    else:
+        trigger_labels = " + ".join(
+            condition.display_label.lower() for condition in trigger_conditions
+        )
+        print(
+            f"Trigger cases: {len(trigger_cases)} × {args.trigger_repeats} × "
+            f"({trigger_labels}) = {trigger_turns} turns"
+        )
+    judge_label = "paired judge" if len(conditions) == 2 else "condition-blind judge"
     print(
         f"Behavior cases (maximum): {len(behavior_cases)} × {args.behavior_repeats} × "
-        f"({condition_labels} + paired judge) = {behavior_turns} turns"
+        f"({condition_labels} + {judge_label}) = {behavior_turns} turns"
     )
     print(f"Maximum agent turns: {trigger_turns + behavior_turns}")
     if behavior_cases:
@@ -312,8 +337,21 @@ def _print_plan(
 def run_evaluation(args: argparse.Namespace) -> tuple[dict[str, Any], Path]:
     repo_root = args.repo_root.resolve()
     skill_dir = resolve_skill(repo_root, args.skill)
-    conditions = default_evaluation_conditions(skill_dir)
+    candidate_dir = (
+        resolve_candidate_skill(repo_root, args.candidate, skill_dir.name)
+        if args.candidate is not None
+        else None
+    )
+    conditions = (
+        candidate_evaluation_conditions(skill_dir, candidate_dir)
+        if candidate_dir is not None
+        else default_evaluation_conditions(skill_dir)
+    )
     primary_condition = conditions[0]
+    candidate_condition = next(
+        (condition for condition in conditions if condition.id == "candidate"),
+        None,
+    )
     spec = load_eval_spec(skill_dir, repo_root / "evals")
     eval_dir = spec.path.parent
     trigger_cases = (
@@ -345,9 +383,17 @@ def run_evaluation(args: argparse.Namespace) -> tuple[dict[str, Any], Path]:
     runtime_digest = primary_condition.runtime_digest_sha256
     if runtime_digest is None:
         raise EvalError("the primary evaluation condition must include a runtime skill")
+    candidate_digest = (
+        candidate_condition.runtime_digest_sha256 if candidate_condition is not None else None
+    )
     spec_digest = stable_digest(spec.path)
     timestamp = datetime.now(UTC)
-    run_id = f"{timestamp.strftime('%Y%m%dT%H%M%SZ')}-{runtime_digest[:8]}"
+    digest_suffix = (
+        f"{runtime_digest[:8]}-{candidate_digest[:8]}"
+        if candidate_digest is not None
+        else runtime_digest[:8]
+    )
+    run_id = f"{timestamp.strftime('%Y%m%dT%H%M%SZ')}-{digest_suffix}"
     output_dir = args.output_root.resolve() / spec.skill_name / run_id
     suffix = 1
     while output_dir.exists():
@@ -364,51 +410,65 @@ def run_evaluation(args: argparse.Namespace) -> tuple[dict[str, Any], Path]:
         timeout_seconds=args.timeout,
         sandbox=args.sandbox,
         peer_skills=(
-            tuple(path for path in discover_repository_skills(repo_root) if path != skill_dir)
+            tuple(
+                path
+                for path in discover_repository_skills(repo_root)
+                if path not in {skill_dir, candidate_dir}
+            )
             if args.skill_universe == "repository"
             else ()
         ),
     )
     print(f"Run {run_id}: {output_dir}", flush=True)
 
-    trigger_runs: list[dict[str, Any]] = []
+    trigger_conditions = tuple(
+        condition for condition in conditions if condition.runtime_skill_dir is not None
+    )
+    trigger_runs_by_condition: dict[str, list[dict[str, Any]]] = {
+        condition.id: [] for condition in trigger_conditions
+    }
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as executor:
-        trigger_futures: dict[concurrent.futures.Future[dict[str, Any]], tuple[str, int]] = {}
+        trigger_futures: dict[
+            concurrent.futures.Future[dict[str, Any]],
+            tuple[str, int, EvaluationCondition],
+        ] = {}
         for trigger_case in trigger_cases:
             for repeat in range(1, args.trigger_repeats + 1):
-                run_dir = (
-                    output_dir
-                    / "runs"
-                    / "trigger"
-                    / trigger_case.id
-                    / f"repeat-{repeat}"
-                    / primary_condition.id
-                )
-                future = executor.submit(
-                    _safe_call,
-                    partial(
-                        runner.run_task,
-                        run_dir=run_dir,
-                        workspace_template=None,
-                        prompt=trigger_case.query,
+                for condition in trigger_conditions:
+                    run_dir = (
+                        output_dir
+                        / "runs"
+                        / "trigger"
+                        / trigger_case.id
+                        / f"repeat-{repeat}"
+                        / condition.id
+                    )
+                    future = executor.submit(
+                        _safe_call,
+                        partial(
+                            runner.run_task,
+                            run_dir=run_dir,
+                            workspace_template=None,
+                            prompt=trigger_case.query,
+                            case_type="trigger",
+                            case_id=trigger_case.id,
+                            repeat=repeat,
+                            condition=condition,
+                        ),
                         case_type="trigger",
                         case_id=trigger_case.id,
                         repeat=repeat,
-                        condition=primary_condition,
-                    ),
-                    case_type="trigger",
-                    case_id=trigger_case.id,
-                    repeat=repeat,
-                    condition=primary_condition,
-                    run_dir=run_dir,
-                )
-                trigger_futures[future] = (trigger_case.id, repeat)
+                        condition=condition,
+                        run_dir=run_dir,
+                    )
+                    trigger_futures[future] = (trigger_case.id, repeat, condition)
         for future in concurrent.futures.as_completed(trigger_futures):
-            case_id, repeat = trigger_futures[future]
+            case_id, repeat, condition = trigger_futures[future]
             run = future.result()
-            trigger_runs.append(run)
+            trigger_runs_by_condition[condition.id].append(run)
             print(
-                f"trigger {case_id} repeat {repeat}: {run['status']} "
+                f"trigger {case_id} repeat {repeat} "
+                f"{condition.display_label.lower()}: {run['status']} "
                 f"activated={run.get('activated')}",
                 flush=True,
             )
@@ -509,7 +569,7 @@ def run_evaluation(args: argparse.Namespace) -> tuple[dict[str, Any], Path]:
             behavior_case = job["case"]
             runs_by_condition = job["runs"]
             if any(run["status"] == "fixture_error" for run in runs_by_condition.values()):
-                result = {
+                behavior_result = {
                     "case_id": behavior_case.id,
                     "repeat": job["repeat"],
                     "prompt": behavior_case.prompt,
@@ -528,7 +588,7 @@ def run_evaluation(args: argparse.Namespace) -> tuple[dict[str, Any], Path]:
                     ),
                     "judge": {"status": "not-run"},
                 }
-                behavior_results.append(result)
+                behavior_results.append(behavior_result)
                 continue
             grade_dir = job["root"] / "judge"
             future = executor.submit(
@@ -549,14 +609,18 @@ def run_evaluation(args: argparse.Namespace) -> tuple[dict[str, Any], Path]:
                     if judge.get("status") == "completed"
                     else _unknown_grades(
                         behavior_case,
-                        "Paired judgment was invalid or incomplete",
+                        "Condition-blind judgment was invalid or incomplete",
                         conditions,
                     )
                 )
             except Exception as exc:
                 judge = {"status": "framework_error", "error": f"{type(exc).__name__}: {exc}"}
-                grades = _unknown_grades(behavior_case, "Paired judge failed", conditions)
-            result = {
+                grades = _unknown_grades(
+                    behavior_case,
+                    "Condition-blind judge failed",
+                    conditions,
+                )
+            behavior_result = {
                 "case_id": behavior_case.id,
                 "repeat": job["repeat"],
                 "prompt": behavior_case.prompt,
@@ -568,17 +632,33 @@ def run_evaluation(args: argparse.Namespace) -> tuple[dict[str, Any], Path]:
                 "grades": grades,
                 "judge": judge,
             }
-            behavior_results.append(result)
+            behavior_results.append(behavior_result)
             print(
                 f"judge behavior {behavior_case.id} repeat {job['repeat']}: {judge['status']}",
                 flush=True,
             )
 
-    trigger_runs.sort(key=lambda run: (run["case_id"], run["repeat"]))
+    for runs in trigger_runs_by_condition.values():
+        runs.sort(key=lambda run: (run["case_id"], run["repeat"]))
+    trigger_runs = trigger_runs_by_condition.get(primary_condition.id, [])
+    candidate_trigger_runs = (
+        trigger_runs_by_condition.get(candidate_condition.id, [])
+        if candidate_condition is not None
+        else []
+    )
     behavior_results.sort(key=lambda item: (item["case_id"], item["repeat"]))
     trigger_summary = (
         summarize_trigger_results(trigger_cases, trigger_runs, threshold=args.activation_threshold)
         if trigger_cases
+        else None
+    )
+    candidate_trigger_summary = (
+        summarize_trigger_results(
+            trigger_cases,
+            candidate_trigger_runs,
+            threshold=args.activation_threshold,
+        )
+        if trigger_cases and candidate_condition is not None
         else None
     )
     behavior_summary = (
@@ -592,7 +672,11 @@ def run_evaluation(args: argparse.Namespace) -> tuple[dict[str, Any], Path]:
     if behavior_cases and args.behavior_repeats < 2:
         warnings.append("Behavior cases ran once; stochastic variance is not measured")
     if any(result.get("judge", {}).get("status") != "completed" for result in behavior_results):
-        warnings.append("One or more paired judgments were unavailable or invalid")
+        warnings.append(
+            "One or more "
+            + ("paired" if len(conditions) == 2 else "condition-blind")
+            + " judgments were unavailable or invalid"
+        )
     if args.sandbox == "danger-full-access":
         warnings.append("Behavior runs used danger-full-access sandboxing")
 
@@ -625,6 +709,8 @@ def run_evaluation(args: argparse.Namespace) -> tuple[dict[str, Any], Path]:
     ]
     if args.repo_root.resolve() != REPO_ROOT.resolve():
         reproduce.extend(["--repo-root", str(args.repo_root)])
+    if args.candidate is not None:
+        reproduce.extend(["--candidate", str(args.candidate)])
     if args.max_trigger_cases is not None:
         reproduce.extend(["--max-trigger-cases", str(args.max_trigger_cases)])
     if args.max_behavior_cases is not None:
@@ -640,8 +726,8 @@ def run_evaluation(args: argparse.Namespace) -> tuple[dict[str, Any], Path]:
     if args.fail_under is not None:
         reproduce.extend(["--fail-under", str(args.fail_under)])
 
-    result = {
-        "schema_version": 1,
+    result: dict[str, Any] = {
+        "schema_version": 2 if candidate_condition is not None else 1,
         "run_id": run_id,
         "generated_at": timestamp.isoformat(),
         "repository": {"root": str(repo_root), **_git_metadata(repo_root)},
@@ -687,6 +773,19 @@ def run_evaluation(args: argparse.Namespace) -> tuple[dict[str, Any], Path]:
         "efficacy": profile,
         "reproduce_command": shlex.join(reproduce),
     }
+    if candidate_condition is not None and candidate_dir is not None:
+        result["candidate"] = {
+            "name": spec.skill_name,
+            "path": str(candidate_dir),
+            "runtime_digest_sha256": candidate_digest,
+        }
+        result["candidate_trigger"] = (
+            {"runs": candidate_trigger_runs, "summary": candidate_trigger_summary}
+            if candidate_trigger_summary is not None
+            else None
+        )
+        result["config"]["candidate"] = str(args.candidate)
+        result["integrity"]["blind_condition_grading"] = True
     json_dump(output_dir / "results.json", result)
     markdown, html = write_reports(output_dir, result, conditions)
     print(f"Report: {markdown}", flush=True)

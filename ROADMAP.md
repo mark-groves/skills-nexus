@@ -35,7 +35,7 @@ verified contract; an unchecked item remains planned work.
 
 ## Phase 4 — Prove candidate improvements
 
-- [ ] Add current-versus-candidate evaluation alongside skill-versus-baseline.
+- [x] Add current-versus-candidate evaluation alongside skill-versus-baseline.
 - [ ] Require a reported corrective failure to reproduce against the current
       skill first.
 - [ ] Run the candidate against the new regression and the complete existing suite.
@@ -51,9 +51,9 @@ item is documentation only; current evaluator behavior remains unchanged.
 - [x] Define separate corrective-improvement and context-reduction evidence
       paths, context budgets, review verdicts, and the higher retirement bar
       (#22).
-- [ ] Generalise evaluator condition handling without changing the default
+- [x] Generalise evaluator condition handling without changing the default
       two-condition behavior (#23).
-- [ ] Compare baseline, current, and candidate conditions (#24).
+- [x] Compare baseline, current, and candidate conditions (#24).
 - [ ] Report discovery, activation, conditional, and dynamic context costs
       separately (#25).
 - [ ] Add protected checks, skill-specific non-inferiority rules, and

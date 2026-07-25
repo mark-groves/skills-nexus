@@ -25,19 +25,48 @@ def _markdown_label(value: str) -> str:
     return value.replace("|", "\\|").replace("\r", " ").replace("\n", " ")
 
 
-def _condition_pair(
+def _validated_conditions(
     conditions: tuple[EvaluationCondition, ...],
-) -> tuple[EvaluationCondition, EvaluationCondition]:
-    if len(conditions) != 2 or conditions[0].id == conditions[1].id:
-        raise EvalError("paired reports require exactly two distinct conditions")
+) -> tuple[EvaluationCondition, ...]:
+    if len(conditions) not in {2, 3} or len({condition.id for condition in conditions}) != len(
+        conditions
+    ):
+        raise EvalError("reports require two or three distinct conditions")
     return conditions
+
+
+def _trigger_entries(
+    result: dict[str, Any],
+    conditions: tuple[EvaluationCondition, ...],
+) -> list[tuple[EvaluationCondition, dict[str, Any]]]:
+    entries: list[tuple[EvaluationCondition, dict[str, Any]]] = []
+    if result.get("trigger"):
+        entries.append((conditions[0], result["trigger"]))
+    if len(conditions) == 3 and result.get("candidate_trigger"):
+        entries.append((conditions[2], result["candidate_trigger"]))
+    return entries
+
+
+def _comparison_rows(summary: dict[str, Any]) -> list[str]:
+    rows: list[str] = []
+    for comparison in summary.get("comparisons", {}).values():
+        paired = comparison["paired_checks"]
+        rows.append(
+            f"| {_markdown_label(comparison['left_label'])} vs "
+            f"{_markdown_label(comparison['right_label'])} | "
+            f"{_number(comparison['lift_percentage_points'])} pp | "
+            f"{paired['left_wins']} | {paired['right_wins']} | "
+            f"{paired['ties']} | {paired['unknown']} |"
+        )
+    return rows
 
 
 def render_markdown(
     result: dict[str, Any],
     conditions: tuple[EvaluationCondition, ...],
 ) -> str:
-    primary, comparison = _condition_pair(conditions)
+    conditions = _validated_conditions(conditions)
+    primary, comparison = conditions[:2]
     profile = result["efficacy"]
     lines = [
         f"# Skill efficacy report: `{result['skill']['name']}`",
@@ -58,37 +87,38 @@ def render_markdown(
         "",
     ]
 
-    trigger = result.get("trigger")
-    if trigger:
-        summary = trigger["summary"]
-        matrix = summary["confusion_matrix"]
-        lines.extend(
-            [
-                "## Triggering",
-                "",
-                f"Balanced accuracy {_percent(summary['balanced_accuracy'])}; recall "
-                f"{_percent(summary['recall'])}; specificity {_percent(summary['specificity'])}; "
-                f"TP/FP/TN/FN = {matrix['tp']}/{matrix['fp']}/{matrix['tn']}/{matrix['fn']} "
-                f"with {matrix.get('unscored', 0)} unscored.",
-                "",
-                "| Case | Expected | Activation rate | Result | Query |",
-                "|---|---:|---:|---:|---|",
-            ]
-        )
-        for case in summary["cases"]:
-            query = case["query"].replace("|", "\\|").replace("\n", " ")
-            lines.append(
-                f"| {case['id']} | {'trigger' if case['expected'] else 'skip'} | "
-                f"{_percent(case['activation_rate'])} | {_mark(case['passed'])} | {query} |"
+    trigger_entries = _trigger_entries(result, conditions)
+    if trigger_entries:
+        lines.extend(["## Triggering", ""])
+        for condition, trigger in trigger_entries:
+            if len(trigger_entries) > 1:
+                lines.extend([f"### {_markdown_label(condition.display_label)}", ""])
+            summary = trigger["summary"]
+            matrix = summary["confusion_matrix"]
+            lines.extend(
+                [
+                    f"Balanced accuracy {_percent(summary['balanced_accuracy'])}; recall "
+                    f"{_percent(summary['recall'])}; specificity "
+                    f"{_percent(summary['specificity'])}; TP/FP/TN/FN = "
+                    f"{matrix['tp']}/{matrix['fp']}/{matrix['tn']}/{matrix['fn']} "
+                    f"with {matrix.get('unscored', 0)} unscored.",
+                    "",
+                    "| Case | Expected | Activation rate | Result | Query |",
+                    "|---|---:|---:|---:|---|",
+                ]
             )
-        lines.append("")
+            for case in summary["cases"]:
+                query = case["query"].replace("|", "\\|").replace("\n", " ")
+                lines.append(
+                    f"| {case['id']} | {'trigger' if case['expected'] else 'skip'} | "
+                    f"{_percent(case['activation_rate'])} | {_mark(case['passed'])} | {query} |"
+                )
+            lines.append("")
 
     behavior = result.get("behavior")
     if behavior:
         summary = behavior["summary"]
         pairs = summary["paired_checks"]
-        primary_efficiency = summary["efficiency"][primary.id]
-        comparison_efficiency = summary["efficiency"][comparison.id]
         primary_label = _markdown_label(primary.display_label)
         comparison_label = _markdown_label(comparison.display_label)
         comparison_phrase = (
@@ -107,63 +137,120 @@ def render_markdown(
                 f"Paired checks: {pairs['skill_wins']} wins, {pairs['regressions']} regressions, "
                 f"{pairs['ties']} ties, {pairs['unknown']} unknown.",
                 "",
-                "| Condition | Check pass | Evidence | Median time | Median tokens | Tool calls |",
-                "|---|---:|---:|---:|---:|---:|",
-                f"| {primary_label} | {_percent(summary[primary.id]['pass_rate'])} | "
-                f"{_percent(summary[primary.id]['evidence_coverage'])} | "
-                f"{_number(primary_efficiency['median_duration_seconds'])}s | "
-                f"{_number(primary_efficiency['median_tokens'], 0)} | "
-                f"{primary_efficiency['tool_calls']} |",
-                f"| {comparison_label} | {_percent(summary[comparison.id]['pass_rate'])} | "
-                f"{_percent(summary[comparison.id]['evidence_coverage'])} | "
-                f"{_number(comparison_efficiency['median_duration_seconds'])}s | "
-                f"{_number(comparison_efficiency['median_tokens'], 0)} | "
-                f"{comparison_efficiency['tool_calls']} |",
-                "",
             ]
         )
+        comparison_rows = _comparison_rows(summary)
+        if comparison_rows:
+            lines.extend(
+                [
+                    "### Pairwise comparisons",
+                    "",
+                    "| Comparison | Lift | Left wins | Right wins | Ties | Unknown |",
+                    "|---|---:|---:|---:|---:|---:|",
+                    *comparison_rows,
+                    "",
+                ]
+            )
+        lines.extend(
+            [
+                "| Condition | Check pass | Evidence | Median time | Median tokens | Tool calls |",
+                "|---|---:|---:|---:|---:|---:|",
+            ]
+        )
+        for condition in conditions:
+            condition_summary = summary[condition.id]
+            efficiency = summary["efficiency"][condition.id]
+            lines.append(
+                f"| {_markdown_label(condition.display_label)} | "
+                f"{_percent(condition_summary['pass_rate'])} | "
+                f"{_percent(condition_summary['evidence_coverage'])} | "
+                f"{_number(efficiency['median_duration_seconds'])}s | "
+                f"{_number(efficiency['median_tokens'], 0)} | "
+                f"{efficiency['tool_calls']} |"
+            )
+        lines.append("")
+
         for case in behavior["results"]:
+            activation_text = " · ".join(
+                f"{_markdown_label(condition.display_label).lower()} activated: "
+                f"`{case[f'{condition.id}_run'].get('activated')}`"
+                for condition in conditions
+                if condition.runtime_skill_dir is not None
+            )
+            labels = [_markdown_label(condition.display_label) for condition in conditions]
             lines.extend(
                 [
                     f"### Behavior {case['case_id']} · repeat {case['repeat']}",
                     "",
                     f"Fixture fidelity: `{case['fixture_fidelity']}` · judge: "
-                    f"`{case.get('judge', {}).get('status', 'not-run')}` · "
-                    f"{primary_label.lower()} activated: "
-                    f"`{case[f'{primary.id}_run'].get('activated')}`",
+                    f"`{case.get('judge', {}).get('status', 'not-run')}` · {activation_text}",
                     "",
-                    f"| Check | {primary_label} | {comparison_label} | {primary_label} evidence |",
-                    "|---|---:|---:|---|",
+                    (
+                        f"| Check | {labels[0]} | {labels[1]} | {labels[0]} evidence |"
+                        if len(conditions) == 2
+                        else "| Check | " + " | ".join(labels) + " | Evidence |"
+                    ),
+                    (
+                        "|---|---:|---:|---|"
+                        if len(conditions) == 2
+                        else "|---|" + "---:|" * len(conditions) + "---|"
+                    ),
                 ]
             )
-            primary_grades = case.get("grades", {}).get(primary.id, [])
-            comparison_grades = case.get("grades", {}).get(comparison.id, [])
+            grades = case.get("grades", {})
             for index, check in enumerate(case["checks"]):
-                primary_grade = primary_grades[index] if index < len(primary_grades) else {}
-                comparison_grade = (
-                    comparison_grades[index] if index < len(comparison_grades) else {}
+                condition_grades = [
+                    grades.get(condition.id, [])[index]
+                    if index < len(grades.get(condition.id, []))
+                    else {}
+                    for condition in conditions
+                ]
+                evidence = (
+                    str(condition_grades[0].get("evidence", ""))
+                    .replace("|", "\\|")
+                    .replace("\n", " ")
+                    if len(conditions) == 2
+                    else " / ".join(
+                        f"{labels[position]}: "
+                        + str(grade.get("evidence", "")).replace("|", "\\|").replace("\n", " ")
+                        for position, grade in enumerate(condition_grades)
+                        if grade.get("evidence")
+                    )
                 )
                 escaped_check = check.replace("|", "\\|")
-                evidence = (
-                    str(primary_grade.get("evidence", "")).replace("|", "\\|").replace("\n", " ")
-                )
                 lines.append(
-                    f"| {escaped_check} | {_mark(primary_grade.get('passed'))} | "
-                    f"{_mark(comparison_grade.get('passed'))} | {evidence} |"
+                    f"| {escaped_check} | "
+                    + " | ".join(_mark(grade.get("passed")) for grade in condition_grades)
+                    + f" | {evidence} |"
                 )
             lines.append("")
 
     integrity = result["integrity"]
+    condition_labels = ", ".join(
+        _markdown_label(condition.display_label) for condition in conditions
+    )
+    context_line = (
+        f"- {_markdown_label(conditions[0].display_label)} and "
+        f"{_markdown_label(conditions[1].display_label).lower()} ran in fresh "
+        f"isolated contexts: `{integrity['fresh_contexts']}`"
+        if len(conditions) == 2
+        else f"- {condition_labels} ran in fresh isolated contexts: `{integrity['fresh_contexts']}`"
+    )
+    grading_line = (
+        f"- Paired grading used randomized labels: `{integrity['blind_paired_grading']}`"
+        if len(conditions) == 2
+        else "- Multi-condition grading used randomized condition-blind labels: "
+        f"`{integrity['blind_paired_grading']}`"
+    )
     lines.extend(
         [
             "## Integrity and limitations",
             "",
             f"- Eval ground truth withheld from task agents: `{integrity['evals_withheld']}`",
-            f"- {_markdown_label(primary.display_label)} and "
-            f"{_markdown_label(comparison.display_label).lower()} ran in fresh "
-            f"isolated contexts: `{integrity['fresh_contexts']}`",
-            f"- Repository peer skills were held constant across conditions: `{integrity['peer_skill_parity']}`",
-            f"- Paired grading used randomized labels: `{integrity['blind_paired_grading']}`",
+            context_line,
+            f"- Repository peer skills were held constant across conditions: "
+            f"`{integrity['peer_skill_parity']}`",
+            grading_line,
         ]
     )
     for warning in integrity.get("warnings", []):
@@ -186,15 +273,14 @@ def render_html(
     result: dict[str, Any],
     conditions: tuple[EvaluationCondition, ...],
 ) -> str:
-    primary, comparison = _condition_pair(conditions)
+    conditions = _validated_conditions(conditions)
     profile = result["efficacy"]
-    trigger = result.get("trigger")
-    behavior = result.get("behavior")
-
-    trigger_rows = ""
-    if trigger:
+    trigger_sections = ""
+    trigger_entries = _trigger_entries(result, conditions)
+    for condition, trigger in trigger_entries:
+        rows = ""
         for case in trigger["summary"]["cases"]:
-            trigger_rows += (
+            rows += (
                 "<tr>"
                 f"<td>{html.escape(str(case['id']))}</td>"
                 f"<td>{'trigger' if case['expected'] else 'skip'}</td>"
@@ -203,33 +289,96 @@ def render_html(
                 f"<td>{html.escape(case['query'])}</td>"
                 "</tr>"
             )
+        summary = trigger["summary"]
+        condition_heading = (
+            f"<h3>{html.escape(condition.display_label)}</h3>" if len(trigger_entries) > 1 else ""
+        )
+        trigger_sections += (
+            condition_heading + f"<p>Balanced accuracy {_percent(summary['balanced_accuracy'])}; "
+            f"recall {_percent(summary['recall'])}; "
+            f"specificity {_percent(summary['specificity'])}.</p>"
+            "<table><thead><tr><th>Case</th><th>Expected</th><th>Activation</th>"
+            f"<th>Result</th><th>Query</th></tr></thead><tbody>{rows}</tbody></table>"
+        )
 
+    behavior = result.get("behavior")
+    behavior_intro = ""
     behavior_sections = ""
     if behavior:
+        summary = behavior["summary"]
+        condition_metrics = " · ".join(
+            f"{html.escape(condition.display_label)} {_percent(summary[condition.id]['pass_rate'])}"
+            for condition in conditions
+        )
+        behavior_intro = (
+            f"<p>{html.escape(conditions[0].display_label)} check pass "
+            f"{_percent(summary[conditions[0].id]['pass_rate'])}; "
+            f"{html.escape(conditions[1].display_label.lower())} "
+            f"{_percent(summary[conditions[1].id]['pass_rate'])}; lift "
+            f"{_number(summary['lift_percentage_points'])} percentage points.</p>"
+            if len(conditions) == 2
+            else f"<p>Check pass rates: {condition_metrics}.</p>"
+        )
+        comparisons = summary.get("comparisons", {})
+        if comparisons:
+            comparison_rows = "".join(
+                "<tr>"
+                f"<td>{html.escape(item['left_label'])} vs "
+                f"{html.escape(item['right_label'])}</td>"
+                f"<td>{_number(item['lift_percentage_points'])} pp</td>"
+                f"<td>{item['paired_checks']['left_wins']}</td>"
+                f"<td>{item['paired_checks']['right_wins']}</td>"
+                f"<td>{item['paired_checks']['ties']}</td>"
+                f"<td>{item['paired_checks']['unknown']}</td>"
+                "</tr>"
+                for item in comparisons.values()
+            )
+            behavior_intro += (
+                "<h3>Pairwise comparisons</h3><table><thead><tr><th>Comparison</th>"
+                "<th>Lift</th><th>Left wins</th><th>Right wins</th><th>Ties</th>"
+                f"<th>Unknown</th></tr></thead><tbody>{comparison_rows}</tbody></table>"
+            )
         for case in behavior["results"]:
+            grades = case.get("grades", {})
+            header = "".join(
+                f"<th>{html.escape(condition.display_label)}</th>" for condition in conditions
+            )
+            evidence_header = (
+                f"{html.escape(conditions[0].display_label)} evidence"
+                if len(conditions) == 2
+                else "Evidence"
+            )
             rows = ""
-            primary_grades = case.get("grades", {}).get(primary.id, [])
-            comparison_grades = case.get("grades", {}).get(comparison.id, [])
             for index, check in enumerate(case["checks"]):
-                primary_grade = primary_grades[index] if index < len(primary_grades) else {}
-                comparison_grade = (
-                    comparison_grades[index] if index < len(comparison_grades) else {}
+                marks = ""
+                evidence_parts: list[str] = []
+                for condition in conditions:
+                    condition_grades = grades.get(condition.id, [])
+                    grade = condition_grades[index] if index < len(condition_grades) else {}
+                    marks += f"<td>{_mark(grade.get('passed'))}</td>"
+                    if grade.get("evidence"):
+                        evidence_parts.append(
+                            f"{condition.display_label}: {grade.get('evidence', '')}"
+                        )
+                evidence = (
+                    str(grades.get(conditions[0].id, [])[index].get("evidence", ""))
+                    if len(conditions) == 2 and index < len(grades.get(conditions[0].id, []))
+                    else " / ".join(evidence_parts)
                 )
                 rows += (
-                    "<tr>"
-                    f"<td>{html.escape(check)}</td>"
-                    f"<td>{_mark(primary_grade.get('passed'))}</td>"
-                    f"<td>{_mark(comparison_grade.get('passed'))}</td>"
-                    f"<td>{html.escape(str(primary_grade.get('evidence', '')))}</td>"
-                    "</tr>"
+                    f"<tr><td>{html.escape(check)}</td>{marks}<td>{html.escape(evidence)}</td></tr>"
                 )
-            primary_final = html.escape(case[f"{primary.id}_run"].get("final_response", ""))
-            comparison_final = html.escape(case[f"{comparison.id}_run"].get("final_response", ""))
+            responses = "".join(
+                f"<div><h4>{html.escape(condition.display_label)} response</h4>"
+                f"<pre>{html.escape(case[f'{condition.id}_run'].get('final_response', ''))}</pre>"
+                "</div>"
+                for condition in conditions
+            )
             behavior_sections += f"""
             <details>
               <summary>Behavior {html.escape(str(case["case_id"]))} · repeat {case["repeat"]} · fidelity {html.escape(case["fixture_fidelity"])}</summary>
-              <table><thead><tr><th>Check</th><th>{html.escape(primary.display_label)}</th><th>{html.escape(comparison.display_label)}</th><th>{html.escape(primary.display_label)} evidence</th></tr></thead><tbody>{rows}</tbody></table>
-              <div class="columns"><div><h4>{html.escape(primary.display_label)} response</h4><pre>{primary_final}</pre></div><div><h4>{html.escape(comparison.display_label)} response</h4><pre>{comparison_final}</pre></div></div>
+              <table><thead><tr><th>Check</th>{header}<th>{evidence_header}</th></tr></thead><tbody>{rows}</tbody></table>
+              <div class="columns">{responses}</div>
             </details>
             """
 
@@ -240,36 +389,25 @@ def render_html(
         )
         or "<li>No framework integrity warnings.</li>"
     )
-    summary_cards = [
-        ("Absolute efficacy", _percent(profile["absolute_efficacy"])),
-        ("Activation quality", _percent(profile["activation_quality"])),
-        ("Execution quality", _percent(profile["execution_quality"])),
-        ("Incremental lift", _percent(profile["incremental_lift"])),
-        ("Evidence coverage", _percent(profile["evidence_coverage"])),
-    ]
     cards = "".join(
         f'<div class="card"><span>{html.escape(label)}</span><strong>{value}</strong></div>'
-        for label, value in summary_cards
+        for label, value in (
+            ("Absolute efficacy", _percent(profile["absolute_efficacy"])),
+            ("Activation quality", _percent(profile["activation_quality"])),
+            ("Execution quality", _percent(profile["execution_quality"])),
+            ("Incremental lift", _percent(profile["incremental_lift"])),
+            ("Evidence coverage", _percent(profile["evidence_coverage"])),
+        )
     )
     trigger_section = (
-        f"""
-        <section><h2>Triggering</h2>
-        <p>Balanced accuracy {_percent(trigger["summary"]["balanced_accuracy"])}; recall {_percent(trigger["summary"]["recall"])}; specificity {_percent(trigger["summary"]["specificity"])}.</p>
-        <table><thead><tr><th>Case</th><th>Expected</th><th>Activation</th><th>Result</th><th>Query</th></tr></thead><tbody>{trigger_rows}</tbody></table></section>
-        """
-        if trigger
-        else ""
+        f"<section><h2>Triggering</h2>{trigger_sections}</section>" if trigger_sections else ""
     )
-    behavior_intro = ""
-    if behavior:
-        summary = behavior["summary"]
-        behavior_intro = (
-            f"<p>{html.escape(primary.display_label)} check pass "
-            f"{_percent(summary[primary.id]['pass_rate'])}; "
-            f"{html.escape(comparison.display_label.lower())} "
-            f"{_percent(summary[comparison.id]['pass_rate'])}; lift "
-            f"{_number(summary['lift_percentage_points'])} percentage points.</p>"
-        )
+
+    grading_integrity_label = (
+        "randomized paired grading"
+        if len(conditions) == 2
+        else "randomized condition-blind grading"
+    )
 
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -282,14 +420,14 @@ main{{max-width:1180px;margin:auto;padding:44px 24px 80px}}h1{{font-size:2.2rem;
 .card{{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;display:flex;flex-direction:column}}.card span{{color:var(--muted)}}.card strong{{font-size:1.7rem}}
 table{{width:100%;border-collapse:collapse;background:var(--panel);margin:12px 0 24px}}th,td{{text-align:left;vertical-align:top;border-bottom:1px solid var(--line);padding:10px}}th{{color:var(--muted);font-size:.82rem;text-transform:uppercase}}
 details{{background:var(--panel);border:1px solid var(--line);border-radius:10px;margin:12px 0;padding:12px}}summary{{cursor:pointer;font-weight:700}}pre{{white-space:pre-wrap;word-break:break-word;background:#182126;color:#ecf3ef;padding:14px;border-radius:8px;max-height:420px;overflow:auto}}
-.columns{{display:grid;grid-template-columns:1fr 1fr;gap:16px}}code{{background:#e7e3d8;padding:.12rem .35rem;border-radius:4px}}@media(max-width:760px){{.columns{{grid-template-columns:1fr}}}}
+.columns{{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px}}code{{background:#e7e3d8;padding:.12rem .35rem;border-radius:4px}}
 </style></head><body><main>
 <div class="eyebrow">Skills Nexus evaluation</div><h1>{html.escape(result["skill"]["name"])}</h1>
 <p><span class="verdict">{html.escape(profile["verdict"])}</span> Run <code>{html.escape(result["run_id"])}</code> · {html.escape(result["generated_at"])}</p>
 <div class="cards">{cards}</div><p>{html.escape(profile["formula"])} {html.escape(profile["note"])}</p>
 {trigger_section}
 <section><h2>Behavior and lift</h2>{behavior_intro}{behavior_sections or "<p>Behavior suite was not selected.</p>"}</section>
-<section><h2>Integrity and limitations</h2><ul>{warnings}</ul><p>Eval ground truth withheld: <code>{result["integrity"]["evals_withheld"]}</code> · fresh contexts: <code>{result["integrity"]["fresh_contexts"]}</code> · peer parity: <code>{result["integrity"]["peer_skill_parity"]}</code> · randomized paired grading: <code>{result["integrity"]["blind_paired_grading"]}</code></p></section>
+<section><h2>Integrity and limitations</h2><ul>{warnings}</ul><p>Eval ground truth withheld: <code>{result["integrity"]["evals_withheld"]}</code> · fresh contexts: <code>{result["integrity"]["fresh_contexts"]}</code> · peer parity: <code>{result["integrity"]["peer_skill_parity"]}</code> · {grading_integrity_label}: <code>{result["integrity"]["blind_paired_grading"]}</code></p></section>
 <section><h2>Reproduce</h2><pre>{html.escape(result["reproduce_command"])}</pre></section>
 </main></body></html>"""
 
