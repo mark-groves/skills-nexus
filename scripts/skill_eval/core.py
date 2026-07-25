@@ -37,6 +37,18 @@ BEHAVIOR_SUMMARY_RESERVED_KEYS = frozenset(
 )
 
 
+def _runtime_package_files(path: Path, *, exclude: Iterable[str] = ()) -> tuple[Path, ...]:
+    """Return the regular files included in a deterministic runtime package."""
+    excluded = set(exclude)
+    return tuple(
+        item
+        for item in sorted(path.rglob("*"), key=lambda entry: entry.as_posix())
+        if item.is_file()
+        and not item.is_symlink()
+        and not any(part in excluded for part in item.relative_to(path).parts)
+    )
+
+
 @dataclass(frozen=True)
 class TriggerCase:
     id: str
@@ -227,22 +239,193 @@ def load_eval_spec(skill_dir: Path, evals_root: Path) -> EvalSpec:
 def stable_digest(path: Path, *, exclude: Iterable[str] = ()) -> str:
     """Hash a file tree deterministically without following symlinks."""
     digest = hashlib.sha256()
-    excluded = set(exclude)
     if path.is_file():
         digest.update(path.name.encode())
         digest.update(path.read_bytes())
         return digest.hexdigest()
-    for item in sorted(path.rglob("*"), key=lambda entry: entry.as_posix()):
+    for item in _runtime_package_files(path, exclude=exclude):
         relative = item.relative_to(path)
-        if any(part in excluded for part in relative.parts):
-            continue
-        if not item.is_file() or item.is_symlink():
-            continue
         digest.update(relative.as_posix().encode())
         digest.update(b"\0")
         digest.update(item.read_bytes())
         digest.update(b"\0")
     return digest.hexdigest()
+
+
+def _parse_skill_document(
+    text: str,
+    skill_md: Path,
+    *,
+    source: str,
+) -> tuple[dict[str, Any], str]:
+    """Parse canonical skill frontmatter and return its exact instruction body."""
+    lines = text.splitlines(keepends=True)
+    if not lines or lines[0].rstrip("\r\n").strip() != "---":
+        raise EvalError(f"{source} SKILL.md must start with YAML frontmatter: {skill_md}")
+    closing = next(
+        (
+            index
+            for index, line in enumerate(lines[1:], start=1)
+            if line.rstrip("\r\n").strip() == "---"
+            and not line.rstrip("\r\n").startswith((" ", "\t"))
+        ),
+        None,
+    )
+    if closing is None:
+        raise EvalError(f"{source} SKILL.md frontmatter is missing a closing delimiter: {skill_md}")
+
+    import validate_repo
+
+    previous_error_count = len(validate_repo.ERRORS)
+    payload = validate_repo.parse_yaml_string_map(
+        "".join(lines[1:closing]).rstrip("\r\n"),
+        str(skill_md),
+    )
+    parse_errors = validate_repo.ERRORS[previous_error_count:]
+    del validate_repo.ERRORS[previous_error_count:]
+    if payload is None or parse_errors:
+        detail = "; ".join(parse_errors) or "invalid YAML frontmatter"
+        raise EvalError(f"{source} SKILL.md is malformed: {detail}")
+    return payload, "".join(lines[closing + 1 :])
+
+
+def measure_static_footprint(
+    runtime_skill_dir: Path | None,
+    runtime_digest_sha256: str | None,
+) -> dict[str, Any]:
+    """Measure portable static context without using a provider tokenizer."""
+    if runtime_skill_dir is None:
+        return {
+            "description": {"characters": 0, "utf8_bytes": 0},
+            "skill_md_body": {"characters": 0, "utf8_bytes": 0},
+            "runtime_package": {
+                "file_count": 0,
+                "bytes": 0,
+                "digest_sha256": None,
+            },
+        }
+
+    skill_md = runtime_skill_dir / "SKILL.md"
+    try:
+        text = skill_md.read_text(encoding="utf-8")
+    except FileNotFoundError as exc:
+        raise EvalError(f"Missing runtime SKILL.md: {skill_md}") from exc
+    except UnicodeDecodeError as exc:
+        raise EvalError(f"Runtime SKILL.md must be UTF-8: {skill_md}") from exc
+
+    payload, body = _parse_skill_document(text, skill_md, source="Runtime")
+    description_value = payload.get("description", "")
+    description = description_value.strip() if isinstance(description_value, str) else ""
+    if not description:
+        raise EvalError(f"Runtime SKILL.md is missing a non-empty description: {skill_md}")
+
+    files = _runtime_package_files(runtime_skill_dir, exclude=RUNTIME_EXCLUDED_NAMES)
+    return {
+        "description": {
+            "characters": len(description),
+            "utf8_bytes": len(description.encode("utf-8")),
+        },
+        "skill_md_body": {
+            "characters": len(body),
+            "utf8_bytes": len(body.encode("utf-8")),
+        },
+        "runtime_package": {
+            "file_count": len(files),
+            "bytes": sum(item.stat().st_size for item in files),
+            "digest_sha256": runtime_digest_sha256,
+        },
+    }
+
+
+def condition_static_footprints(
+    conditions: tuple[EvaluationCondition, ...],
+) -> dict[str, dict[str, Any]]:
+    """Return static footprint evidence keyed by evaluation condition id."""
+    return {
+        condition.id: {
+            "label": condition.display_label,
+            "runtime_package_present": condition.runtime_skill_dir is not None,
+            **measure_static_footprint(
+                condition.runtime_skill_dir,
+                condition.runtime_digest_sha256,
+            ),
+        }
+        for condition in conditions
+    }
+
+
+def summarize_candidate_comparison(
+    behavior_summary: dict[str, Any] | None,
+    static_footprints: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    """Combine candidate quality and positive-means-reduction context deltas."""
+    current_static = static_footprints["skill"]
+    candidate_static = static_footprints["candidate"]
+
+    def reduction(section: str, field: str) -> int:
+        return int(current_static[section][field]) - int(candidate_static[section][field])
+
+    candidate_vs_current = None
+    candidate_vs_baseline = None
+    current_efficiency = None
+    candidate_efficiency = None
+    if behavior_summary is not None:
+        comparisons = behavior_summary.get("comparisons", {})
+        candidate_vs_current = comparisons.get("candidate_vs_current")
+        candidate_vs_baseline = comparisons.get("candidate_vs_baseline")
+        efficiency = behavior_summary.get("efficiency", {})
+        current_efficiency = efficiency.get("skill")
+        candidate_efficiency = efficiency.get("candidate")
+
+    input_token_reduction = None
+    if current_efficiency is not None and candidate_efficiency is not None:
+        current_input = current_efficiency.get("input_tokens")
+        candidate_input = candidate_efficiency.get("input_tokens")
+        current_completed = current_efficiency.get("completed_runs")
+        candidate_completed = candidate_efficiency.get("completed_runs")
+        fully_paired = (
+            isinstance(current_completed, int)
+            and current_completed == candidate_completed
+            and current_efficiency.get("failed_runs") == 0
+            and candidate_efficiency.get("failed_runs") == 0
+        )
+        if fully_paired and isinstance(current_input, int) and isinstance(candidate_input, int):
+            input_token_reduction = current_input - candidate_input
+
+    paired = candidate_vs_current.get("paired_checks") if candidate_vs_current else None
+    return {
+        "sign_convention": {
+            "quality": "candidate minus comparison; positive means candidate quality is higher",
+            "reduction": "current minus candidate; positive means candidate context is smaller",
+        },
+        "candidate_minus_current_quality": (
+            candidate_vs_current.get("absolute_lift") if candidate_vs_current else None
+        ),
+        "candidate_minus_current_quality_percentage_points": (
+            candidate_vs_current.get("lift_percentage_points") if candidate_vs_current else None
+        ),
+        "candidate_lift_over_baseline": (
+            candidate_vs_baseline.get("absolute_lift") if candidate_vs_baseline else None
+        ),
+        "candidate_lift_over_baseline_percentage_points": (
+            candidate_vs_baseline.get("lift_percentage_points") if candidate_vs_baseline else None
+        ),
+        "static_reductions": {
+            "description_characters": reduction("description", "characters"),
+            "description_utf8_bytes": reduction("description", "utf8_bytes"),
+            "skill_md_body_characters": reduction("skill_md_body", "characters"),
+            "skill_md_body_utf8_bytes": reduction("skill_md_body", "utf8_bytes"),
+            "runtime_package_files": reduction("runtime_package", "file_count"),
+            "runtime_package_bytes": reduction("runtime_package", "bytes"),
+        },
+        "dynamic_input_token_reduction": input_token_reduction,
+        "paired_checks": {
+            "wins": paired["left_wins"] if paired else 0,
+            "regressions": paired["right_wins"] if paired else 0,
+            "ties": paired["ties"] if paired else 0,
+            "unknown": paired["unknown"] if paired else 0,
+        },
+    }
 
 
 def default_evaluation_conditions(skill_dir: Path) -> tuple[EvaluationCondition, ...]:
@@ -340,36 +523,12 @@ def resolve_candidate_skill(repo_root: Path, selector: Path, logical_name: str) 
         text = skill_md.read_text(encoding="utf-8")
     except UnicodeDecodeError as exc:
         raise EvalError(f"Candidate SKILL.md must be UTF-8: {skill_md}") from exc
-    lines = text.splitlines()
-    if not lines or lines[0].strip() != "---":
-        raise EvalError(f"Candidate SKILL.md must start with YAML frontmatter: {skill_md}")
-    closing = next(
-        (
-            index
-            for index, line in enumerate(lines[1:], start=1)
-            if line.strip() == "---" and not line.startswith((" ", "\t"))
-        ),
-        None,
-    )
-    if closing is None:
-        raise EvalError(
-            f"Candidate SKILL.md frontmatter is missing a closing delimiter: {skill_md}"
-        )
 
     # Reuse the repository's canonical, dependency-free YAML subset parser so
     # candidate packages obey the same publishable metadata contract.
     import validate_repo
 
-    previous_error_count = len(validate_repo.ERRORS)
-    payload = validate_repo.parse_yaml_string_map(
-        "\n".join(lines[1:closing]),
-        str(skill_md),
-    )
-    parse_errors = validate_repo.ERRORS[previous_error_count:]
-    del validate_repo.ERRORS[previous_error_count:]
-    if payload is None or parse_errors:
-        detail = "; ".join(parse_errors) or "invalid YAML frontmatter"
-        raise EvalError(f"Candidate SKILL.md is malformed: {detail}")
+    payload, _body = _parse_skill_document(text, skill_md, source="Candidate")
 
     extra_keys = sorted(set(payload) - validate_repo.ALLOWED_FRONTMATTER_KEYS)
     if extra_keys:
@@ -1018,17 +1177,38 @@ def summarize_behavior_results(
     def efficiency(runs: list[dict[str, Any]]) -> dict[str, Any]:
         completed = [run for run in runs if run["status"] == "completed"]
         durations = [float(run["duration_seconds"]) for run in completed]
-        tokens = [
-            int(run.get("usage", {}).get("input_tokens", 0))
-            + int(run.get("usage", {}).get("output_tokens", 0))
-            for run in completed
-        ]
+
+        def usage_values(key: str) -> list[int] | None:
+            values: list[int] = []
+            for run in completed:
+                usage = run.get("usage")
+                if not isinstance(usage, dict):
+                    return None
+                value = usage.get(key)
+                if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+                    return None
+                values.append(value)
+            return values or None
+
+        input_values = usage_values("input_tokens")
+        output_values = usage_values("output_tokens")
+        total_values = (
+            [
+                input_value + output_value
+                for input_value, output_value in zip(input_values, output_values, strict=True)
+            ]
+            if input_values is not None and output_values is not None
+            else None
+        )
         return {
             "completed_runs": len(completed),
+            "failed_runs": len(runs) - len(completed),
             "errors": len(runs) - len(completed),
             "median_duration_seconds": statistics.median(durations) if durations else None,
-            "total_tokens": sum(tokens),
-            "median_tokens": statistics.median(tokens) if tokens else None,
+            "input_tokens": sum(input_values) if input_values is not None else None,
+            "output_tokens": sum(output_values) if output_values is not None else None,
+            "total_tokens": sum(total_values) if total_values is not None else None,
+            "median_tokens": statistics.median(total_values) if total_values is not None else None,
             "tool_calls": sum(int(run.get("tool_calls", 0)) for run in completed),
         }
 

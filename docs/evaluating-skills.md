@@ -108,13 +108,32 @@ Runs are written to `.skill-evals/` by default:
 - `runs/` contains prompts, event traces, workspaces, and grader evidence.
 
 Reports include skill and eval paths, runtime digests, activation, checks,
-workspace changes, Git state, timing, token use, tool calls, baseline lift, and
-confidence limitations. Missing or failed fixtures are reported as unknown
-instead of being treated as successful.
+workspace changes, Git state, timing, detailed token use, tool calls, baseline
+lift, and confidence limitations. Missing or failed fixtures are reported as
+unknown instead of being treated as successful.
 
-Without `--candidate`, `results.json` remains schema version 1 with the existing
-top-level fields, two behavior runs, task counts, reports, reproduction command,
-and current-versus-baseline metrics. The `skill` condition ID and
+Every condition also has a portable `context_footprint` record. Description and
+`SKILL.md` body sizes are reported as both Unicode characters and UTF-8 bytes.
+The body is the exact text after the closing frontmatter delimiter, including
+leading and trailing whitespace. Runtime-package file counts and raw bytes use
+the same exclusions as runtime copying and digest calculation: repository-only
+`evals/`, `working/`, Git metadata, and Python caches do not count. Empty
+directories do not count as files, while empty files do. The recorded package
+digest identifies the deterministic file tree used for those measurements;
+Baseline has a zero footprint and no package digest.
+
+Portable characters and bytes are the canonical static measurements. The
+evaluator deliberately does not estimate tokens with a provider-specific
+tokenizer. Dynamic `input_tokens`, `output_tokens`, and `total_tokens` come only
+from actual task-runner usage, alongside median duration, tool calls, and
+completed/failed run counts. If any completed run omits usage or supplies an
+invalid usage value, the affected aggregate is `null` in JSON and shown as `—`
+in Markdown and HTML, never as zero.
+
+Without `--candidate`, `results.json` remains schema version 1 and additively
+includes the top-level `context_footprint` field. Existing top-level fields, two
+behavior runs, task counts, reports, reproduction command, and
+current-versus-baseline metrics remain intact. The `skill` condition ID and
 `skill.runtime_digest_sha256` continue to identify Current for existing
 consumers.
 
@@ -128,6 +147,9 @@ Candidate runs use schema version 2 and add:
 - `candidate_run` and `candidate` grades for each behavior result;
 - `behavior.summary.comparisons` entries named `current_vs_baseline`,
   `candidate_vs_baseline`, and `candidate_vs_current`.
+- `candidate_comparison`, which combines Candidate-minus-Current quality,
+  Candidate lift over Baseline, static footprint reductions, dynamic input-token
+  reduction, and Candidate wins/regressions/ties/unknowns.
 
 The existing `behavior.summary.absolute_lift`,
 `lift_percentage_points`, and `paired_checks` fields remain the unambiguous
@@ -135,13 +157,21 @@ Current-versus-Baseline comparison in both schemas. Candidate mode reports use
 the user-facing labels Baseline, Current, and Candidate. It measures evidence;
 it does not decide whether to promote the candidate.
 
+Candidate comparison signs are intentional: quality is Candidate minus the
+named comparison, so positive means Candidate quality is higher. Context
+reduction is Current minus Candidate, so positive means Candidate is smaller.
+Dynamic input-token reduction is unknown when either side lacks runner usage or
+when Current and Candidate do not have equal, fully completed behavior runs.
+These measurements are evidence, not optimisation gates.
+
 Running evaluations requires an authenticated Codex CLI. The evaluator links
 the existing Codex authentication file into a temporary isolated home and
 removes that home after each turn.
 
-Candidate comparison is available through `--candidate`. Regression ingestion,
-capability-review gates, context metrics, model profiles, and component
-ablation remain separate work tracked in the [roadmap](../ROADMAP.md). The
+Candidate comparison is available through `--candidate`; context-footprint
+reporting is available in both modes. Regression ingestion, capability-review
+gates, model profiles, and component ablation remain separate work tracked in
+the [roadmap](../ROADMAP.md). The
 [capability-optimisation contract](capability-optimisation.md) defines the
 evidence standard for that planned tooling.
 

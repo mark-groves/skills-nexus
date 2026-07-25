@@ -56,7 +56,7 @@ planned.
 - [x] Generalise evaluator condition handling without changing the default
       two-condition behavior (#23).
 - [x] Compare baseline, current, and candidate conditions (#24).
-- [ ] Report discovery, activation, conditional, and dynamic context costs
+- [x] Report discovery, activation, conditional, and dynamic context costs
       separately (#25).
 - [ ] Add protected checks, skill-specific non-inferiority rules, and
       optimisation gates (#26).

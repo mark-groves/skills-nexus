@@ -12,6 +12,7 @@ import textwrap
 import unittest
 from dataclasses import FrozenInstanceError
 from pathlib import Path
+from typing import Any
 from unittest import mock
 
 REPO_DIR = Path(__file__).resolve().parents[1]
@@ -37,6 +38,7 @@ from skill_eval.core import (  # noqa: E402
     initialize_fixture_repository,
     load_eval_spec,
     materialize_fixtures,
+    measure_static_footprint,
     resolve_candidate_skill,
     run_fixture_setups,
     runtime_skill_copy,
@@ -44,12 +46,73 @@ from skill_eval.core import (  # noqa: E402
     snapshot_workspace,
     stable_digest,
     summarize_behavior_results,
+    summarize_candidate_comparison,
     summarize_trigger_results,
     validate_candidate_separation,
 )
 
 
 class EvalCoreTests(unittest.TestCase):
+    def test_static_footprint_counts_unicode_body_and_runtime_package_bytes(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            skill = Path(temp_dir) / "demo"
+            skill.mkdir()
+            (skill / "references").mkdir()
+            (skill / "scripts").mkdir()
+            (skill / "assets").mkdir()
+            (skill / "evals").mkdir()
+            skill_text = "---\nname: demo\ndescription: Café workflow\n---\n\n# Démo\n"
+            (skill / "SKILL.md").write_text(skill_text, encoding="utf-8")
+            (skill / "references" / "empty.md").write_bytes(b"")
+            (skill / "scripts" / "tool.bin").write_bytes(b"\x00\xff")
+            (skill / "assets" / "label.txt").write_text("naïve\n", encoding="utf-8")
+            (skill / "evals" / "excluded.json").write_text("{}", encoding="utf-8")
+
+            digest = stable_digest(skill, exclude=RUNTIME_EXCLUDED_NAMES)
+            footprint = measure_static_footprint(skill, digest)
+
+            self.assertEqual(
+                footprint["description"],
+                {
+                    "characters": len("Café workflow"),
+                    "utf8_bytes": len("Café workflow".encode()),
+                },
+            )
+            body = "\n# Démo\n"
+            self.assertEqual(
+                footprint["skill_md_body"],
+                {
+                    "characters": len(body),
+                    "utf8_bytes": len(body.encode("utf-8")),
+                },
+            )
+            included = [
+                skill / "SKILL.md",
+                skill / "references" / "empty.md",
+                skill / "scripts" / "tool.bin",
+                skill / "assets" / "label.txt",
+            ]
+            self.assertEqual(footprint["runtime_package"]["file_count"], 4)
+            self.assertEqual(
+                footprint["runtime_package"]["bytes"],
+                sum(path.stat().st_size for path in included),
+            )
+            self.assertEqual(footprint["runtime_package"]["digest_sha256"], digest)
+
+    def test_static_footprint_reports_empty_baseline_resources(self) -> None:
+        self.assertEqual(
+            measure_static_footprint(None, None),
+            {
+                "description": {"characters": 0, "utf8_bytes": 0},
+                "skill_md_body": {"characters": 0, "utf8_bytes": 0},
+                "runtime_package": {
+                    "file_count": 0,
+                    "bytes": 0,
+                    "digest_sha256": None,
+                },
+            },
+        )
+
     def test_default_conditions_are_immutable_ordered_and_digest_the_runtime(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             skill = Path(temp_dir) / "source-package"
@@ -391,6 +454,48 @@ class EvalCoreTests(unittest.TestCase):
             self.assertIn("logical skill identity mismatch", stderr.getvalue())
             runner.assert_not_called()
 
+    def test_plan_does_not_measure_runtime_footprints(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo = Path(temp_dir)
+            skill = repo / "skills" / "demo"
+            eval_dir = repo / "evals" / "demo"
+            skill.mkdir(parents=True)
+            eval_dir.mkdir(parents=True)
+            (skill / "SKILL.md").write_text("plan-only instructions\n", encoding="utf-8")
+            (eval_dir / "evals.json").write_text(
+                json.dumps(
+                    {
+                        "skill_name": "demo",
+                        "trigger_evals": [
+                            {
+                                "id": "1",
+                                "query": "Use the demo skill.",
+                                "should_trigger": True,
+                            }
+                        ],
+                        "behavior_evals": [],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with (
+                mock.patch.object(eval_skills, "condition_static_footprints") as footprints,
+                contextlib.redirect_stdout(io.StringIO()),
+            ):
+                status = eval_skills.main(
+                    [
+                        "--repo-root",
+                        str(repo),
+                        "--skill",
+                        "demo",
+                        "--plan",
+                    ]
+                )
+
+            self.assertEqual(status, 0)
+            footprints.assert_not_called()
+
     def test_behavior_summary_uses_condition_ids_instead_of_fixed_keys(self) -> None:
         conditions = (
             EvaluationCondition("current", None, None, "demo", "Current"),
@@ -484,6 +589,151 @@ class EvalCoreTests(unittest.TestCase):
             summary["comparisons"]["candidate_vs_current"]["paired_checks"]["right_wins"],
             1,
         )
+        for condition_id in ("skill", "baseline", "candidate"):
+            efficiency = summary["efficiency"][condition_id]
+            self.assertIsNone(efficiency["input_tokens"])
+            self.assertIsNone(efficiency["output_tokens"])
+            self.assertIsNone(efficiency["total_tokens"])
+
+    def test_behavior_efficiency_splits_usage_and_preserves_missing_as_unknown(self) -> None:
+        conditions = (
+            EvaluationCondition("skill", None, None, "demo", "Skill"),
+            EvaluationCondition("baseline", None, None, "demo", "Baseline"),
+        )
+
+        def result(
+            repeat: int,
+            skill_usage: dict[str, int],
+            baseline_usage: dict[str, int] | None,
+            *,
+            baseline_status: str = "completed",
+        ) -> dict[str, object]:
+            return {
+                "case_id": "case",
+                "repeat": repeat,
+                "skill_run": {
+                    "status": "completed",
+                    "duration_seconds": float(repeat),
+                    "usage": skill_usage,
+                    "tool_calls": repeat,
+                },
+                "baseline_run": {
+                    "status": baseline_status,
+                    "duration_seconds": float(repeat + 1),
+                    "usage": baseline_usage,
+                    "tool_calls": repeat + 1,
+                },
+                "grades": {
+                    "skill": [{"passed": True}],
+                    "baseline": [{"passed": True}],
+                },
+                "judge": {"status": "completed"},
+            }
+
+        summary = summarize_behavior_results(
+            [
+                result(1, {"input_tokens": 10, "output_tokens": 4}, None),
+                result(
+                    2,
+                    {"input_tokens": 14, "output_tokens": 6},
+                    {"input_tokens": 30, "output_tokens": 8},
+                    baseline_status="failed",
+                ),
+            ],
+            conditions,
+        )
+
+        skill = summary["efficiency"]["skill"]
+        self.assertEqual(skill["input_tokens"], 24)
+        self.assertEqual(skill["output_tokens"], 10)
+        self.assertEqual(skill["total_tokens"], 34)
+        self.assertEqual(skill["median_tokens"], 17)
+        self.assertEqual(skill["median_duration_seconds"], 1.5)
+        self.assertEqual(skill["tool_calls"], 3)
+        self.assertEqual(skill["completed_runs"], 2)
+        self.assertEqual(skill["failed_runs"], 0)
+
+        baseline = summary["efficiency"]["baseline"]
+        self.assertIsNone(baseline["input_tokens"])
+        self.assertIsNone(baseline["output_tokens"])
+        self.assertIsNone(baseline["total_tokens"])
+        self.assertEqual(baseline["completed_runs"], 1)
+        self.assertEqual(baseline["failed_runs"], 1)
+
+    def test_candidate_comparison_reports_quality_reductions_and_unknown_usage(self) -> None:
+        footprints = {
+            "skill": {
+                "description": {"characters": 100, "utf8_bytes": 110},
+                "skill_md_body": {"characters": 500, "utf8_bytes": 520},
+                "runtime_package": {"file_count": 4, "bytes": 1_000},
+            },
+            "baseline": {
+                "description": {"characters": 0, "utf8_bytes": 0},
+                "skill_md_body": {"characters": 0, "utf8_bytes": 0},
+                "runtime_package": {"file_count": 0, "bytes": 0},
+            },
+            "candidate": {
+                "description": {"characters": 80, "utf8_bytes": 90},
+                "skill_md_body": {"characters": 450, "utf8_bytes": 465},
+                "runtime_package": {"file_count": 3, "bytes": 750},
+            },
+        }
+        behavior: dict[str, Any] = {
+            "comparisons": {
+                "candidate_vs_current": {
+                    "absolute_lift": -0.1,
+                    "lift_percentage_points": -10.0,
+                    "paired_checks": {
+                        "left_wins": 1,
+                        "right_wins": 2,
+                        "ties": 3,
+                        "unknown": 4,
+                    },
+                },
+                "candidate_vs_baseline": {
+                    "absolute_lift": 0.2,
+                    "lift_percentage_points": 20.0,
+                },
+            },
+            "efficiency": {
+                "skill": {
+                    "input_tokens": 1_000,
+                    "completed_runs": 2,
+                    "failed_runs": 0,
+                },
+                "candidate": {
+                    "input_tokens": 800,
+                    "completed_runs": 2,
+                    "failed_runs": 0,
+                },
+            },
+        }
+
+        comparison = summarize_candidate_comparison(behavior, footprints)
+
+        self.assertEqual(comparison["candidate_minus_current_quality"], -0.1)
+        self.assertEqual(comparison["candidate_lift_over_baseline"], 0.2)
+        self.assertEqual(
+            comparison["static_reductions"],
+            {
+                "description_characters": 20,
+                "description_utf8_bytes": 20,
+                "skill_md_body_characters": 50,
+                "skill_md_body_utf8_bytes": 55,
+                "runtime_package_files": 1,
+                "runtime_package_bytes": 250,
+            },
+        )
+        self.assertEqual(comparison["dynamic_input_token_reduction"], 200)
+        self.assertEqual(
+            comparison["paired_checks"],
+            {"wins": 1, "regressions": 2, "ties": 3, "unknown": 4},
+        )
+
+        behavior["efficiency"]["candidate"]["completed_runs"] = 1
+        comparison = summarize_candidate_comparison(behavior, footprints)
+
+        self.assertIsNone(comparison["dynamic_input_token_reduction"])
 
     def test_duplicate_case_filters_are_rejected(self) -> None:
         case = TriggerCase("1", "demo", True)
@@ -1282,6 +1532,7 @@ class EvalCliIntegrationTests(unittest.TestCase):
                 auth_removed = not auth_path.exists()
                 prompt = sys.stdin.read()
                 output_path = Path(args[args.index("--output-last-message") + 1])
+                turn_usage = {"input_tokens": 10, "output_tokens": 5}
                 if "--output-schema" in args:
                     evidence = json.loads((Path.cwd() / "evidence.json").read_text())
                     candidates = []
@@ -1321,6 +1572,7 @@ class EvalCliIntegrationTests(unittest.TestCase):
                     )
                     if "# Candidate Demo" in skill_text:
                         final = "candidate-assisted result"
+                        turn_usage = {}
                     elif skill_file.is_file():
                         final = "skill-assisted result"
                     else:
@@ -1363,7 +1615,7 @@ class EvalCliIntegrationTests(unittest.TestCase):
                     json.dumps(
                         {
                             "type": "turn.completed",
-                            "usage": {"input_tokens": 10, "output_tokens": 5},
+                            "usage": turn_usage,
                         }
                     )
                 )
@@ -1485,6 +1737,7 @@ class EvalCliIntegrationTests(unittest.TestCase):
                     "generated_at",
                     "repository",
                     "skill",
+                    "context_footprint",
                     "runtime",
                     "config",
                     "integrity",
@@ -1505,6 +1758,22 @@ class EvalCliIntegrationTests(unittest.TestCase):
                 },
             )
             self.assertEqual(result["schema_version"], 1)
+            self.assertEqual(
+                set(result["context_footprint"]),
+                {"skill", "baseline"},
+            )
+            self.assertEqual(
+                result["context_footprint"]["skill"]["description"]["characters"],
+                len("Use for demo tasks."),
+            )
+            self.assertEqual(
+                result["context_footprint"]["baseline"]["runtime_package"],
+                {
+                    "file_count": 0,
+                    "bytes": 0,
+                    "digest_sha256": None,
+                },
+            )
             self.assertTrue(result["integrity"]["evals_withheld"])
             self.assertTrue(result["integrity"]["peer_skill_parity"])
             self.assertEqual(result["runtime"]["codex_version"], "fake-codex 1.0")
@@ -1571,6 +1840,9 @@ class EvalCliIntegrationTests(unittest.TestCase):
             self.assertEqual(list(result_paths[0].parent.glob("**/codex-home")), [])
             default_report = (result_paths[0].parent / "report.md").read_text(encoding="utf-8")
             self.assertIn("| Check | Skill | Baseline | Skill evidence |", default_report)
+            self.assertIn("## Context footprint", default_report)
+            self.assertIn("Input tokens | Output tokens | Total tokens", default_report)
+            self.assertIn("| 10 | 5 | 15 |", default_report)
             self.assertIn(
                 "- Skill and baseline ran in fresh isolated contexts: `True`",
                 default_report,
@@ -1650,6 +1922,7 @@ class EvalCliIntegrationTests(unittest.TestCase):
                 - {
                     "candidate",
                     "candidate_trigger",
+                    "candidate_comparison",
                 },
                 set(result),
             )
@@ -1712,13 +1985,51 @@ class EvalCliIntegrationTests(unittest.TestCase):
                     "candidate_vs_current",
                 },
             )
+            self.assertEqual(
+                set(candidate_result["context_footprint"]),
+                {"skill", "baseline", "candidate"},
+            )
+            comparison = candidate_result["candidate_comparison"]
+            candidate_vs_current = candidate_result["behavior"]["summary"]["comparisons"][
+                "candidate_vs_current"
+            ]
+            candidate_vs_baseline = candidate_result["behavior"]["summary"]["comparisons"][
+                "candidate_vs_baseline"
+            ]
+            self.assertEqual(
+                comparison["candidate_minus_current_quality"],
+                candidate_vs_current["absolute_lift"],
+            )
+            self.assertEqual(
+                comparison["candidate_lift_over_baseline"],
+                candidate_vs_baseline["absolute_lift"],
+            )
+            self.assertIsNone(comparison["dynamic_input_token_reduction"])
+            self.assertEqual(
+                comparison["paired_checks"],
+                {
+                    "wins": candidate_vs_current["paired_checks"]["left_wins"],
+                    "regressions": candidate_vs_current["paired_checks"]["right_wins"],
+                    "ties": candidate_vs_current["paired_checks"]["ties"],
+                    "unknown": candidate_vs_current["paired_checks"]["unknown"],
+                },
+            )
             candidate_report = (candidate_result_path.parent / "report.md").read_text(
                 encoding="utf-8"
             )
             self.assertIn("### Pairwise comparisons", candidate_report)
             self.assertIn("Candidate vs Current", candidate_report)
+            self.assertIn("## Candidate change", candidate_report)
+            self.assertIn("| Dynamic input tokens | — |", candidate_report)
             self.assertIn("### Current", candidate_report)
             self.assertIn("### Candidate", candidate_report)
+            candidate_html = (candidate_result_path.parent / "report.html").read_text(
+                encoding="utf-8"
+            )
+            self.assertIn("<h2>Context footprint</h2>", candidate_html)
+            self.assertIn("<h2>Candidate change</h2>", candidate_html)
+            self.assertIn("<th>Input tokens</th>", candidate_html)
+            self.assertIn("<td>Dynamic input tokens</td><td>—</td>", candidate_html)
             candidate_reproduce = shlex.split(candidate_result["reproduce_command"])
             self.assertEqual(
                 candidate_reproduce[candidate_reproduce.index("--candidate") + 1],
