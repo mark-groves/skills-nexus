@@ -11,9 +11,9 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from skill_eval.core import EvalError
+from skill_eval.core import EvalError, load_eval_spec
 from skill_review.ablation import load_component_contract
-from skill_review.core import load_profile_contract
+from skill_review.core import load_case_groups, load_profile_contract
 
 REPO_DIR = Path(__file__).resolve().parents[1]
 SKILLS_DIR = REPO_DIR / "skills"
@@ -937,6 +937,13 @@ def validate_evals(skill_dir: Path, eval_dir: Path) -> None:
     if components_json.exists() or components_json.is_symlink():
         try:
             load_component_contract(components_json, skill_dir)
+        except EvalError as exc:
+            fail(str(exc))
+
+    case_groups_json = eval_dir / "capability-case-groups.json"
+    if case_groups_json.exists() or case_groups_json.is_symlink():
+        try:
+            load_case_groups(case_groups_json, load_eval_spec(skill_dir, EVALS_DIR))
         except EvalError as exc:
             fail(str(exc))
 
