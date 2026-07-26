@@ -20,13 +20,15 @@ from skill_eval.core import (
     stable_digest,
 )
 
-from skill_review.core import CapabilityReviewConfig, canonical_digest
+from skill_review.core import CapabilityReviewConfig, _case_groups_digest, canonical_digest
 
 COMPONENT_SCHEMA_VERSION = 1
 ABLATION_RECORD_SCHEMA_VERSION = 1
 ABLATION_ORCHESTRATOR_VERSION = "component-ablation-v1"
 MAX_COMPONENTS = 128
 HEADING_RE = re.compile(r"^(#{2,6})[ \t]+(.+?)[ \t]*$")
+BOUNDARY_HEADING_RE = re.compile(r"^(#{1,6})[ \t]+(.+?)[ \t]*$")
+SETEXT_RE = re.compile(r"^[ \t]*(?:=+|-+)[ \t]*$")
 FENCE_RE = re.compile(r"^[ ]{0,3}(`{3,}|~{3,}).*$")
 SAFE_ID_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$")
 EVAL_DIGEST_EXCLUDED_NAMES = frozenset({"reviews", "working", "__pycache__"})
@@ -154,7 +156,7 @@ def _source_path(skill_dir: Path, source: object, *, location: str) -> tuple[str
 
 
 def _heading_level(line: str) -> int | None:
-    match = HEADING_RE.fullmatch(line.rstrip("\r\n"))
+    match = BOUNDARY_HEADING_RE.fullmatch(line.rstrip("\r\n"))
     return len(match.group(1)) if match is not None else None
 
 
@@ -163,8 +165,16 @@ def _markdown_heading_levels(lines: list[str]) -> list[int | None]:
     levels: list[int | None] = []
     fence_character: str | None = None
     fence_length = 0
-    for line in lines:
+    frontmatter = bool(lines and lines[0].rstrip("\r\n") == "---")
+    previous_content = False
+    for index, line in enumerate(lines):
         stripped = line.rstrip("\r\n")
+        if frontmatter:
+            levels.append(None)
+            previous_content = False
+            if index > 0 and stripped == "---":
+                frontmatter = False
+            continue
         fence = FENCE_RE.fullmatch(stripped)
         if fence_character is None:
             if fence is not None:
@@ -172,8 +182,12 @@ def _markdown_heading_levels(lines: list[str]) -> list[int | None]:
                 fence_character = marker[0]
                 fence_length = len(marker)
                 levels.append(None)
+                previous_content = False
                 continue
+            if previous_content and SETEXT_RE.fullmatch(stripped) is not None:
+                raise EvalError("Markdown component sources must not contain setext headings")
             levels.append(_heading_level(line))
+            previous_content = bool(stripped.strip())
             continue
         closing = re.fullmatch(
             rf"[ ]{{0,3}}{re.escape(fence_character)}{{{fence_length},}}[ \t]*",
@@ -183,12 +197,13 @@ def _markdown_heading_levels(lines: list[str]) -> list[int | None]:
             fence_character = None
             fence_length = 0
         levels.append(None)
+        previous_content = False
     return levels
 
 
 def _resolve_span(source: Path, component: Component) -> SectionSpan:
     try:
-        text = source.read_text(encoding="utf-8")
+        text = source.read_text(encoding="utf-8", newline="")
     except UnicodeDecodeError as exc:
         raise EvalError(f"Component source must be UTF-8: {source}") from exc
     lines = text.splitlines(keepends=True)
@@ -205,7 +220,9 @@ def _resolve_span(source: Path, component: Component) -> SectionSpan:
         )
     start_line = matches[0]
     level = heading_levels[start_line]
-    if level is None:
+    if level is None or not 2 <= level <= 6 or HEADING_RE.fullmatch(
+        lines[start_line].rstrip("\r\n")
+    ) is None:
         raise EvalError(
             f"Component {component.id!r} heading must be an exact level 2-6 ATX heading"
         )
@@ -350,14 +367,14 @@ def create_component_candidate(
     for source, spans in by_source.items():
         source_path = skill_dir / source
         target_path = destination / source
-        text = source_path.read_text(encoding="utf-8")
+        text = source_path.read_text(encoding="utf-8", newline="")
         for span in sorted(spans, key=lambda item: item.start, reverse=True):
             if text[span.start : span.end] != span.text:
                 raise EvalError(
                     f"Component {span.component.id!r} source changed before candidate creation"
                 )
             text = text[: span.start] + text[span.end :]
-        target_path.write_text(text, encoding="utf-8")
+        target_path.write_text(text, encoding="utf-8", newline="")
     digest = stable_digest(destination, exclude=RUNTIME_EXCLUDED_NAMES)
     measure_static_footprint(destination, digest)
     return digest
@@ -642,7 +659,7 @@ def run_component_ablation(
         eval_dir,
         exclude=EVAL_DIGEST_EXCLUDED_NAMES,
     )
-    case_groups_digest = canonical_digest([group.as_dict() for group in config.review.case_groups])
+    case_groups_digest = _case_groups_digest(config.review.case_groups)
     complete_footprint = measure_static_footprint(skill_dir, current_digest)
     input_digest = canonical_digest(
         {
@@ -715,55 +732,41 @@ def run_component_ablation(
                     eval_digest=eval_digest,
                 )
                 candidate_removed = {*removed_ids, component.id}
-                try:
-                    candidate_digest, candidate_footprint, evidence = _candidate_review(
-                        config=config,
-                        capability_runner=capability_runner,
-                        contract=contract,
-                        skill_dir=skill_dir,
-                        removed_ids=candidate_removed,
-                        prior_footprint=prior_footprint,
-                        complete_footprint=complete_footprint,
-                        review_root=(
-                            local_root
-                            / "capability-reviews"
-                            / f"round-{round_number:03d}"
-                            / component.id
-                        ),
-                        candidate_parent=candidate_parent,
+                candidate_digest, candidate_footprint, evidence = _candidate_review(
+                    config=config,
+                    capability_runner=capability_runner,
+                    contract=contract,
+                    skill_dir=skill_dir,
+                    removed_ids=candidate_removed,
+                    prior_footprint=prior_footprint,
+                    complete_footprint=complete_footprint,
+                    review_root=(
+                        local_root
+                        / "capability-reviews"
+                        / f"round-{round_number:03d}"
+                        / component.id
+                    ),
+                    candidate_parent=candidate_parent,
+                )
+                trial = {
+                    "component_id": component.id,
+                    "prior_digest_sha256": prior_digest,
+                    "candidate_digest_sha256": candidate_digest,
+                    **evidence,
+                }
+                if (
+                    evidence["verdict"] == "approved"
+                    and not evidence["uncertainty"]["material"]
+                ):
+                    trial["decision"] = "eligible"
+                    eligible.append((trial, candidate_footprint))
+                else:
+                    trial["decision"] = (
+                        "insufficient-evidence"
+                        if evidence["verdict"] == "insufficient-evidence"
+                        or evidence["uncertainty"]["material"]
+                        else "rejected"
                     )
-                    trial = {
-                        "component_id": component.id,
-                        "prior_digest_sha256": prior_digest,
-                        "candidate_digest_sha256": candidate_digest,
-                        **evidence,
-                    }
-                    if (
-                        evidence["verdict"] == "approved"
-                        and not evidence["uncertainty"]["material"]
-                    ):
-                        trial["decision"] = "eligible"
-                        eligible.append((trial, candidate_footprint))
-                    else:
-                        trial["decision"] = (
-                            "insufficient-evidence"
-                            if evidence["verdict"] == "insufficient-evidence"
-                            or evidence["uncertainty"]["material"]
-                            else "rejected"
-                        )
-                except EvalError as exc:
-                    trial = {
-                        "component_id": component.id,
-                        "prior_digest_sha256": prior_digest,
-                        "candidate_digest_sha256": None,
-                        "decision": "invalid-candidate",
-                        "error": str(exc),
-                        "uncertainty": {
-                            "material": True,
-                            "required_reasons": ["candidate validation failed"],
-                            "observed_reasons": [],
-                        },
-                    }
                 trials.append(trial)
                 record["rounds"].append(
                     {

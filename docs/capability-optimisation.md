@@ -9,8 +9,9 @@ This guide defines the repository contract for capability-review tooling. The
 current evaluator compares baseline, current, and candidate packages, reports
 context metrics, enforces repository-owned optimisation gates, and orchestrates
 required and selected observed Codex model profiles across pinned review
-inputs. It does not yet perform component ablation. That implementation step is
-tracked in the [roadmap](../ROADMAP.md).
+inputs. `scripts/ablate_skill_components.py` uses that evidence to perform
+component ablation through greedy backward elimination and a final combined
+candidate rerun.
 
 ## Two evidence paths
 
