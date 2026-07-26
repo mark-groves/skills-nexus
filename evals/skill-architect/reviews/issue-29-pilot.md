@@ -38,16 +38,19 @@ The review did not approve removal. No runtime reduction was applied.
 
 | Universe | Candidate quality minus Current | Candidate lift over Baseline | Dynamic input-token reduction | Verdict |
 | --- | ---: | ---: | ---: | --- |
-| Repository | +2.27 pp | +10.23 pp | +50,097 | rejected |
+| Repository | +2.27 pp | +10.23 pp | +50,097 | insufficient-evidence |
 | Isolated | -3.41 pp | +14.77 pp | -241,651 | rejected |
 
 Negative token reductions mean that the smaller candidate used more measured
 input tokens in those stochastic runs. All six protected capability-review
-checks passed on both repeats in both universes. The behavior evidence-coverage
-gate failed: repository coverage was 94.32% for Current, 96.59% for Baseline,
-and 97.73% for Candidate; isolated coverage was 96.59%, 96.59%, and 93.18%
-respectively, below the configured 100% requirement. Isolated trigger recall
-also fell outside the configured non-inferiority margin.
+checks passed on both repeats in both universes. Behavior evidence coverage
+was below the configured 100% requirement in both cells (repository: 94.32%
+Current, 96.59% Baseline, 97.73% Candidate; isolated: 96.59%, 96.59%, and
+93.18%). Under the coverage gate that shortfall is `insufficient-evidence`,
+not a Candidate rejection. The repository cell was otherwise close enough that
+coverage incompleteness is what blocks approval there. Isolated also failed
+quality non-inferiority and trigger-recall non-inferiority, so that cell stays
+`rejected`.
 
 The new trigger case passed at the configured threshold in both universes:
 Current activated on 2/2 repository and 2/2 isolated repeats; Candidate
@@ -61,11 +64,11 @@ check for that case passed.
 ## Uncertainty and disposition
 
 The review supports a useful bounded conclusion: `source-links` has measurable
-static cost and its candidate was behaviorally close to Current, but the
-configured evidence-integrity bar was not met. Repeated identical-package
-verification in the preceding local ablation run also produced trigger and
-token variance, so the apparent marginal deltas are not stable enough to
-justify removal.
+static cost and its candidate was behaviorally close to Current, but evidence
+coverage was incomplete and the isolated cell failed additional gates.
+Repeated identical-package verification in the preceding local ablation run
+also produced trigger and token variance, so the apparent marginal deltas are
+not stable enough to justify removal.
 
 The held-back labels are process controls; metrics remain whole-suite and do
 not establish held-back-only non-inferiority. The observed frontier profile was

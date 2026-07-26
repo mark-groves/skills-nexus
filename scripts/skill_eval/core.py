@@ -1122,8 +1122,6 @@ def summarize_optimisation_review(
             _is_number(value) and value >= effective_policy.minimum_evidence_coverage
             for value in coverage_values
         )
-        else "fail"
-        if all(_is_number(value) for value in coverage_values)
         else "insufficient-evidence"
     )
     add_gate(

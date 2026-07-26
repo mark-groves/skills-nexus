@@ -310,8 +310,9 @@ The completed issue #29 pilots demonstrated that:
 - required-profile reviews can run the complete suite with configured repeats,
   a declared development/held-back partition, and both repository and isolated
   skill universes;
-- a smaller Candidate can remain blocked by evidence-integrity gates even when
-  its average behavior is close to Current;
+- a smaller Candidate can remain blocked when evidence coverage is incomplete
+  (`insufficient-evidence`) or other gates fail, even when its average behavior
+  is close to Current;
 - favorable static or dynamic context evidence cannot override a protected
   regression; and
 - rejected evidence retains Current and never applies, promotes, retires, or
