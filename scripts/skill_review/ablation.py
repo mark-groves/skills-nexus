@@ -232,9 +232,11 @@ def _resolve_span(source: Path, component: Component) -> SectionSpan:
         )
     start_line = matches[0]
     level = heading_levels[start_line]
-    if level is None or not 2 <= level <= 6 or HEADING_RE.fullmatch(
-        lines[start_line].rstrip("\r\n")
-    ) is None:
+    if (
+        level is None
+        or not 2 <= level <= 6
+        or HEADING_RE.fullmatch(lines[start_line].rstrip("\r\n")) is None
+    ):
         raise EvalError(
             f"Component {component.id!r} heading must be an exact level 2-6 ATX heading"
         )
@@ -766,10 +768,7 @@ def run_component_ablation(
                     "candidate_digest_sha256": candidate_digest,
                     **evidence,
                 }
-                if (
-                    evidence["verdict"] == "approved"
-                    and not evidence["uncertainty"]["material"]
-                ):
+                if evidence["verdict"] == "approved" and not evidence["uncertainty"]["material"]:
                     trial["decision"] = "eligible"
                     eligible.append((trial, candidate_footprint))
                 else:
