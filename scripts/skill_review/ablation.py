@@ -27,7 +27,7 @@ ABLATION_RECORD_SCHEMA_VERSION = 1
 ABLATION_ORCHESTRATOR_VERSION = "component-ablation-v1"
 MAX_COMPONENTS = 128
 HEADING_RE = re.compile(r"^(#{2,6})[ \t]+(.+?)[ \t]*$")
-BOUNDARY_HEADING_RE = re.compile(r"^(#{1,6})[ \t]+(.+?)[ \t]*$")
+BOUNDARY_HEADING_RE = re.compile(r"^[ ]{0,3}(#{1,6})(?:[ \t]+.*)?$")
 SETEXT_RE = re.compile(r"^[ \t]*(?:=+|-+)[ \t]*$")
 FENCE_RE = re.compile(r"^[ ]{0,3}(`{3,}|~{3,}).*$")
 SAFE_ID_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$")

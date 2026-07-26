@@ -334,6 +334,58 @@ Protected.
             self.assertIn("MUST KEEP THIS UNDECLARED CHAPTER.", text)
             self.assertIn("## Beta", text)
 
+    def test_commonmark_atx_boundaries_terminate_prior_component_span(self) -> None:
+        boundaries = (
+            " # Indented H1",
+            "  # Indented H1",
+            "   # Indented H1",
+            "  ## Indented H2",
+            "#",
+            "##",
+        )
+        for boundary in boundaries:
+            with self.subTest(boundary=boundary), tempfile.TemporaryDirectory() as temp_dir:
+                fixture = AblationFixture(Path(temp_dir))
+                (fixture.skill / "SKILL.md").write_text(
+                    f"""\
+---
+name: demo
+description: Demonstrate component ablation
+---
+# Demo
+
+## Alpha
+
+Alpha body.
+
+{boundary}
+
+MUST KEEP THIS UNDECLARED SECTION.
+
+## Beta
+
+Beta body.
+
+## Safety
+
+Protected.
+""",
+                    encoding="utf-8",
+                )
+                contract = load_component_contract(fixture.components, fixture.skill)
+                self.assertNotIn(
+                    "MUST KEEP THIS UNDECLARED SECTION.",
+                    contract.spans["alpha"].text,
+                )
+
+                candidate = Path(temp_dir) / "candidate"
+                create_component_candidate(fixture.skill, candidate, contract, {"alpha"})
+                text = (candidate / "SKILL.md").read_text(encoding="utf-8")
+                self.assertNotIn("## Alpha", text)
+                self.assertIn(boundary, text)
+                self.assertIn("MUST KEEP THIS UNDECLARED SECTION.", text)
+                self.assertIn("## Beta", text)
+
     def test_setext_heading_fails_closed(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             fixture = AblationFixture(Path(temp_dir))
@@ -525,11 +577,11 @@ Protected.
                 mock.patch.object(validate_repo, "REPO_DIR", fixture.repo),
             ):
                 validate_repo.ERRORS.clear()
+                self.addCleanup(validate_repo.ERRORS.clear)
                 validate_repo.validate_evals(fixture.skill, fixture.eval_dir)
 
             loader.assert_called_once_with(fixture.components, fixture.skill)
             self.assertIn("dangling metadata rejected", validate_repo.ERRORS)
-            validate_repo.ERRORS.clear()
 
 
 class BackwardEliminationTests(unittest.TestCase):
