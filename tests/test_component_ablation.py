@@ -25,6 +25,7 @@ from skill_review.core import (  # noqa: E402
     JudgePolicy,
     ModelProfile,
     ProfileContract,
+    _case_groups_digest,
     canonical_digest,
 )
 
@@ -293,6 +294,114 @@ class ComponentSelectorTests(unittest.TestCase):
             self.assertIn("Beta is individually removable.", text)
             self.assertIn("## Safety", text)
 
+    def test_h1_heading_terminates_prior_component_span(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fixture = AblationFixture(Path(temp_dir))
+            (fixture.skill / "SKILL.md").write_text(
+                """\
+---
+name: demo
+description: Demonstrate component ablation
+---
+# Demo
+
+## Alpha
+
+Alpha body.
+
+# Critical chapter
+
+MUST KEEP THIS UNDECLARED CHAPTER.
+
+## Beta
+
+Beta body.
+
+## Safety
+
+Protected.
+""",
+                encoding="utf-8",
+            )
+            contract = load_component_contract(fixture.components, fixture.skill)
+            self.assertNotIn("Critical chapter", contract.spans["alpha"].text)
+
+            candidate = Path(temp_dir) / "candidate"
+            create_component_candidate(fixture.skill, candidate, contract, {"alpha"})
+            text = (candidate / "SKILL.md").read_text(encoding="utf-8")
+            self.assertNotIn("## Alpha", text)
+            self.assertIn("Critical chapter", text)
+            self.assertIn("MUST KEEP THIS UNDECLARED CHAPTER.", text)
+            self.assertIn("## Beta", text)
+
+    def test_setext_heading_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fixture = AblationFixture(Path(temp_dir))
+            (fixture.skill / "SKILL.md").write_text(
+                """\
+---
+name: demo
+description: Demonstrate component ablation
+---
+# Demo
+
+## Alpha
+
+Alpha body.
+
+Setext Section
+--------------
+
+Undeclared setext body.
+
+## Beta
+
+Beta body.
+
+## Safety
+
+Protected.
+""",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(EvalError, "setext"):
+                load_component_contract(fixture.components, fixture.skill)
+
+    def test_candidate_removal_preserves_source_newlines(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fixture = AblationFixture(Path(temp_dir))
+            source = (
+                b"---\r\n"
+                b"name: demo\r\n"
+                b"description: Demonstrate component ablation\r\n"
+                b"---\r\n"
+                b"# Demo\r\n"
+                b"\r\n"
+                b"## Alpha\r\n"
+                b"\r\n"
+                b"Alpha has the larger removable body.\r\n"
+                b"It deliberately saves more bytes than Beta.\r\n"
+                b"\r\n"
+                b"## Beta\r\n"
+                b"\r\n"
+                b"Beta is individually removable.\r\n"
+                b"\r\n"
+                b"## Safety\r\n"
+                b"\r\n"
+                b"Never remove this protected safety section.\r\n"
+            )
+            (fixture.skill / "SKILL.md").write_bytes(source)
+            contract = load_component_contract(fixture.components, fixture.skill)
+            candidate = Path(temp_dir) / "candidate"
+            create_component_candidate(fixture.skill, candidate, contract, {"alpha"})
+            cand = (candidate / "SKILL.md").read_bytes()
+            removed = contract.spans["alpha"].text.encode("utf-8")
+            self.assertIn(b"## Beta\r\n", cand)
+            self.assertIn(b"## Safety\r\n", cand)
+            self.assertNotIn(b"## Alpha\r\n", cand)
+            self.assertEqual(cand.count(b"\r"), source.count(b"\r") - removed.count(b"\r"))
+            self.assertEqual(len(cand), len(source) - len(removed))
+
     def test_symlinked_component_source_is_rejected_before_resolution(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             fixture = AblationFixture(Path(temp_dir))
@@ -460,6 +569,36 @@ class BackwardEliminationTests(unittest.TestCase):
             self.assertEqual(safety["status"], "skipped-protected")
             self.assertTrue(all("## Safety" in text for text in runner.candidates))
             self.assertTrue(all("safety" not in removed for removed in runner.calls))
+
+    def test_case_group_digest_matches_capability_review_canonical_form(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fixture = AblationFixture(Path(temp_dir))
+            record, _local_root = run_component_ablation(fixture.config, MatrixRunner({}))
+            expected = _case_groups_digest(fixture.config.review.case_groups)
+            self.assertEqual(record["inputs"]["case_groups_digest_sha256"], expected)
+
+    def test_systemic_eval_error_fails_the_run(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fixture = AblationFixture(Path(temp_dir))
+
+            def boom(_config: CapabilityReviewConfig) -> tuple[dict[str, Any], Path]:
+                raise EvalError("evaluation bundle changed during capability review")
+
+            with self.assertRaisesRegex(EvalError, "evaluation bundle changed"):
+                run_component_ablation(fixture.config, boom)
+
+            records = list(fixture.config.output_root.rglob("decision.json"))
+            self.assertEqual(len(records), 1)
+            record = json.loads(records[0].read_text(encoding="utf-8"))
+            self.assertEqual(record["status"], "failed")
+            self.assertNotEqual(record.get("outcome"), "propose-reduction")
+            self.assertFalse(
+                any(
+                    trial.get("decision") == "invalid-candidate"
+                    for round_entry in record.get("rounds", [])
+                    for trial in round_entry.get("trials", [])
+                )
+            )
 
     def test_individually_safe_but_jointly_unsafe_removals_stop_safely(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
