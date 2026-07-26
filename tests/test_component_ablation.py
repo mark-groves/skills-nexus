@@ -382,7 +382,7 @@ Protected.
                 create_component_candidate(fixture.skill, candidate, contract, {"alpha"})
                 text = (candidate / "SKILL.md").read_text(encoding="utf-8")
                 self.assertNotIn("## Alpha", text)
-                self.assertIn(boundary, text)
+                self.assertIn(f"\n{boundary}\n", text)
                 self.assertIn("MUST KEEP THIS UNDECLARED SECTION.", text)
                 self.assertIn("## Beta", text)
 
