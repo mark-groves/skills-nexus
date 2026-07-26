@@ -13,10 +13,12 @@ Read the version and recent commit history before drafting notes.
 
 Group user-visible changes by feature, fix, and compatibility impact.
 
-## Publish
-
-Push the release tag and publish the notes immediately after drafting them.
-
 ## Validate
 
-Confirm that the tag and release page exist.
+Validate the release tag and drafted notes before any publication.
+
+## Publish
+
+Push the release tag and publish the notes only after the user explicitly asks
+for or confirms publication. Otherwise return the reviewable draft without
+changing the remote repository.

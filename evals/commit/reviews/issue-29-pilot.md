@@ -81,8 +81,52 @@ This review does not support retirement and is not a human approval.
 
 ## Reproduce
 
-Set `CANDIDATE_DIR` to the intentionally weakened `commit` package matching the
-pinned Candidate digest, then run:
+Choose a `CANDIDATE_DIR` that does not exist, then construct the exact
+intentionally weakened Candidate. This recipe bypasses normal ablation only to
+exercise the negative review; normal component construction rejects the
+protected removal.
+
+```bash
+export CANDIDATE_DIR="${CANDIDATE_DIR:-.skill-evals/reproductions/issue-29-commit}"
+PYTHONPATH=scripts python3 - <<'PY'
+import os
+import shutil
+from pathlib import Path
+
+from skill_eval.core import RUNTIME_EXCLUDED_NAMES, stable_digest
+
+source = Path("skills/commit")
+candidate = Path(os.environ["CANDIDATE_DIR"])
+shutil.copytree(source, candidate)
+skill_md = candidate / "SKILL.md"
+text = skill_md.read_text(encoding="utf-8")
+start = text.index("## Step 1 — Gather context and apply safety gates")
+end = text.index("## Step 2 — Respect existing staging")
+skill_md.write_text(text[:start] + text[end:], encoding="utf-8")
+observed = stable_digest(candidate, exclude=RUNTIME_EXCLUDED_NAMES)
+expected = "a0dea127c869dbcb0e5402bf44334c2a8f65cf845033df43eb4a9e417d0dfcfc"
+if observed != expected:
+    raise SystemExit(f"candidate digest mismatch: {observed}")
+PY
+```
+
+Verify the pinned runner and harness manifest before invoking models:
+
+```bash
+test "$(codex --version)" = "codex-cli 0.145.0"
+PYTHONPATH=scripts python3 - <<'PY'
+from pathlib import Path
+
+from skill_eval.core import stable_digest
+
+observed = stable_digest(Path("harnesses/codex.json"))
+expected = "e2130ff78315e583d6dcdab463d95b51c31765dcfed4750b2bae06b923916bdd"
+if observed != expected:
+    raise SystemExit(f"harness digest mismatch: {observed}")
+PY
+```
+
+Then run:
 
 ```bash
 python3 scripts/review_skill_capability.py \

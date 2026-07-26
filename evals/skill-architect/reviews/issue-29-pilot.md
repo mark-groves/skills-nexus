@@ -27,10 +27,10 @@ The review did not approve removal. No runtime reduction was applied.
 | --- | --- |
 | Current runtime | `ab6c13843ad75677897efe7fba2221de0b35562072ba7b139a8f1320b8d94ca9` |
 | Candidate runtime | `4600559875b8798e36077be5160f1cf1b73cdb4c9ba831671cac1e243158066c` |
-| Eval bundle | `d19f645d66821c3c67e04ce93bd68349769bee956c5b9ca3730dcfc62687b8b6` |
-| Eval specification | `a93b556b89d01c614514e8ade804e694d2919358149d72183c9abc7e811ec3fb` |
+| Eval bundle | `0c6a863b38c59c5d82577f3f68bd263acf0b6bff996c7aba2e68bd35e1b7dd4c` |
+| Eval specification | `027dc4f83ecdbf9ac613630b4589aad510e2107d4b59dadfe655953a621c8910` |
 | Model profiles | `b44693bcb02699e664f7ce179af3acec1c4be78f9905bbc344e441359a6814d9` |
-| Case groups | `598c9a09c73fbb0db2589fe9f33d5c7ee0484801c3eef28cd3dc233f31aa4107` |
+| Case groups | `386c91cf28a4e4df6ecdcf1c310dba306a4065200b9a65b895bfbc7ac98d31be` |
 | Judge policy | `fb8c37fe58d9a79aa6cb9f3b167bac1b5a9125e5940ce8f469614d8cc007a510` |
 | Codex harness manifest | `e2130ff78315e583d6dcdab463d95b51c31765dcfed4750b2bae06b923916bdd` |
 
@@ -38,24 +38,25 @@ The review did not approve removal. No runtime reduction was applied.
 
 | Universe | Candidate quality minus Current | Candidate lift over Baseline | Dynamic input-token reduction | Verdict |
 | --- | ---: | ---: | ---: | --- |
-| Repository | -1.22 pp | +6.10 pp | -471,964 | rejected |
-| Isolated | +2.44 pp | +21.95 pp | -166,792 | rejected |
+| Repository | +2.27 pp | +10.23 pp | +50,097 | rejected |
+| Isolated | -3.41 pp | +14.77 pp | -241,651 | rejected |
 
 Negative token reductions mean that the smaller candidate used more measured
-input tokens in those stochastic runs. All three protected capability-review
-checks passed in both universes. The blocking gate was behavior evidence
-coverage: repository coverage was 96.34% for Current and Candidate and 93.90%
-for Baseline; isolated coverage was 95.12%, 93.90%, and 90.24% respectively,
-below the configured 100% requirement.
+input tokens in those stochastic runs. All six protected capability-review
+checks passed on both repeats in both universes. The behavior evidence-coverage
+gate failed: repository coverage was 94.32% for Current, 96.59% for Baseline,
+and 97.73% for Candidate; isolated coverage was 96.59%, 96.59%, and 93.18%
+respectively, below the configured 100% requirement. Isolated trigger recall
+also fell outside the configured non-inferiority margin.
 
 The new trigger case passed at the configured threshold in both universes:
 Current activated on 2/2 repository and 2/2 isolated repeats; Candidate
-activated on 1/2 repository and 2/2 isolated repeats. The new behavior case
-passed a focused Current diagnostic at 9/9 checks. In the complete repeated
-matrix, Current received 17 passes plus one unknown in repository and 17 passes
-plus one normal-check failure in isolation; Candidate received 17 passes plus
-one unknown in repository and 18/18 passes in isolation. Every protected check
-for that case passed.
+activated on 2/2 repository and 2/2 isolated repeats. The new behavior case
+passed a focused Current diagnostic at 12/12 checks. In the complete repeated
+matrix, Current passed all 24 checks for that case in each universe. Candidate
+received 22 passes, one normal-check failure, and one unknown in repository,
+and 22 passes plus two normal-check failures in isolation. Every protected
+check for that case passed.
 
 ## Uncertainty and disposition
 
@@ -73,8 +74,48 @@ This review does not support retirement and is not a human approval.
 
 ## Reproduce
 
-Set `CANDIDATE_DIR` to a publishable `skill-architect` package matching the
-pinned Candidate digest, then run:
+Choose a `CANDIDATE_DIR` that does not exist, then construct the exact
+`source-links` ablation candidate:
+
+```bash
+export CANDIDATE_DIR="${CANDIDATE_DIR:-.skill-evals/reproductions/issue-29-skill-architect}"
+PYTHONPATH=scripts python3 - <<'PY'
+import os
+from pathlib import Path
+
+from skill_review.ablation import create_component_candidate, load_component_contract
+
+repo = Path.cwd()
+skill = repo / "skills" / "skill-architect"
+candidate = Path(os.environ["CANDIDATE_DIR"])
+contract = load_component_contract(
+    repo / "evals" / "skill-architect" / "components.json",
+    skill,
+)
+digest = create_component_candidate(skill, candidate, contract, {"source-links"})
+expected = "4600559875b8798e36077be5160f1cf1b73cdb4c9ba831671cac1e243158066c"
+if digest != expected:
+    raise SystemExit(f"candidate digest mismatch: {digest}")
+PY
+```
+
+Verify the pinned runner and harness manifest before invoking models:
+
+```bash
+test "$(codex --version)" = "codex-cli 0.145.0"
+PYTHONPATH=scripts python3 - <<'PY'
+from pathlib import Path
+
+from skill_eval.core import stable_digest
+
+observed = stable_digest(Path("harnesses/codex.json"))
+expected = "e2130ff78315e583d6dcdab463d95b51c31765dcfed4750b2bae06b923916bdd"
+if observed != expected:
+    raise SystemExit(f"harness digest mismatch: {observed}")
+PY
+```
+
+Then run:
 
 ```bash
 python3 scripts/review_skill_capability.py \
@@ -85,7 +126,7 @@ python3 scripts/review_skill_capability.py \
   --behavior-repeats 2 \
   --expected-current-digest ab6c13843ad75677897efe7fba2221de0b35562072ba7b139a8f1320b8d94ca9 \
   --expected-candidate-digest 4600559875b8798e36077be5160f1cf1b73cdb4c9ba831671cac1e243158066c \
-  --expected-eval-digest d19f645d66821c3c67e04ce93bd68349769bee956c5b9ca3730dcfc62687b8b6 \
+  --expected-eval-digest 0c6a863b38c59c5d82577f3f68bd263acf0b6bff996c7aba2e68bd35e1b7dd4c \
   --expected-profiles-digest b44693bcb02699e664f7ce179af3acec1c4be78f9905bbc344e441359a6814d9 \
-  --expected-case-groups-digest 598c9a09c73fbb0db2589fe9f33d5c7ee0484801c3eef28cd3dc233f31aa4107
+  --expected-case-groups-digest 386c91cf28a4e4df6ecdcf1c310dba306a4065200b9a65b895bfbc7ac98d31be
 ```

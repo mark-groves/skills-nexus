@@ -294,7 +294,7 @@ must show all of the following:
 Codex-only evidence can support a Codex-scoped conclusion. It cannot establish
 retirement safety for other harnesses without corresponding runner evidence.
 
-## Capability Optimisation v1 pilot
+## Capability Optimisation v1 pilot status
 
 Issue #29 piloted the complete v1 workflow on `skill-architect` and the
 safety-sensitive `commit` skill. The bounded summaries are stored with each
@@ -303,7 +303,7 @@ skill's repository-only reviews:
 - [`skill-architect` pilot](../evals/skill-architect/reviews/issue-29-pilot.md)
 - [`commit` pilot](../evals/commit/reviews/issue-29-pilot.md)
 
-The pilot demonstrated that:
+The completed issue #29 pilots demonstrated that:
 
 - exact component metadata can bound a marginal review and prevent protected
   components from entering normal ablation candidates;
@@ -317,7 +317,8 @@ The pilot demonstrated that:
 - rejected evidence retains Current and never applies, promotes, retires, or
   merges a runtime Candidate automatically.
 
-The pilot did not prove a safe runtime reduction. It also did not establish
+The pilot did not prove a safe runtime reduction, so Capability Optimisation v1
+remains unverified and its roadmap item stays open. It also did not establish
 held-back-only efficacy, eliminate stochastic trigger and token variance, run
 the observed frontier profile, or produce behavioral evidence for non-Codex
 harnesses. Both summaries are agent-prepared and remain pending maintainer
