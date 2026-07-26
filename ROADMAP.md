@@ -65,8 +65,16 @@ ablation compose those unchanged evaluations.
       summaries (#27).
 - [x] Evaluate coherent component marginal value with protected component
       boundaries and combined-candidate verification (#28).
-- [ ] Pilot both useful reduction and protected-regression rejection before
+- [x] Pilot both useful reduction and protected-regression rejection before
       declaring Capability Optimisation v1 verified (#29).
+
+Capability Optimisation v1 is verified as a Codex-scoped, evidence-gated review
+workflow, not as proof that either pilot skill should be reduced or retired.
+The `skill-architect` pilot bounded a useful marginal review but retained the
+component when evidence coverage was incomplete. The `commit` pilot rejected a
+protected regression even with favorable isolated input-token evidence. The
+pilots did not measure held-back-only efficacy, select the observed frontier
+profile, or establish behavioral support in other harnesses.
 
 ## Phase 6 — Promote and learn
 

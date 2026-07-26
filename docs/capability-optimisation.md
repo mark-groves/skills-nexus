@@ -293,3 +293,34 @@ must show all of the following:
 
 Codex-only evidence can support a Codex-scoped conclusion. It cannot establish
 retirement safety for other harnesses without corresponding runner evidence.
+
+## Capability Optimisation v1 pilot
+
+Issue #29 piloted the complete v1 workflow on `skill-architect` and the
+safety-sensitive `commit` skill. The bounded summaries are stored with each
+skill's repository-only reviews:
+
+- [`skill-architect` pilot](../evals/skill-architect/reviews/issue-29-pilot.md)
+- [`commit` pilot](../evals/commit/reviews/issue-29-pilot.md)
+
+The pilot demonstrated that:
+
+- exact component metadata can bound a marginal review and prevent protected
+  components from entering normal ablation candidates;
+- required-profile reviews can run the complete suite with configured repeats,
+  a declared development/held-back partition, and both repository and isolated
+  skill universes;
+- a smaller Candidate can remain blocked by evidence-integrity gates even when
+  its average behavior is close to Current;
+- favorable static or dynamic context evidence cannot override a protected
+  regression; and
+- rejected evidence retains Current and never applies, promotes, retires, or
+  merges a runtime Candidate automatically.
+
+The pilot did not prove a safe runtime reduction. It also did not establish
+held-back-only efficacy, eliminate stochastic trigger and token variance, run
+the observed frontier profile, or produce behavioral evidence for non-Codex
+harnesses. Both summaries are agent-prepared and remain pending maintainer
+review; they are not human approvals or retirement evidence. Complete prompts,
+transcripts, command output, and workspaces remain local under ignored
+`.skill-evals/` storage.
