@@ -201,11 +201,23 @@ def _markdown_heading_levels(lines: list[str]) -> list[int | None]:
     return levels
 
 
-def _resolve_span(source: Path, component: Component) -> SectionSpan:
+def _read_text_exact(path: Path) -> str:
+    """Read UTF-8 text without translating newlines."""
     try:
-        text = source.read_text(encoding="utf-8", newline="")
+        with path.open("r", encoding="utf-8", newline="") as handle:
+            return handle.read()
     except UnicodeDecodeError as exc:
-        raise EvalError(f"Component source must be UTF-8: {source}") from exc
+        raise EvalError(f"Component source must be UTF-8: {path}") from exc
+
+
+def _write_text_exact(path: Path, text: str) -> None:
+    """Write UTF-8 text without translating newlines."""
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        handle.write(text)
+
+
+def _resolve_span(source: Path, component: Component) -> SectionSpan:
+    text = _read_text_exact(source)
     lines = text.splitlines(keepends=True)
     heading_levels = _markdown_heading_levels(lines)
     matches = [
@@ -367,14 +379,14 @@ def create_component_candidate(
     for source, spans in by_source.items():
         source_path = skill_dir / source
         target_path = destination / source
-        text = source_path.read_text(encoding="utf-8", newline="")
+        text = _read_text_exact(source_path)
         for span in sorted(spans, key=lambda item: item.start, reverse=True):
             if text[span.start : span.end] != span.text:
                 raise EvalError(
                     f"Component {span.component.id!r} source changed before candidate creation"
                 )
             text = text[: span.start] + text[span.end :]
-        target_path.write_text(text, encoding="utf-8", newline="")
+        _write_text_exact(target_path, text)
     digest = stable_digest(destination, exclude=RUNTIME_EXCLUDED_NAMES)
     measure_static_footprint(destination, digest)
     return digest
