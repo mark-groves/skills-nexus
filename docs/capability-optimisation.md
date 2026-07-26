@@ -315,7 +315,8 @@ The completed issue #29 pilots demonstrated that:
   is close to Current;
 - gate design rejects a Candidate when protected hard failures are present, and
   the commit pilot observed those failures alongside quality and coverage
-  shortfalls even when isolated token evidence looked favorable; and
+  shortfalls; its fresh exact-suite rerun also found worse dynamic input-token
+  use in both universes despite a smaller static runtime package; and
 - rejected evidence retains Current and never applies, promotes, retires, or
   merges a runtime Candidate automatically.
 

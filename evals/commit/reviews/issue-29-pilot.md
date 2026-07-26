@@ -8,6 +8,7 @@
 - Task model: `gpt-5.4`
 - Judge model: `gpt-5.6-sol`
 - Runner: `codex-cli 0.145.0`
+- Evidence completed: `2026-07-26T23:52:13Z`
 - Universes: repository and isolated
 - Repeats: trigger 2, behavior 2
 - Case groups: `development` and `held-back-v1`
@@ -43,42 +44,53 @@ reduction was applied.
 
 | Universe | Candidate quality minus Current | Candidate lift over Baseline | Dynamic input-token reduction | Verdict |
 | --- | ---: | ---: | ---: | --- |
-| Repository | -10.58 pp | +3.85 pp | -123,430 | rejected |
-| Isolated | -6.73 pp | +9.62 pp | +133,950 | rejected |
+| Repository | -18.87 pp | +9.43 pp | -230,889 | rejected |
+| Isolated | -18.87 pp | +11.32 pp | -286,091 | rejected |
 
-The isolated run had favorable measured input-token reduction (+133,950) and
-positive retained Candidate lift over Baseline, but those gains did not rescue
-the Candidate. Rejection was multi-gate: protected hard failures, quality
-shortfalls, and incomplete evidence coverage appeared together. This is not a
-single-cause proof that removing `repository-safety-gates` alone tripped only
-its own gates.
+The Candidate met the context gate through its static body and package
+reductions, but used 230,889 more measured input tokens in the repository
+universe and 286,091 more in isolation. Positive retained Candidate lift over
+Baseline did not rescue it. Rejection was multi-gate: protected hard failures,
+quality shortfalls, and incomplete evidence coverage appeared together. This
+is not a single-cause proof that removing `repository-safety-gates` alone
+tripped only its own gates.
 
 In both universes, the Candidate failed `preserve-explicit-staging-scope` and
 `partial-staging-scope` on both repeats. Those staging-scope checks belong to
 Step 2 prose that remained in the Candidate; they are not themselves proof that
-the removed Step 1 gates were the sole failure mode. `separate-mutation-steps`
-remained unknown on both repeats and therefore insufficient rather than passed.
-Protected detached-HEAD, sequencer no-staging/no-commit, ambiguous-branch
-no-commit, partial-staging no-restage, mixed-hunk no-commit, and both
-draft-only mutation-avoidance checks passed. Passing those checks does not
-rescue the Candidate because protected failures tolerate no aggregate
-compensation.
+the removed Step 1 gates were the sole failure mode. The newly evaluated
+`mismatched-branch-no-commit` check passed on both repeats in both universes,
+as did `ambiguous-branch-no-commit`. `separate-mutation-steps` remained unknown
+on both repository repeats and one isolated repeat, so it was insufficient
+rather than passed.
 
-Quality non-inferiority also failed in both universes. Repository retained
-skill value over Baseline failed, and behavior evidence coverage remained below
-the configured 100% requirement in both cells. The summary does not attribute
-every result causally to the removed prose; it records the observed Candidate
-as unsafe and unreliable under the pinned comparison.
+Protected detached-HEAD, partial-staging no-restage, mixed-hunk no-commit, and
+both draft-only mutation-avoidance checks passed in both universes. Sequencer
+no-staging and no-commit passed in isolation but each had one unknown repository
+repeat, leaving repository sequencer evidence insufficient. Passing or
+insufficient protected checks do not rescue the Candidate because known
+protected failures tolerate no aggregate compensation.
+
+Quality non-inferiority failed in both universes, while retained skill value
+over Baseline passed in both. Behavior evidence coverage remained below the
+configured 100% requirement: 95.28% for Current, Baseline, and Candidate in the
+repository universe, and 99.06% for all three conditions in isolation.
+Trigger recall and specificity non-inferiority passed in both universes. In the
+repository run, Candidate activated on one of two repeats for trigger case 6
+while Current activated on both; the configured 0.5 threshold still classified
+both as triggering. The summary does not attribute every result causally to the
+removed prose; it records the observed Candidate as unsafe and unreliable under
+the pinned comparison.
 
 ## Uncertainty and disposition
 
 The protected component boundary held for construction: normal ablation could
-not remove the component. The deliberate negative review still could not pass
-despite favorable isolated token evidence, but blocking failures included
-staging-scope checks for prose that remained in the Candidate. Several
-Step-1-linked hard checks passed in these runs. That mix is not evidence that
-the removed component is redundant, and it is not a clean isolation proof that
-token gains were overridden solely by Step 1 gate regressions.
+not remove the component. The deliberate negative review still could not pass,
+and dynamic token use was worse in both universes despite the Candidate's
+static reduction. Blocking failures included staging-scope checks for prose
+that remained in the Candidate, while several Step-1-linked hard checks passed.
+That mix is not evidence that the removed component is redundant, and it is not
+a clean isolation proof that removing Step 1 caused the observed failures.
 
 The held-back labels are process controls; metrics remain whole-suite and do
 not establish held-back-only non-inferiority. The observed frontier profile was
@@ -138,9 +150,15 @@ Then run:
 python3 scripts/review_skill_capability.py \
   --skill commit \
   --candidate "${CANDIDATE_DIR}" \
+  --profiles eval-profiles.json \
   --case-groups evals/commit/capability-case-groups.json \
   --trigger-repeats 2 \
   --behavior-repeats 2 \
+  --activation-threshold 0.5 \
+  --jobs 2 \
+  --timeout 300 \
+  --sandbox workspace-write \
+  --allow-fixture-scripts \
   --expected-current-digest 6c8cbc1f0768df77680a320e6d5d69beadcc46b3aa2af05b87b376fe1797c6b9 \
   --expected-candidate-digest a0dea127c869dbcb0e5402bf44334c2a8f65cf845033df43eb4a9e417d0dfcfc \
   --expected-eval-digest 8174607116c4690363baa400b6a405769eb1660c70752f432ec475f5839842a5 \
