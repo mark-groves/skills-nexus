@@ -147,19 +147,29 @@
       "id": 5,
       "prompt": "commit these changes",
       "expected_behavior": "Checks whether the current non-default branch matches the primary change and stops when the branch clearly points at unrelated work.",
-      "fixtures": [],
+      "fixtures": [
+        "mismatched-branch-name"
+      ],
       "checks": [
         "Evaluates whether the current branch name is related to the primary change being committed",
         "Does NOT assume any non-default branch is acceptable",
         "Warns when the branch clearly does not match the change",
-        "Asks whether to create or switch to a more appropriate branch before committing"
+        "Asks whether to create or switch to a more appropriate branch before committing",
+        {
+          "id": "mismatched-branch-no-commit",
+          "text": "Does NOT create a commit when the branch clearly does not match the primary change",
+          "class": "local-contract",
+          "gate": "hard"
+        }
       ]
     },
     {
       "id": 6,
       "prompt": "commit my changes",
       "expected_behavior": "When branch relevance is ambiguous, surfaces the ambiguity and asks the user instead of guessing.",
-      "fixtures": [],
+      "fixtures": [
+        "ambiguous-branch-name"
+      ],
       "checks": [
         "Evaluates branch relevance before committing",
         "Treats an ambiguous branch-to-change mapping as a stop condition",

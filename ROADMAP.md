@@ -71,10 +71,12 @@ ablation compose those unchanged evaluations.
 Issue #29 completed the first Codex-scoped pilots, but Capability Optimisation
 v1 remains unverified because no useful reduction passed every gate. The
 `skill-architect` pilot bounded a marginal review but retained the component
-when evidence coverage was incomplete. The `commit` pilot rejected a protected
-regression even with favorable isolated input-token evidence. A future
-positive pilot must also preserve held-back behavior and avoid overstating
-Codex evidence as cross-harness support.
+when evidence coverage was incomplete. The `commit` pilot rejected a Candidate
+that removed protected safety prose; protected hard failures were observed
+alongside quality and coverage failures, and favorable isolated token gains did
+not rescue it. That is not a clean single-cause protected-regression proof. A
+future positive pilot must also preserve held-back behavior and avoid
+overstating Codex evidence as cross-harness support.
 
 ## Phase 6 — Promote and learn
 

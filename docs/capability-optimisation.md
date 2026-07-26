@@ -313,8 +313,9 @@ The completed issue #29 pilots demonstrated that:
 - a smaller Candidate can remain blocked when evidence coverage is incomplete
   (`insufficient-evidence`) or other gates fail, even when its average behavior
   is close to Current;
-- favorable static or dynamic context evidence cannot override a protected
-  regression; and
+- gate design rejects a Candidate when protected hard failures are present, and
+  the commit pilot observed those failures alongside quality and coverage
+  shortfalls even when isolated token evidence looked favorable; and
 - rejected evidence retains Current and never applies, promotes, retires, or
   merges a runtime Candidate automatically.
 
