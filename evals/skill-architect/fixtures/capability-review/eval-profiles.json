@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "judge_policy": {
+    "id": "example-capability-review-v1",
+    "model": "pinned-judge-model",
+    "protocol": "condition-blind"
+  },
+  "profiles": [
+    {
+      "id": "supported-floor",
+      "adapter": "example-runner",
+      "model": "pinned-supported-model",
+      "judge_model": "pinned-judge-model",
+      "required": true
+    },
+    {
+      "id": "frontier-observed",
+      "adapter": "example-runner",
+      "model": "pinned-frontier-model",
+      "judge_model": "pinned-judge-model",
+      "required": false
+    }
+  ]
+}
