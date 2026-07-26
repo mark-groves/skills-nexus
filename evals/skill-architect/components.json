@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "components": [
+    {
+      "id": "inspect-target",
+      "source": "SKILL.md",
+      "heading": "## 1. Inspect the target",
+      "class": "workflow",
+      "protected": false
+    },
+    {
+      "id": "establish-intent",
+      "source": "SKILL.md",
+      "heading": "## 2. Establish intent and evidence",
+      "class": "workflow",
+      "protected": false
+    },
+    {
+      "id": "design-boundaries",
+      "source": "SKILL.md",
+      "heading": "## 3. Design the boundaries",
+      "class": "policy",
+      "protected": true
+    },
+    {
+      "id": "author-runtime",
+      "source": "SKILL.md",
+      "heading": "## 4. Author the runtime package",
+      "class": "workflow",
+      "protected": false
+    },
+    {
+      "id": "design-triggering",
+      "source": "SKILL.md",
+      "heading": "## 5. Design triggering and evals",
+      "class": "evaluation",
+      "protected": false
+    },
+    {
+      "id": "add-scripts-safely",
+      "source": "SKILL.md",
+      "heading": "## 6. Add scripts safely",
+      "class": "safety",
+      "protected": true
+    },
+    {
+      "id": "validate-claims",
+      "source": "SKILL.md",
+      "heading": "## 7. Validate claims",
+      "class": "safety",
+      "protected": true
+    }
+  ]
+}

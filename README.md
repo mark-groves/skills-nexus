@@ -67,6 +67,16 @@ python3 scripts/review_skill_capability.py \
   --plan
 ```
 
+Preview repository-owned component boundaries before running backward
+elimination:
+
+```bash
+python3 scripts/ablate_skill_components.py \
+  --skill skill-architect \
+  --case-groups /path/to/review-case-groups.json \
+  --plan
+```
+
 Evaluation suites are repository-only evidence. They are stored separately
 from runtime skills and are never included in packaged copies.
 

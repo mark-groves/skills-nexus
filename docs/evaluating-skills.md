@@ -180,6 +180,86 @@ rejected or insufficient evidence, and `1` for invalid configuration. Neither
 an approved evidence verdict nor a human disposition promotes, edits, merges,
 or publishes a candidate.
 
+## Component ablation and backward elimination
+
+Component metadata lives beside repository-only evals, never in the published
+skill:
+
+```json
+{
+  "schema_version": 1,
+  "components": [
+    {
+      "id": "inspect-target",
+      "source": "SKILL.md",
+      "heading": "## 1. Inspect the target",
+      "class": "workflow",
+      "protected": false
+    },
+    {
+      "id": "validate-claims",
+      "source": "SKILL.md",
+      "heading": "## 7. Validate claims",
+      "class": "safety",
+      "protected": true
+    }
+  ]
+}
+```
+
+The declarative shape is published as
+[`schemas/skill-components-v1.schema.json`](../schemas/skill-components-v1.schema.json).
+IDs and classes use stable lowercase kebab-case. Sources must be Markdown files
+inside the runtime package, and headings must be exact level 2-6 ATX headings
+that resolve once. Selectors may not traverse outside the package, follow a
+symlink, target a level-1 document root, or overlap another component. This
+strictness makes moved, renamed, duplicated, broad, and ambiguous sections fail
+closed. Heading-like lines inside fenced code do not count as section
+selectors.
+
+Validate metadata and show protected components without model calls:
+
+```bash
+python3 scripts/ablate_skill_components.py \
+  --skill skill-architect \
+  --case-groups /path/to/review-case-groups.json \
+  --plan
+```
+
+Run the elimination:
+
+```bash
+python3 scripts/ablate_skill_components.py \
+  --skill skill-architect \
+  --case-groups /path/to/review-case-groups.json
+```
+
+Each round evaluates every remaining unprotected marginal removal with the
+unchanged capability-review matrix in both repository and isolated universes.
+Only an `approved` candidate without material required-profile uncertainty is
+eligible. The greedy choice maximises the worst required-profile quality delta,
+then incremental runtime-package byte savings. The next round starts from that
+accepted reduced candidate. Protected components are visible but skipped.
+
+When no further candidate is safe, the orchestrator rebuilds the combined
+candidate from the complete current runtime and reruns the matrix from scratch.
+This catches removals that pass alone but regress together and catches
+stochastic final-run failures. An interrupted run leaves an `interrupted`
+decision record while its temporary candidate is deleted.
+
+By default, artifacts stay under
+`.skill-evals/<skill>/component-ablations/<run-id>/`; an external
+`--output-root` is also supported. `decision.json` records component status,
+prior and candidate digests, incremental and cumulative static savings, quality
+deltas, hard regressions, gate results, uncertainty, and separate repository
+and isolated results for every trial and the final rerun. It also pins the
+component, eval, case-group, and profile contracts across rounds. Raw capability
+evidence remains below the same local run. Repository-local `--output-root`
+values are accepted only beneath `.skill-evals/`.
+`propose-reduction` means only that the final candidate is ready for human
+review; the command never edits the runtime skill, rewrites prose, commits a
+reduction, exports repository evidence, or promotes a result.
+
 ## Checks and optimisation policy
 
 Behavior checks remain backwards-compatible. A plain string is a normal
@@ -398,9 +478,9 @@ removes that home after each turn.
 
 Candidate comparison and single-profile optimisation gates are available
 through `--candidate`; context-footprint reporting is available in both modes.
-Model-profile orchestration composes those gates without changing ordinary
-evaluation behavior. Regression ingestion and component ablation remain
-separate work tracked in the [roadmap](../ROADMAP.md). The
+Model-profile orchestration and component ablation compose those gates without
+changing ordinary evaluation behavior. Regression ingestion remains separate
+work tracked in the [roadmap](../ROADMAP.md). The
 [capability-optimisation contract](capability-optimisation.md) defines the
 broader evidence standard.
 

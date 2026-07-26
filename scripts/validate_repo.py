@@ -12,6 +12,7 @@ import tempfile
 from pathlib import Path
 
 from skill_eval.core import EvalError
+from skill_review.ablation import load_component_contract
 from skill_review.core import load_profile_contract
 
 REPO_DIR = Path(__file__).resolve().parents[1]
@@ -931,6 +932,13 @@ def validate_evals(skill_dir: Path, eval_dir: Path) -> None:
                             "Structured behavior check gate must be one of "
                             f"{', '.join(sorted(CHECK_GATES))} in {rel}"
                         )
+
+    components_json = eval_dir / "components.json"
+    if components_json.exists() or components_json.is_symlink():
+        try:
+            load_component_contract(components_json, skill_dir)
+        except EvalError as exc:
+            fail(str(exc))
 
 
 def validate_skill_contract(skill_dir: Path) -> None:
