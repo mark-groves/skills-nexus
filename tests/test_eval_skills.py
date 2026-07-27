@@ -34,6 +34,7 @@ from skill_eval.core import (  # noqa: E402
     ReviewPolicy,
     TriggerCase,
     candidate_evaluation_conditions,
+    compare_candidate_discovery_inputs,
     default_evaluation_conditions,
     discover_repository_skills,
     git_observations,
@@ -54,6 +55,7 @@ from skill_eval.core import (  # noqa: E402
     summarize_trigger_results,
     validate_candidate_separation,
 )
+from skill_eval.report import _review_html, _review_markdown  # noqa: E402
 
 
 class EvalCoreTests(unittest.TestCase):
@@ -116,6 +118,58 @@ class EvalCoreTests(unittest.TestCase):
                 },
             },
         )
+
+    def test_candidate_discovery_comparison_tracks_only_name_and_description(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            current = root / "current"
+            candidate = root / "candidate"
+            current.mkdir()
+            candidate.mkdir()
+            current_skill = "---\nname: demo\ndescription: Use for demo work.\n---\n\n# Current\n"
+            (current / "SKILL.md").write_text(current_skill, encoding="utf-8")
+            (candidate / "SKILL.md").write_text(
+                current_skill.replace("# Current", "# Candidate"),
+                encoding="utf-8",
+            )
+
+            comparison = compare_candidate_discovery_inputs(
+                candidate_evaluation_conditions(current, candidate)
+            )
+
+            self.assertEqual(
+                comparison,
+                {
+                    "canonical_fields": ["name", "description"],
+                    "changed": False,
+                    "changed_fields": [],
+                    "trigger_gate_mode": "observational",
+                },
+            )
+
+            (candidate / "SKILL.md").write_text(
+                current_skill.replace("Use for demo work.", "Use for narrower demo work."),
+                encoding="utf-8",
+            )
+            comparison = compare_candidate_discovery_inputs(
+                candidate_evaluation_conditions(current, candidate)
+            )
+
+            self.assertTrue(comparison["changed"])
+            self.assertEqual(comparison["changed_fields"], ["description"])
+            self.assertEqual(comparison["trigger_gate_mode"], "blocking")
+
+            (candidate / "SKILL.md").write_text(
+                current_skill.replace("name: demo", "name: demo-next"),
+                encoding="utf-8",
+            )
+            comparison = compare_candidate_discovery_inputs(
+                candidate_evaluation_conditions(current, candidate)
+            )
+
+            self.assertTrue(comparison["changed"])
+            self.assertEqual(comparison["changed_fields"], ["name"])
+            self.assertEqual(comparison["trigger_gate_mode"], "blocking")
 
     def test_default_conditions_are_immutable_ordered_and_digest_the_runtime(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1031,6 +1085,51 @@ class EvalCoreTests(unittest.TestCase):
             **base_arguments,
         )
         self.assertEqual(unknown["verdict"], "insufficient-evidence")
+        self.assertIsNone(unknown["trigger_gate_scope"]["changed"])
+        self.assertEqual(
+            unknown["trigger_gate_scope"]["trigger_gate_mode"],
+            "blocking",
+        )
+        self.assertTrue(all(gate["hard"] for gate in unknown["dimensions"]["triggering"]["gates"]))
+        unavailable_scope_text = (
+            "Trigger checks are **blocking** because the canonical discovery-input "
+            "comparison is unavailable; blocking is the fail-closed default."
+        )
+        self.assertIn(
+            unavailable_scope_text,
+            "\n".join(_review_markdown({"optimisation_review": unknown})),
+        )
+        self.assertIn(
+            unavailable_scope_text.replace("**", ""),
+            _review_html({"optimisation_review": unknown}),
+        )
+        base_arguments["discovery_input_comparison"] = {
+            "canonical_fields": ["name", "description"],
+            "changed": None,
+            "changed_fields": None,
+        }
+        malformed_unknown = summarize_optimisation_review(
+            policy=ReviewPolicy(minimum_lift_over_baseline=0.0),
+            **base_arguments,
+        )
+        self.assertEqual(
+            malformed_unknown["trigger_gate_scope"]["trigger_gate_mode"],
+            "blocking",
+        )
+        self.assertIn(
+            unavailable_scope_text,
+            "\n".join(_review_markdown({"optimisation_review": malformed_unknown})),
+        )
+        base_arguments["discovery_input_comparison"]["trigger_gate_mode"] = "observational"
+        contradictory_unknown = summarize_optimisation_review(
+            policy=ReviewPolicy(minimum_lift_over_baseline=0.0),
+            **base_arguments,
+        )
+        self.assertEqual(
+            contradictory_unknown["trigger_gate_scope"]["trigger_gate_mode"],
+            "blocking",
+        )
+        base_arguments.pop("discovery_input_comparison")
         protected_gate = next(
             gate
             for gate in unknown["dimensions"]["correctness"]["gates"]
@@ -1049,6 +1148,43 @@ class EvalCoreTests(unittest.TestCase):
 
         for metric in ("recall", "specificity"):
             base_arguments["candidate_trigger_summary"][metric] = 0.5
+            base_arguments["discovery_input_comparison"] = {
+                "canonical_fields": ["name", "description"],
+                "changed": False,
+                "changed_fields": [],
+                "trigger_gate_mode": "observational",
+            }
+            observed_trigger_variance = summarize_optimisation_review(
+                policy=ReviewPolicy(minimum_lift_over_baseline=0.0),
+                **base_arguments,
+            )
+            self.assertEqual(observed_trigger_variance["verdict"], "approved")
+            trigger_gate = next(
+                gate
+                for gate in observed_trigger_variance["dimensions"]["triggering"]["gates"]
+                if gate["id"] == f"{metric}-non-inferiority"
+            )
+            self.assertEqual(trigger_gate["status"], "fail")
+            self.assertFalse(trigger_gate["hard"])
+            observational_report = "\n".join(
+                _review_markdown({"optimisation_review": observed_trigger_variance})
+            )
+            self.assertIn(
+                "Trigger checks are **observational** because canonical discovery inputs "
+                "are unchanged.",
+                observational_report,
+            )
+            self.assertIn(
+                f"| triggering | `{metric}-non-inferiority` | observational | ❌ fail |",
+                observational_report,
+            )
+
+            base_arguments["discovery_input_comparison"] = {
+                "canonical_fields": ["name", "description"],
+                "changed": True,
+                "changed_fields": ["description"],
+                "trigger_gate_mode": "blocking",
+            }
             regressive_trigger = summarize_optimisation_review(
                 policy=ReviewPolicy(minimum_lift_over_baseline=0.0),
                 **base_arguments,
@@ -1060,7 +1196,14 @@ class EvalCoreTests(unittest.TestCase):
                 if gate["id"] == f"{metric}-non-inferiority"
             )
             self.assertEqual(trigger_gate["status"], "fail")
+            self.assertTrue(trigger_gate["hard"])
             base_arguments["candidate_trigger_summary"][metric] = 1.0
+        base_arguments["discovery_input_comparison"] = {
+            "canonical_fields": ["name", "description"],
+            "changed": False,
+            "changed_fields": [],
+            "trigger_gate_mode": "observational",
+        }
 
         reductions = base_arguments["candidate_comparison"]
         base_arguments["candidate_comparison"] = {
@@ -2514,6 +2657,7 @@ class EvalCliIntegrationTests(unittest.TestCase):
                     "candidate",
                     "candidate_trigger",
                     "candidate_comparison",
+                    "candidate_discovery",
                     "optimisation_review",
                 },
                 set(result),
@@ -2525,6 +2669,19 @@ class EvalCliIntegrationTests(unittest.TestCase):
             )
             self.assertEqual(candidate_result["candidate"]["name"], "demo")
             self.assertEqual(candidate_result["candidate"]["path"], str(candidate.resolve()))
+            self.assertEqual(
+                candidate_result["candidate_discovery"],
+                {
+                    "canonical_fields": ["name", "description"],
+                    "changed": True,
+                    "changed_fields": ["description"],
+                    "trigger_gate_mode": "blocking",
+                },
+            )
+            self.assertEqual(
+                candidate_result["optimisation_review"]["trigger_gate_scope"],
+                candidate_result["candidate_discovery"],
+            )
             self.assertNotEqual(
                 candidate_result["skill"]["runtime_digest_sha256"],
                 candidate_result["candidate"]["runtime_digest_sha256"],
@@ -2619,6 +2776,11 @@ class EvalCliIntegrationTests(unittest.TestCase):
             self.assertIn("## Candidate change", candidate_report)
             self.assertIn("## Optimisation gates", candidate_report)
             self.assertIn("No aggregate score can override a hard failure", candidate_report)
+            self.assertIn(
+                "Trigger checks are **blocking** because canonical discovery inputs changed.",
+                candidate_report,
+            )
+            self.assertIn("| triggering | `recall-non-inferiority` | blocking |", candidate_report)
             self.assertIn("| Dynamic input tokens | — |", candidate_report)
             self.assertIn("### Current", candidate_report)
             self.assertIn("### Candidate", candidate_report)
@@ -2628,6 +2790,12 @@ class EvalCliIntegrationTests(unittest.TestCase):
             self.assertIn("<h2>Context footprint</h2>", candidate_html)
             self.assertIn("<h2>Candidate change</h2>", candidate_html)
             self.assertIn("<h2>Optimisation gates</h2>", candidate_html)
+            self.assertIn(
+                "Canonical discovery inputs changed: <code>True</code> "
+                "(changed fields: description); trigger checks are "
+                "<code>blocking</code>.",
+                candidate_html,
+            )
             self.assertIn("<th>Input tokens</th>", candidate_html)
             self.assertIn("<td>Dynamic input tokens</td><td>—</td>", candidate_html)
             candidate_reproduce = shlex.split(candidate_result["reproduce_command"])
