@@ -1322,6 +1322,18 @@ def summarize_optimisation_review(
         verdict = "insufficient-evidence"
     else:
         verdict = "approved"
+    trigger_gate_scope: dict[str, Any] = (
+        dict(discovery_input_comparison)
+        if discovery_input_comparison is not None
+        else {
+            "canonical_fields": ["name", "description"],
+            "changed": None,
+            "changed_fields": None,
+        }
+    )
+    trigger_gate_scope["trigger_gate_mode"] = (
+        "observational" if trigger_gate_scope.get("changed") is False else "blocking"
+    )
     return {
         "verdict": verdict,
         "approved": verdict == "approved",
@@ -1331,16 +1343,7 @@ def summarize_optimisation_review(
             "status": "configured" if policy is not None else "missing",
             "effective": effective_policy.as_dict(),
         },
-        "trigger_gate_scope": (
-            discovery_input_comparison
-            if discovery_input_comparison is not None
-            else {
-                "canonical_fields": ["name", "description"],
-                "changed": None,
-                "changed_fields": None,
-                "trigger_gate_mode": "blocking",
-            }
-        ),
+        "trigger_gate_scope": trigger_gate_scope,
         "dimensions": dimensions,
         "no_aggregate_override": True,
     }

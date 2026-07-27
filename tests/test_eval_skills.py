@@ -1103,6 +1103,33 @@ class EvalCoreTests(unittest.TestCase):
             unavailable_scope_text.replace("**", ""),
             _review_html({"optimisation_review": unknown}),
         )
+        base_arguments["discovery_input_comparison"] = {
+            "canonical_fields": ["name", "description"],
+            "changed": None,
+            "changed_fields": None,
+        }
+        malformed_unknown = summarize_optimisation_review(
+            policy=ReviewPolicy(minimum_lift_over_baseline=0.0),
+            **base_arguments,
+        )
+        self.assertEqual(
+            malformed_unknown["trigger_gate_scope"]["trigger_gate_mode"],
+            "blocking",
+        )
+        self.assertIn(
+            unavailable_scope_text,
+            "\n".join(_review_markdown({"optimisation_review": malformed_unknown})),
+        )
+        base_arguments["discovery_input_comparison"]["trigger_gate_mode"] = "observational"
+        contradictory_unknown = summarize_optimisation_review(
+            policy=ReviewPolicy(minimum_lift_over_baseline=0.0),
+            **base_arguments,
+        )
+        self.assertEqual(
+            contradictory_unknown["trigger_gate_scope"]["trigger_gate_mode"],
+            "blocking",
+        )
+        base_arguments.pop("discovery_input_comparison")
         protected_gate = next(
             gate
             for gate in unknown["dimensions"]["correctness"]["gates"]
