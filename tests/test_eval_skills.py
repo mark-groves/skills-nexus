@@ -55,7 +55,7 @@ from skill_eval.core import (  # noqa: E402
     summarize_trigger_results,
     validate_candidate_separation,
 )
-from skill_eval.report import _review_markdown  # noqa: E402
+from skill_eval.report import _review_html, _review_markdown  # noqa: E402
 
 
 class EvalCoreTests(unittest.TestCase):
@@ -1085,6 +1085,24 @@ class EvalCoreTests(unittest.TestCase):
             **base_arguments,
         )
         self.assertEqual(unknown["verdict"], "insufficient-evidence")
+        self.assertIsNone(unknown["trigger_gate_scope"]["changed"])
+        self.assertEqual(
+            unknown["trigger_gate_scope"]["trigger_gate_mode"],
+            "blocking",
+        )
+        self.assertTrue(all(gate["hard"] for gate in unknown["dimensions"]["triggering"]["gates"]))
+        unavailable_scope_text = (
+            "Trigger checks are **blocking** because the canonical discovery-input "
+            "comparison is unavailable; blocking is the fail-closed default."
+        )
+        self.assertIn(
+            unavailable_scope_text,
+            "\n".join(_review_markdown({"optimisation_review": unknown})),
+        )
+        self.assertIn(
+            unavailable_scope_text.replace("**", ""),
+            _review_html({"optimisation_review": unknown}),
+        )
         protected_gate = next(
             gate
             for gate in unknown["dimensions"]["correctness"]["gates"]

@@ -52,6 +52,18 @@ def _gate_mark(status: str) -> str:
     return "✅" if status == "pass" else "❌" if status == "fail" else "❔"
 
 
+def _trigger_scope_reason(scope: dict[str, Any]) -> str:
+    changed = scope.get("changed")
+    if changed is True:
+        return "canonical discovery inputs changed."
+    if changed is False:
+        return "canonical discovery inputs are unchanged."
+    return (
+        "the canonical discovery-input comparison is unavailable; "
+        "blocking is the fail-closed default."
+    )
+
+
 def _review_markdown(result: dict[str, Any]) -> list[str]:
     review = result.get("optimisation_review")
     if not review:
@@ -68,10 +80,8 @@ def _review_markdown(result: dict[str, Any]) -> list[str]:
         "",
         (
             "Trigger checks are "
-            f"**{review['trigger_gate_scope']['trigger_gate_mode']}** because canonical "
-            "discovery inputs "
-            + ("changed" if review["trigger_gate_scope"]["changed"] else "are unchanged")
-            + "."
+            f"**{review['trigger_gate_scope']['trigger_gate_mode']}** because "
+            + _trigger_scope_reason(review["trigger_gate_scope"])
         ),
         "",
         "| Dimension | Gate | Scope | Status | Observed | Required |",
@@ -141,12 +151,8 @@ def _review_html(result: dict[str, Any]) -> str:
     )
     trigger_scope = review["trigger_gate_scope"]
     trigger_scope_text = (
-        f"Trigger checks are {trigger_scope['trigger_gate_mode']} because canonical "
-        + (
-            "discovery inputs changed."
-            if trigger_scope["changed"]
-            else "discovery inputs are unchanged."
-        )
+        f"Trigger checks are {trigger_scope['trigger_gate_mode']} because "
+        + _trigger_scope_reason(trigger_scope)
     )
     return (
         "<section><h2>Optimisation gates</h2>"
