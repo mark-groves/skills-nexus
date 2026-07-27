@@ -729,6 +729,57 @@ def condition_static_footprints(
     }
 
 
+def canonical_discovery_inputs(runtime_skill_dir: Path) -> dict[str, str]:
+    """Return the canonical metadata inputs used for skill discovery."""
+    skill_md = runtime_skill_dir / "SKILL.md"
+    try:
+        text = skill_md.read_text(encoding="utf-8")
+    except FileNotFoundError as exc:
+        raise EvalError(f"Missing runtime SKILL.md: {skill_md}") from exc
+    except UnicodeDecodeError as exc:
+        raise EvalError(f"Runtime SKILL.md must be UTF-8: {skill_md}") from exc
+
+    payload, _body = _parse_skill_document(text, skill_md, source="Runtime")
+    inputs: dict[str, str] = {}
+    for field in ("name", "description"):
+        value = payload.get(field)
+        normalized = value.strip() if isinstance(value, str) else ""
+        if not normalized:
+            raise EvalError(
+                f"Runtime SKILL.md is missing a non-empty canonical {field}: {skill_md}"
+            )
+        inputs[field] = normalized
+    return inputs
+
+
+def compare_candidate_discovery_inputs(
+    conditions: tuple[EvaluationCondition, ...],
+) -> dict[str, Any]:
+    """Compare Current and Candidate inputs that can affect discovery."""
+    by_id = {condition.id: condition for condition in conditions}
+    try:
+        current_dir = by_id["skill"].runtime_skill_dir
+        candidate_dir = by_id["candidate"].runtime_skill_dir
+    except KeyError as exc:
+        raise EvalError(
+            "candidate discovery comparison requires skill and candidate conditions"
+        ) from exc
+    if current_dir is None or candidate_dir is None:
+        raise EvalError("candidate discovery comparison requires two runtime skill packages")
+
+    current = canonical_discovery_inputs(current_dir)
+    candidate = canonical_discovery_inputs(candidate_dir)
+    changed_fields = [
+        field for field in ("name", "description") if current[field] != candidate[field]
+    ]
+    return {
+        "canonical_fields": ["name", "description"],
+        "changed": bool(changed_fields),
+        "changed_fields": changed_fields,
+        "trigger_gate_mode": "blocking" if changed_fields else "observational",
+    }
+
+
 def summarize_candidate_comparison(
     behavior_summary: dict[str, Any] | None,
     static_footprints: dict[str, dict[str, Any]],
@@ -824,6 +875,7 @@ def summarize_optimisation_review(
     behavior_repeats: int,
     fixture_parity: bool | None,
     blind_grading: bool,
+    discovery_input_comparison: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Evaluate independent hard gates for a candidate optimisation review."""
     effective_policy = policy or ReviewPolicy()
@@ -840,12 +892,13 @@ def summarize_optimisation_review(
         observed: object,
         required: object,
         detail: str,
+        hard: bool = True,
     ) -> None:
         dimensions[dimension]["gates"].append(
             {
                 "id": gate_id,
                 "status": status,
-                "hard": True,
+                "hard": hard,
                 "observed": observed,
                 "required": required,
                 "detail": detail,
@@ -986,6 +1039,12 @@ def summarize_optimisation_review(
             if _is_number(delta)
             else "insufficient-evidence"
         )
+        discovery_inputs_changed = (
+            discovery_input_comparison.get("changed")
+            if isinstance(discovery_input_comparison, dict)
+            else True
+        )
+        blocking = discovery_inputs_changed is not False
         add_gate(
             "triggering",
             f"{metric}-non-inferiority",
@@ -996,7 +1055,14 @@ def summarize_optimisation_review(
                 "candidate_minus_current": delta,
             },
             required={"minimum_candidate_minus_current": -margin},
-            detail=f"Candidate trigger {metric} must stay within the configured margin.",
+            detail=(
+                f"Candidate trigger {metric} must stay within the configured margin "
+                "because canonical discovery inputs changed."
+                if blocking
+                else f"Candidate trigger {metric} variance is observational because "
+                "canonical discovery inputs are unchanged."
+            ),
+            hard=blocking,
         )
 
     trigger_gate("recall", effective_policy.recall_non_inferiority_margin)
@@ -1249,9 +1315,10 @@ def summarize_optimisation_review(
                 (gate["status"] for gate in gates),
                 key=lambda status: severity[status],
             )
-    if any(gate["status"] == "fail" for gate in all_gates):
+    hard_gates = [gate for gate in all_gates if gate["hard"]]
+    if any(gate["status"] == "fail" for gate in hard_gates):
         verdict = "rejected"
-    elif any(gate["status"] == "insufficient-evidence" for gate in all_gates):
+    elif any(gate["status"] == "insufficient-evidence" for gate in hard_gates):
         verdict = "insufficient-evidence"
     else:
         verdict = "approved"
@@ -1264,6 +1331,16 @@ def summarize_optimisation_review(
             "status": "configured" if policy is not None else "missing",
             "effective": effective_policy.as_dict(),
         },
+        "trigger_gate_scope": (
+            discovery_input_comparison
+            if discovery_input_comparison is not None
+            else {
+                "canonical_fields": ["name", "description"],
+                "changed": None,
+                "changed_fields": None,
+                "trigger_gate_mode": "blocking",
+            }
+        ),
         "dimensions": dimensions,
         "no_aggregate_override": True,
     }

@@ -63,6 +63,10 @@ review policy. Reviews distinguish:
 - **Observed profiles**, which record useful evidence about other models or
   configurations but do not gate promotion. Their failures and uncertainty
   remain visible.
+- **Discovery-scoped triggering**, where trigger recall and specificity block
+  only when the Candidate changes canonical frontmatter `name` or
+  `description`. Independent trigger-run variance remains visible but
+  observational for body-only Candidates with unchanged discovery inputs.
 
 Durable comparisons pin exact model and judge identifiers. A mutable runtime
 default is not sufficient evidence, and results produced with different suites

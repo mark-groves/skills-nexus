@@ -66,13 +66,21 @@ def _review_markdown(result: dict[str, Any]) -> list[str]:
         "Correctness, safety, triggering, context, and integrity are independent. "
         "No aggregate score can override a hard failure.",
         "",
-        "| Dimension | Gate | Status | Observed | Required |",
-        "|---|---|---:|---|---|",
+        (
+            "Trigger checks are "
+            f"**{review['trigger_gate_scope']['trigger_gate_mode']}** because canonical "
+            "discovery inputs "
+            + ("changed" if review["trigger_gate_scope"]["changed"] else "are unchanged")
+            + "."
+        ),
+        "",
+        "| Dimension | Gate | Scope | Status | Observed | Required |",
+        "|---|---|---|---:|---|---|",
     ]
     for dimension_name, dimension in review["dimensions"].items():
         gates = dimension["gates"]
         if not gates:
-            lines.append(f"| {dimension_name} | — | not-applicable | — | — |")
+            lines.append(f"| {dimension_name} | — | — | not-applicable | — | — |")
             continue
         for gate in gates:
             observed = _markdown_label(
@@ -83,6 +91,7 @@ def _review_markdown(result: dict[str, Any]) -> list[str]:
             )
             lines.append(
                 f"| {dimension_name} | `{gate['id']}` | "
+                f"{'blocking' if gate['hard'] else 'observational'} | "
                 f"{_gate_mark(gate['status'])} {gate['status']} | {observed} | {required} |"
             )
     lines.extend(["", "### Effective review policy", "", "```json"])
@@ -108,7 +117,7 @@ def _review_html(result: dict[str, Any]) -> str:
         if not gates:
             rows += (
                 f"<tr><td>{html.escape(dimension_name)}</td><td>—</td>"
-                "<td>not-applicable</td><td>—</td><td>—</td></tr>"
+                "<td>—</td><td>not-applicable</td><td>—</td><td>—</td></tr>"
             )
             continue
         for gate in gates:
@@ -116,6 +125,7 @@ def _review_html(result: dict[str, Any]) -> str:
                 "<tr>"
                 f"<td>{html.escape(dimension_name)}</td>"
                 f"<td><code>{html.escape(gate['id'])}</code></td>"
+                f"<td>{'blocking' if gate['hard'] else 'observational'}</td>"
                 f"<td>{_gate_mark(gate['status'])} {html.escape(gate['status'])}</td>"
                 f"<td><code>{html.escape(json.dumps(gate['observed'], ensure_ascii=False, sort_keys=True))}</code></td>"
                 f"<td><code>{html.escape(json.dumps(gate['required'], ensure_ascii=False, sort_keys=True))}</code></td>"
@@ -129,6 +139,15 @@ def _review_html(result: dict[str, Any]) -> str:
             sort_keys=True,
         )
     )
+    trigger_scope = review["trigger_gate_scope"]
+    trigger_scope_text = (
+        f"Trigger checks are {trigger_scope['trigger_gate_mode']} because canonical "
+        + (
+            "discovery inputs changed."
+            if trigger_scope["changed"]
+            else "discovery inputs are unchanged."
+        )
+    )
     return (
         "<section><h2>Optimisation gates</h2>"
         f"<p>Verdict <strong>{html.escape(review['verdict'])}</strong> · "
@@ -137,7 +156,8 @@ def _review_html(result: dict[str, Any]) -> str:
         f"hard gate blocked <code>{review['hard_blocked']}</code>.</p>"
         "<p>Correctness, safety, triggering, context, and integrity are independent. "
         "No aggregate score can override a hard failure.</p>"
-        "<table><thead><tr><th>Dimension</th><th>Gate</th><th>Status</th>"
+        f"<p>{html.escape(trigger_scope_text)}</p>"
+        "<table><thead><tr><th>Dimension</th><th>Gate</th><th>Scope</th><th>Status</th>"
         f"<th>Observed</th><th>Required</th></tr></thead><tbody>{rows}</tbody></table>"
         f"<details><summary>Effective review policy</summary><pre>{policy}</pre></details>"
         "</section>"
@@ -209,6 +229,15 @@ def _candidate_markdown(result: dict[str, Any]) -> list[str]:
         return []
     reductions = comparison["static_reductions"]
     paired = comparison["paired_checks"]
+    discovery = result.get("candidate_discovery")
+    discovery_text = ""
+    if discovery:
+        fields = ", ".join(discovery["changed_fields"]) or "none"
+        discovery_text = (
+            f"Canonical discovery inputs changed: `{discovery['changed']}` "
+            f"(changed fields: {fields}); trigger checks are "
+            f"`{discovery['trigger_gate_mode']}`."
+        )
     return [
         "## Candidate change",
         "",
@@ -235,6 +264,8 @@ def _candidate_markdown(result: dict[str, Any]) -> list[str]:
         f"Paired checks: {paired['wins']} candidate wins, "
         f"{paired['regressions']} regressions, {paired['ties']} ties, "
         f"{paired['unknown']} unknown.",
+        "",
+        discovery_text,
         "",
     ]
 
@@ -498,6 +529,22 @@ def render_html(
     if candidate_comparison:
         reductions = candidate_comparison["static_reductions"]
         paired = candidate_comparison["paired_checks"]
+        discovery_html = ""
+        discovery = result.get("candidate_discovery")
+        if isinstance(discovery, dict):
+            changed_fields = discovery.get("changed_fields")
+            fields = (
+                ", ".join(html.escape(str(field)) for field in changed_fields)
+                if isinstance(changed_fields, list) and changed_fields
+                else "none"
+            )
+            changed = html.escape(str(discovery.get("changed")))
+            trigger_mode = html.escape(str(discovery.get("trigger_gate_mode")))
+            discovery_html = (
+                f"<p>Canonical discovery inputs changed: <code>{changed}</code> "
+                f"(changed fields: {fields}); trigger checks are "
+                f"<code>{trigger_mode}</code>.</p>"
+            )
         candidate_rows = "".join(
             f"<tr><td>{html.escape(label)}</td><td>{value}</td></tr>"
             for label, value in (
@@ -539,7 +586,7 @@ def render_html(
             f"<tbody>{candidate_rows}</tbody></table>"
             f"<p>Paired checks: {paired['wins']} candidate wins, "
             f"{paired['regressions']} regressions, {paired['ties']} ties, "
-            f"{paired['unknown']} unknown.</p></section>"
+            f"{paired['unknown']} unknown.</p>{discovery_html}</section>"
         )
     review_section = _review_html(result)
     trigger_sections = ""

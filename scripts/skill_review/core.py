@@ -598,6 +598,10 @@ def _gate_summary(review: object) -> dict[str, Any]:
         "approved": payload.get("approved"),
         "hard_failure": payload.get("hard_failure"),
         "hard_blocked": payload.get("hard_blocked"),
+        "trigger_gate_scope": _safe_subset(
+            payload.get("trigger_gate_scope"),
+            ("canonical_fields", "changed", "changed_fields", "trigger_gate_mode"),
+        ),
         "dimensions": safe_dimensions,
         "no_aggregate_override": payload.get("no_aggregate_override"),
     }
@@ -1614,15 +1618,20 @@ def _markdown(summary: dict[str, Any]) -> str:
             "",
             "## Gate results",
             "",
-            "| Profile | Universe | Dimension | Status |",
-            "| --- | --- | --- | --- |",
+            "| Profile | Universe | Dimension | Scope | Status |",
+            "| --- | --- | --- | --- | --- |",
         ]
     )
     for cell in summary["matrix"]:
         for dimension_id, dimension in cell["gates"]["dimensions"].items():
+            scope = (
+                cell["gates"]["trigger_gate_scope"].get("trigger_gate_mode") or "blocking"
+                if dimension_id == "triggering"
+                else "blocking"
+            )
             lines.append(
                 f"| {cell['profile_id']} | {cell['universe']} | "
-                f"{dimension_id} | {dimension['status']} |"
+                f"{dimension_id} | {scope} | {dimension['status']} |"
             )
     lines.extend(
         [

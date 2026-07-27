@@ -24,6 +24,7 @@ from skill_eval.core import (
     EvaluationCondition,
     TriggerCase,
     candidate_evaluation_conditions,
+    compare_candidate_discovery_inputs,
     condition_static_footprints,
     default_evaluation_conditions,
     discover_repository_skills,
@@ -463,6 +464,9 @@ def _run_evaluation(
         return {}, Path()
 
     static_footprints = condition_static_footprints(conditions)
+    discovery_input_comparison = (
+        compare_candidate_discovery_inputs(conditions) if candidate_condition is not None else None
+    )
     runtime_digest = primary_condition.runtime_digest_sha256
     if runtime_digest is None:
         raise EvalError("the primary evaluation condition must include a runtime skill")
@@ -778,6 +782,7 @@ def _run_evaluation(
             current_trigger_summary=trigger_summary,
             candidate_trigger_summary=candidate_trigger_summary,
             candidate_comparison=candidate_comparison,
+            discovery_input_comparison=discovery_input_comparison,
             configured_trigger_case_ids=tuple(case.id for case in spec.trigger_cases),
             selected_trigger_case_ids=tuple(case.id for case in trigger_cases),
             configured_behavior_case_ids=tuple(case.id for case in spec.behavior_cases),
@@ -915,6 +920,7 @@ def _run_evaluation(
         result["integrity"]["blind_condition_grading"] = True
         result["integrity"]["fixture_parity"] = fixture_parity
         result["candidate_comparison"] = candidate_comparison
+        result["candidate_discovery"] = discovery_input_comparison
         result["optimisation_review"] = optimisation_review
     json_dump(output_dir / "results.json", result)
     markdown, html = write_reports(output_dir, result, conditions)

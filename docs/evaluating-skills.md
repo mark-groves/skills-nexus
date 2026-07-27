@@ -376,14 +376,21 @@ source directory has a different working name. Repository peer skills are
 copied identically into all three conditions and the candidate source is never
 also installed as a peer.
 
-Current and Candidate trigger cases run independently because their
-descriptions may differ. For behavior grading, one structured judge turn sees
-all three evidence bundles under deterministic randomized labels such as `A`,
-`B`, and `C`; condition identities and runtime instructions are withheld. One
-judge turn costs less than three separately blinded pairwise turns and applies
-one grading standard to every output, while the shared turn means the grades
-are not statistically independent. Reports derive all three pairwise summaries
-from those independently assigned per-condition check grades.
+Current and Candidate trigger cases run independently because their canonical
+discovery inputs may differ. The evaluator compares the parsed frontmatter
+`name` and `description` values explicitly. When either value changes, trigger
+recall and specificity non-inferiority remain blocking gates. When both values
+are unchanged, trigger deltas remain visible as observational stochastic
+variance but cannot reject a body-only Candidate. Complete trigger-suite,
+repeat, execution, and all other integrity requirements still apply.
+
+For behavior grading, one structured judge turn sees all three evidence bundles
+under deterministic randomized labels such as `A`, `B`, and `C`; condition
+identities and runtime instructions are withheld. One judge turn costs less
+than three separately blinded pairwise turns and applies one grading standard
+to every output, while the shared turn means the grades are not statistically
+independent. Reports derive all three pairwise summaries from those
+independently assigned per-condition check grades.
 
 ## Results
 
@@ -437,9 +444,12 @@ Candidate runs use schema version 3 and add:
 - `candidate_comparison`, which combines Candidate-minus-Current quality,
   Candidate lift over Baseline, static footprint reductions, dynamic input-token
   reduction, and Candidate wins/regressions/ties/unknowns.
+- `candidate_discovery`, which records whether canonical `name` or `description`
+  values changed and whether trigger non-inferiority is blocking or
+  observational.
 - `optimisation_review`, which records the effective policy, overall bounded
   verdict, and independent correctness, safety, triggering, context, and
-  integrity gates.
+  integrity gates, including the same trigger-gate scope.
 
 The existing `behavior.summary.absolute_lift`,
 `lift_percentage_points`, and `paired_checks` fields remain the unambiguous
@@ -456,10 +466,12 @@ Configured review policy decides which of these measurements gate an
 optimisation.
 
 Every gate is reported in `results.json`, `report.md`, and `report.html` with
-`pass`, `fail`, or `insufficient-evidence`. Correctness, safety, triggering,
-context, and integrity remain separate dimensions. A quality average or
-secondary efficiency calculation cannot override a failed or unknown hard
-check. The bounded review verdict is:
+`pass`, `fail`, or `insufficient-evidence` plus its blocking or observational
+scope. Correctness, safety, triggering, context, and integrity remain separate
+dimensions. Observational trigger variance is shown but does not affect the
+bounded verdict when canonical discovery inputs are unchanged. A quality
+average or secondary efficiency calculation cannot override a failed or
+unknown hard check. The bounded review verdict is:
 
 - `approved` only when every applicable hard gate passes;
 - `rejected` when measured evidence fails a gate;
