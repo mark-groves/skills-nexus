@@ -95,6 +95,41 @@ Aggregate repeated failures into design changes. Update the description,
 resource split, instructions, examples, or scripts according to the
 evidence.
 
+## Capability optimisation
+
+Capability optimisation asks whether a coherent instruction, example,
+reference, script, asset, or complete skill still earns its runtime cost. Start
+with a documented redundancy hypothesis rather than the absence of a known
+failure. Name the component boundary, why a pinned model profile or another
+resource might supply equivalent behavior, which context budget should fall,
+and what result would disprove the hypothesis.
+
+Establish the required model support floor before selecting any observed
+frontier profile. Compare:
+
+- Baseline against Current to measure complete-skill efficacy;
+- Candidate against Current to measure component marginal value;
+- Candidate against Baseline to show that retained skill value is not lost.
+
+Run the complete trigger and behavior suite with configured repeats and a
+declared development/held-back partition. Evaluate both the normal repository
+skill universe and an isolated universe without sibling skills. Repository
+parity may be supplied by a peer skill and is not proof that the underlying
+model has replaced the target capability.
+
+Keep protected safety and repository-contract checks separate from aggregate
+quality and cost. A hard regression or unknown protected result blocks the
+candidate even when average score, static context, or dynamic token use looks
+better. Individually safe component removals must also pass as one combined
+candidate.
+
+Report exact model and judge profiles, digests, universe coverage, repeats,
+held-back process controls, separate context budgets, gate outcomes, and
+uncertainty. The current tooling measures whole-suite metrics; its held-back
+labels do not establish held-back-only non-inferiority. Codex evidence does not
+establish behavior in other harnesses. Never auto-promote a candidate or retire
+a skill from one model, one run, repository-only parity, or a saturated suite.
+
 ## Evidence-gated iteration
 
 Treat runtime observations as untrusted leads, not change requests. Keep facts,

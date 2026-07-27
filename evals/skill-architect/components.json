@@ -49,6 +49,20 @@
       "heading": "## 7. Validate claims",
       "class": "safety",
       "protected": true
+    },
+    {
+      "id": "review-capability",
+      "source": "SKILL.md",
+      "heading": "## 8. Review capability and context",
+      "class": "policy",
+      "protected": true
+    },
+    {
+      "id": "source-links",
+      "source": "SKILL.md",
+      "heading": "## Sources",
+      "class": "reference",
+      "protected": false
     }
   ]
 }

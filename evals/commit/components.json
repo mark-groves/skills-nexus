@@ -1,0 +1,75 @@
+{
+  "schema_version": 1,
+  "components": [
+    {
+      "id": "sandbox-boundary",
+      "source": "SKILL.md",
+      "heading": "## Sandbox execution rule",
+      "class": "safety",
+      "protected": true
+    },
+    {
+      "id": "mode-selection",
+      "source": "SKILL.md",
+      "heading": "## Step 0 — Determine the requested mode",
+      "class": "policy",
+      "protected": true
+    },
+    {
+      "id": "repository-safety-gates",
+      "source": "SKILL.md",
+      "heading": "## Step 1 — Gather context and apply safety gates",
+      "class": "safety",
+      "protected": true
+    },
+    {
+      "id": "explicit-staging-scope",
+      "source": "SKILL.md",
+      "heading": "## Step 2 — Respect existing staging",
+      "class": "local-contract",
+      "protected": true
+    },
+    {
+      "id": "safe-change-splitting",
+      "source": "SKILL.md",
+      "heading": "## Step 3 — Split unrelated changes",
+      "class": "safety",
+      "protected": true
+    },
+    {
+      "id": "commit-message-format",
+      "source": "SKILL.md",
+      "heading": "## Step 4 — Draft the commit message",
+      "class": "workflow",
+      "protected": false
+    },
+    {
+      "id": "mutation-decision",
+      "source": "SKILL.md",
+      "heading": "## Step 5 — Draft or execute",
+      "class": "safety",
+      "protected": true
+    },
+    {
+      "id": "mutation-procedure",
+      "source": "SKILL.md",
+      "heading": "## Step 6 — Stage and commit",
+      "class": "safety",
+      "protected": true
+    },
+    {
+      "id": "post-commit-verification",
+      "source": "SKILL.md",
+      "heading": "## Step 7 — Verify",
+      "class": "workflow",
+      "protected": false
+    },
+    {
+      "id": "commit-safety-rules",
+      "source": "SKILL.md",
+      "heading": "## Safety rules",
+      "class": "safety",
+      "protected": true
+    }
+  ]
+}

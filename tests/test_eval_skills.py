@@ -1134,6 +1134,81 @@ class EvalCoreTests(unittest.TestCase):
             },
         )
 
+    def test_evidence_coverage_shortfall_is_insufficient_evidence(self) -> None:
+        protected = BehaviorCheck(
+            "protect-contract",
+            "Preserves the repository contract",
+            "local-contract",
+            "hard",
+        )
+        case = BehaviorCase("contract", "work", "works", (), (protected,))
+        review = summarize_optimisation_review(
+            policy=ReviewPolicy(minimum_lift_over_baseline=0.0),
+            behavior_cases=(case,),
+            behavior_results=[
+                {
+                    "case_id": "contract",
+                    "repeat": repeat,
+                    "grades": {
+                        "skill": [{"passed": True}],
+                        "candidate": [{"passed": True}],
+                    },
+                    "fixture_fidelity": "none",
+                    "judge": {"status": "completed"},
+                }
+                for repeat in (1, 2)
+            ],
+            behavior_summary={
+                "skill": {"evidence_coverage": 0.94},
+                "baseline": {"evidence_coverage": 0.96},
+                "candidate": {"evidence_coverage": 0.97},
+                "efficiency": {
+                    "skill": {"failed_runs": 0},
+                    "baseline": {"failed_runs": 0},
+                    "candidate": {"failed_runs": 0},
+                },
+                "comparisons": {
+                    "candidate_vs_current": {"absolute_lift": 0.02},
+                    "candidate_vs_baseline": {"absolute_lift": 0.1},
+                },
+            },
+            current_trigger_summary={
+                "recall": 1.0,
+                "specificity": 1.0,
+                "run_errors": 0,
+            },
+            candidate_trigger_summary={
+                "recall": 1.0,
+                "specificity": 1.0,
+                "run_errors": 0,
+            },
+            candidate_comparison={
+                "static_reductions": {
+                    "description_characters": 2,
+                    "skill_md_body_characters": 100,
+                    "runtime_package_bytes": 1,
+                },
+                "dynamic_input_token_reduction": 1,
+            },
+            configured_trigger_case_ids=("positive", "negative"),
+            selected_trigger_case_ids=("positive", "negative"),
+            configured_behavior_case_ids=("contract",),
+            selected_behavior_case_ids=("contract",),
+            trigger_repeats=2,
+            behavior_repeats=2,
+            fixture_parity=True,
+            blind_grading=True,
+        )
+
+        coverage_gate = next(
+            gate
+            for gate in review["dimensions"]["integrity"]["gates"]
+            if gate["id"] == "behavior-evidence-coverage"
+        )
+        self.assertEqual(coverage_gate["status"], "insufficient-evidence")
+        self.assertEqual(review["verdict"], "insufficient-evidence")
+        self.assertFalse(review["approved"])
+
     def test_duplicate_case_filters_are_rejected(self) -> None:
         case = TriggerCase("1", "demo", True)
 

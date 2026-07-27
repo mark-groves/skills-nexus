@@ -582,6 +582,66 @@ class ValidateRepoEvalTests(unittest.TestCase):
             validate_repo.ERRORS,
         )
 
+    def test_invalid_capability_case_groups_are_rejected(self) -> None:
+        with tempfile.TemporaryDirectory(dir=REPO_DIR) as temp_dir:
+            root = Path(temp_dir)
+            skill_dir = root / "skills" / "case-groups-skill"
+            skill_dir.mkdir(parents=True)
+            (skill_dir / "SKILL.md").write_text(
+                "---\nname: case-groups-skill\ndescription: Case groups\n---\n",
+                encoding="utf-8",
+            )
+            evals_root = root / "evals"
+            evals_dir = evals_root / "case-groups-skill"
+            evals_dir.mkdir(parents=True)
+            (evals_dir / "evals.json").write_text(
+                json.dumps(
+                    {
+                        "skill_name": "case-groups-skill",
+                        "trigger_evals": [
+                            {"id": 1, "query": "one", "should_trigger": True},
+                            {"id": 2, "query": "two", "should_trigger": True},
+                            {"id": 3, "query": "three", "should_trigger": False},
+                            {"id": 4, "query": "four", "should_trigger": False},
+                        ],
+                        "behavior_evals": [
+                            {
+                                "id": 1,
+                                "prompt": "demo",
+                                "expected_behavior": "works",
+                                "fixtures": [],
+                                "checks": ["Uses the skill"],
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (evals_dir / "capability-case-groups.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "groups": [
+                            {
+                                "id": "development",
+                                "kind": "development",
+                                "trigger_cases": ["1", "2", "3", "4", "missing-trigger"],
+                                "behavior_cases": ["1"],
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with mock.patch.object(validate_repo, "EVALS_DIR", evals_root):
+                validate_repo.validate_evals(skill_dir, evals_dir)
+
+        self.assertTrue(
+            any("unknown" in error.lower() for error in validate_repo.ERRORS),
+            validate_repo.ERRORS,
+        )
+
 
 class ValidateRepoSkillLayoutTests(unittest.TestCase):
     def setUp(self) -> None:

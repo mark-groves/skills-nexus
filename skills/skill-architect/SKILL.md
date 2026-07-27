@@ -146,6 +146,24 @@ agent the skill and a realistic task, not the diagnosis or expected answer.
 Report compatibility only for clients actually tested; label static assessment
 and unverified targets clearly.
 
+## 8. Review capability and context
+
+Read `references/evaluation-and-triggering.md` before proposing a context
+reduction or skill retirement. Establish the required model support floor,
+then distinguish complete-skill efficacy from the marginal value of one
+coherent component.
+
+Document the redundancy hypothesis and protected behavior before authoring a
+candidate. Compare Baseline, Current, and Candidate in fresh contexts across
+the complete suite, required profiles, repeated runs, held-back cases, and both
+repository and isolated skill universes. Keep correctness, safety, triggering,
+context savings, and evidence integrity as separate gates.
+
+Do not remove instructions because one model or one run succeeds. Repository
+peer coverage is not proof of raw model capability. Report bounded conclusions,
+context savings, uncertainty, and untested harnesses; require reviewed
+promotion for any runtime change.
+
 ## Sources
 
 The common format and authoring guidance are documented at:

@@ -45,7 +45,7 @@ Decide the mode before applying branch or sequencer safety gates.
 - **Commit:** the user asks to create one or more commits. Apply every safety,
   staging, and branch-relevance rule below.
 
-## Step 1 — Gather context
+## Step 1 — Gather context and apply safety gates
 
 Minimize tool-call count. For read-only inspection, prefer a single Bash
 invocation with clearly labeled output.
@@ -112,7 +112,7 @@ Name the branch after the primary change. Supporting changes (e.g.,
 a `.gitignore` update that accompanies a new feature) should not
 influence the prefix or name.
 
-### Respecting existing staging
+## Step 2 — Respect existing staging
 
 If there are already staged changes, the user staged them
 intentionally. Treat the staged content as authoritative.
@@ -126,7 +126,7 @@ intentionally. Treat the staged content as authoritative.
 If nothing is staged, analyze all unstaged changes and propose what
 to stage.
 
-### Splitting unrelated changes
+## Step 3 — Split unrelated changes
 
 If the working tree contains **logically independent** groups of
 changes (e.g., a new feature and an unrelated config cleanup),
@@ -142,7 +142,7 @@ execute them sequentially without a message-review pause: stage the files for
 the first group, commit, then move to the next. Leave any ambiguous group in the
 working tree and explain why it was not committed.
 
-## Step 2 — Draft the commit message
+## Step 4 — Draft the commit message
 
 Analyze the changes to be committed and draft a message:
 
@@ -164,7 +164,7 @@ Analyze the changes to be committed and draft a message:
 If the user provided an argument hint (e.g., `/commit fix: handle
 null input`), incorporate it into the subject line.
 
-## Step 3 — Draft or execute
+## Step 5 — Draft or execute
 
 If the user explicitly asks only to draft, review, or improve a commit message,
 return the complete message in a `text` code block and do not mutate the
@@ -179,7 +179,7 @@ Do not execute when any earlier stop condition applies, when unrelated changes
 cannot be separated safely, or when secret-like files are involved. These are
 safety or ambiguity stops, not review gates.
 
-## Step 4 — Stage and commit
+## Step 6 — Stage and commit
 
 - Stage specific files by name. Never use `git add -A` or `git add .`.
 - Do not use interactive staging commands such as `git add -p`.
@@ -195,7 +195,7 @@ Body text here, hard-wrapped at 72 characters.
 EOF
 ```
 
-## Step 5 — Verify
+## Step 7 — Verify
 
 Run `git status` to confirm the commit succeeded.
 
