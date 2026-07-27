@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "components": [
+    {
+      "id": "mode-selection",
+      "source": "SKILL.md",
+      "heading": "## 1. Determine the requested mode",
+      "class": "safety",
+      "protected": true
+    },
+    {
+      "id": "state-inspection",
+      "source": "SKILL.md",
+      "heading": "## 2. Inspect local state",
+      "class": "safety",
+      "protected": true
+    },
+    {
+      "id": "branch-provider-validation",
+      "source": "SKILL.md",
+      "heading": "## 4. Validate the branch and provider",
+      "class": "safety",
+      "protected": true
+    },
+    {
+      "id": "pr-draft-guidance",
+      "source": "SKILL.md",
+      "heading": "## 6. Draft the PR",
+      "class": "workflow",
+      "protected": false
+    },
+    {
+      "id": "publish-procedure",
+      "source": "SKILL.md",
+      "heading": "## 7. Return or publish",
+      "class": "safety",
+      "protected": true
+    },
+    {
+      "id": "safety-rules",
+      "source": "SKILL.md",
+      "heading": "## Safety",
+      "class": "safety",
+      "protected": true
+    }
+  ]
+}
