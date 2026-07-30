@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import hashlib
 import json
 import re
@@ -17,6 +18,7 @@ from skill_eval.core import (
     RUNTIME_EXCLUDED_NAMES,
     EvalError,
     EvalSpec,
+    canonical_discovery_inputs,
     load_eval_spec,
     resolve_candidate_skill,
     resolve_skill,
@@ -25,14 +27,19 @@ from skill_eval.core import (
 
 PROFILE_SCHEMA_VERSION = 1
 CASE_GROUP_SCHEMA_VERSION = 1
+ROUTINE_SCREEN_SCHEMA_VERSION = 1
 DURABLE_SUMMARY_SCHEMA_VERSION = 1
 ORCHESTRATOR_VERSION = "capability-review-v1"
+ROUTINE_ORCHESTRATOR_VERSION = "routine-screen-v1"
 HARNESS_CONTRACT_VERSION = 1
 JUDGE_PROTOCOL = "skill-eval-candidate-v3-condition-blind"
 MAX_PROFILES = 16
 MAX_CASE_GROUPS = 32
 MAX_CASES_PER_KIND = 512
 MAX_EXPORT_BYTES = 256_000
+ROUTINE_BUDGET_SECONDS = 3_600
+ROUTINE_DEADLINE_SECONDS = 3_300
+ROUTINE_AGGREGATION_RESERVE_SECONDS = 300
 EVAL_DIGEST_EXCLUDED_NAMES = frozenset({"reviews", "working", "__pycache__"})
 SAFE_ID_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$")
 PINNED_IDENTIFIER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,159}$")
@@ -340,6 +347,24 @@ class CaseGroup:
         }
 
 
+@dataclass(frozen=True)
+class RoutineScreenContract:
+    """Repository-owned high-signal case selection for a routine screen."""
+
+    schema_version: int
+    trigger_cases: tuple[str, ...]
+    behavior_cases: tuple[str, ...]
+    digest_sha256: str
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return the normalized routine-screen contract."""
+        return {
+            "schema_version": self.schema_version,
+            "trigger_cases": list(self.trigger_cases),
+            "behavior_cases": list(self.behavior_cases),
+        }
+
+
 def _case_ids(
     value: object,
     *,
@@ -457,6 +482,101 @@ def load_case_groups(path: Path | None, spec: EvalSpec) -> tuple[CaseGroup, ...]
     return tuple(groups)
 
 
+def load_routine_screen_contract(
+    path: Path,
+    spec: EvalSpec,
+    groups: tuple[CaseGroup, ...],
+) -> RoutineScreenContract:
+    """Load a bounded development-only routine selection.
+
+    Routine screens intentionally avoid held-back cases. Changed discovery
+    inputs use exactly one positive and one near-miss trigger case, while
+    unchanged discovery inputs skip trigger execution and retain the selection
+    only as the escalation contract.
+    """
+    if path.is_symlink():
+        raise EvalError(f"Routine screen contract may not be a symlink: {path}")
+    payload = _object(_load_json(path, label="routine screen contract"), location=str(path))
+    _exact_keys(
+        payload,
+        {"schema_version", "trigger_cases", "behavior_cases"},
+        location=str(path),
+    )
+    if payload["schema_version"] != ROUTINE_SCREEN_SCHEMA_VERSION:
+        raise EvalError(
+            f"{path}.schema_version must be {ROUTINE_SCREEN_SCHEMA_VERSION}, "
+            f"found {payload['schema_version']!r}"
+        )
+    trigger_known = {case.id for case in spec.trigger_cases}
+    behavior_known = {case.id for case in spec.behavior_cases}
+    trigger_cases = _case_ids(
+        payload["trigger_cases"],
+        location=f"{path}.trigger_cases",
+        known=trigger_known,
+    )
+    behavior_cases = _case_ids(
+        payload["behavior_cases"],
+        location=f"{path}.behavior_cases",
+        known=behavior_known,
+    )
+    if len(trigger_cases) != 2:
+        raise EvalError(f"{path}.trigger_cases must contain exactly two case ids")
+    if not 2 <= len(behavior_cases) <= 3:
+        raise EvalError(f"{path}.behavior_cases must contain two or three case ids")
+
+    trigger_by_id = {case.id: case for case in spec.trigger_cases}
+    trigger_polarities = {trigger_by_id[case_id].should_trigger for case_id in trigger_cases}
+    if trigger_polarities != {True, False}:
+        raise EvalError(
+            f"{path}.trigger_cases must contain one positive and one near-miss negative case"
+        )
+
+    development_trigger = {
+        case_id
+        for group in groups
+        if group.kind == "development"
+        for case_id in group.trigger_cases
+    }
+    development_behavior = {
+        case_id
+        for group in groups
+        if group.kind == "development"
+        for case_id in group.behavior_cases
+    }
+    nondevelopment_trigger = sorted(set(trigger_cases) - development_trigger)
+    nondevelopment_behavior = sorted(set(behavior_cases) - development_behavior)
+    if nondevelopment_trigger or nondevelopment_behavior:
+        details = []
+        if nondevelopment_trigger:
+            details.append("trigger " + ", ".join(nondevelopment_trigger))
+        if nondevelopment_behavior:
+            details.append("behavior " + ", ".join(nondevelopment_behavior))
+        raise EvalError(
+            f"{path} may select development cases only; held-back cases are reserved "
+            f"for full escalation ({'; '.join(details)})"
+        )
+
+    behavior_by_id = {case.id: case for case in spec.behavior_cases}
+    if not any(
+        check.gate == "hard"
+        for case_id in behavior_cases
+        for check in behavior_by_id[case_id].checks
+    ):
+        raise EvalError(f"{path}.behavior_cases must exercise at least one protected hard check")
+
+    normalized = {
+        "schema_version": ROUTINE_SCREEN_SCHEMA_VERSION,
+        "trigger_cases": list(trigger_cases),
+        "behavior_cases": list(behavior_cases),
+    }
+    return RoutineScreenContract(
+        schema_version=ROUTINE_SCREEN_SCHEMA_VERSION,
+        trigger_cases=trigger_cases,
+        behavior_cases=behavior_cases,
+        digest_sha256=canonical_digest(normalized),
+    )
+
+
 def validate_universes(
     requested: Iterable[str],
     limitation: str | None,
@@ -521,6 +641,47 @@ class CapabilityReviewConfig:
             _positive_int(value, name=name)
         if not 0 <= self.activation_threshold <= 1:
             raise EvalError("--activation-threshold must be between 0 and 1")
+
+
+@dataclass(frozen=True)
+class RoutineScreenConfig:
+    """Controls for the bounded, report-only routine screening workflow."""
+
+    review: CapabilityReviewConfig
+    contract_source: Path
+    contract: RoutineScreenContract
+    budget_seconds: int = ROUTINE_BUDGET_SECONDS
+    deadline_seconds: int = ROUTINE_DEADLINE_SECONDS
+
+    def __post_init__(self) -> None:
+        """Enforce the fixed one-hour ceiling and five-minute aggregation reserve."""
+        _positive_int(self.budget_seconds, name="--budget-seconds")
+        _positive_int(self.deadline_seconds, name="--deadline-seconds")
+        if self.budget_seconds > ROUTINE_BUDGET_SECONDS:
+            raise EvalError(
+                f"--budget-seconds may not exceed the routine ceiling of {ROUTINE_BUDGET_SECONDS}"
+            )
+        if self.budget_seconds <= ROUTINE_AGGREGATION_RESERVE_SECONDS:
+            raise EvalError("--budget-seconds must exceed the five-minute aggregation reserve")
+        maximum_deadline = min(
+            ROUTINE_DEADLINE_SECONDS,
+            self.budget_seconds - ROUTINE_AGGREGATION_RESERVE_SECONDS,
+        )
+        if self.deadline_seconds > maximum_deadline:
+            raise EvalError(
+                "--deadline-seconds must leave at least five minutes for bounded "
+                f"aggregation and may not exceed {maximum_deadline}"
+            )
+        if self.review.trigger_repeats != 1 or self.review.behavior_repeats != 1:
+            raise EvalError("Routine screens require exactly one trigger and behavior repeat")
+        if self.review.jobs < 2:
+            raise EvalError("Routine screens require --jobs of at least 2")
+        if set(self.review.universes) != {"repository", "isolated"}:
+            raise EvalError("Routine screens require both repository and isolated universes")
+        if not self.review.profiles:
+            raise EvalError("Routine screens require at least one required profile")
+        if any(not profile.required for profile in self.review.profiles):
+            raise EvalError("Routine screens run required profiles only")
 
 
 def _positive_int(value: int, *, name: str) -> None:
@@ -763,6 +924,11 @@ def _validate_result(
     current_digest: str,
     candidate_digest: str,
     eval_spec_digest: str,
+    expected_trigger_cases: tuple[str, ...] | None = None,
+    expected_behavior_cases: tuple[str, ...] | None = None,
+    expected_trigger_repeats: int | None = None,
+    expected_behavior_repeats: int | None = None,
+    expected_deadline_seconds: int | None = None,
 ) -> str:
     """Verify a cell used the pinned models, digests, universe, and schema."""
     if result.get("schema_version") != 3:
@@ -798,6 +964,35 @@ def _validate_result(
             )
     if not isinstance(result.get("optimisation_review"), dict):
         raise EvalError(f"Profile {profile.id} in {universe} did not produce optimisation gates")
+    if any(
+        value is not None
+        for value in (
+            expected_trigger_cases,
+            expected_behavior_cases,
+            expected_trigger_repeats,
+            expected_behavior_repeats,
+            expected_deadline_seconds,
+        )
+    ):
+        run_config = result.get("config")
+        if not isinstance(run_config, dict):
+            raise EvalError(f"Profile {profile.id} in {universe} omitted evaluator controls")
+        control_checks = (
+            ("trigger cases", run_config.get("trigger_case_ids"), expected_trigger_cases),
+            ("behavior cases", run_config.get("behavior_case_ids"), expected_behavior_cases),
+            ("trigger repeats", run_config.get("trigger_repeats"), expected_trigger_repeats),
+            ("behavior repeats", run_config.get("behavior_repeats"), expected_behavior_repeats),
+            ("deadline", runtime.get("deadline_seconds"), expected_deadline_seconds),
+        )
+        for control_label, observed_control, expected_control in control_checks:
+            normalized_expected = (
+                list(expected_control) if isinstance(expected_control, tuple) else expected_control
+            )
+            if expected_control is not None and observed_control != normalized_expected:
+                raise EvalError(
+                    f"Profile {profile.id} in {universe} changed pinned {control_label}: "
+                    f"expected {normalized_expected!r}, observed {observed_control!r}"
+                )
     runner_version = runtime.get("codex_version")
     if not isinstance(runner_version, str) or not runner_version.strip():
         raise EvalError(
@@ -812,17 +1007,22 @@ def _build_eval_args(
     profile: ModelProfile,
     universe: str,
     cell_root: Path,
+    trigger_cases: tuple[str, ...] | None = None,
+    behavior_cases: tuple[str, ...] | None = None,
+    deadline_seconds: int | None = None,
 ) -> argparse.Namespace:
-    """Construct one full-suite evaluator invocation from review controls."""
+    """Construct one evaluator invocation from review controls."""
     from eval_skills import build_parser
 
+    selected_trigger = trigger_cases
+    selected_behavior = behavior_cases
     argv = [
         "--skill",
         config.skill,
         "--candidate",
         str(config.candidate),
         "--suite",
-        "all",
+        "all" if selected_trigger is None or selected_trigger else "behavior",
         "--trigger-repeats",
         str(config.trigger_repeats),
         "--behavior-repeats",
@@ -853,6 +1053,14 @@ def _build_eval_args(
         "--repo-root",
         str(config.repo_root),
     ]
+    if selected_trigger is not None:
+        for case_id in selected_trigger:
+            argv.extend(["--trigger-case", case_id])
+    if selected_behavior is not None:
+        for case_id in selected_behavior:
+            argv.extend(["--behavior-case", case_id])
+    if deadline_seconds is not None:
+        argv.extend(["--deadline-seconds", str(deadline_seconds)])
     return build_parser().parse_args(argv)
 
 
@@ -1232,6 +1440,512 @@ def run_capability_review(
         "aggregate": aggregate,
     }
     return review, local_root
+
+
+def _routine_gate_map(cell: dict[str, Any]) -> dict[str, tuple[str, dict[str, Any]]]:
+    """Index one bounded cell's gates by stable identifier."""
+    result: dict[str, tuple[str, dict[str, Any]]] = {}
+    dimensions = cell.get("gates", {}).get("dimensions", {})
+    if not isinstance(dimensions, dict):
+        return result
+    for dimension_id, dimension in dimensions.items():
+        if not isinstance(dimension, dict):
+            continue
+        for gate in dimension.get("gates", []):
+            if isinstance(gate, dict) and isinstance(gate.get("id"), str):
+                result[gate["id"]] = (str(dimension_id), gate)
+    return result
+
+
+def _routine_cell_status(
+    cell: dict[str, Any],
+    *,
+    discovery_changed: bool,
+    protected_gate_ids: tuple[str, ...],
+) -> tuple[str, list[str]]:
+    """Reduce one filtered cell without turning it into approval evidence."""
+    gate_map = _routine_gate_map(cell)
+    required_gate_ids = {
+        "candidate-non-inferiority",
+        "retained-skill-baseline-value",
+        "meaningful-context-reduction",
+        "repository-review-policy",
+        "behavior-evidence-coverage",
+        "execution-completeness",
+        "judgment-completeness",
+        "fixture-fidelity",
+        "fixture-parity",
+        "condition-blind-grading",
+    }
+    if discovery_changed:
+        required_gate_ids.update({"recall-non-inferiority", "specificity-non-inferiority"})
+    required_gate_ids.update(protected_gate_ids)
+    missing = sorted(required_gate_ids - set(gate_map))
+    if missing:
+        return "incomplete", ["missing gate(s): " + ", ".join(missing)]
+
+    blockers: list[str] = []
+    substantive_failures: list[str] = []
+    intentionally_non_approving = {
+        "complete-suite-coverage",
+        "minimum-trigger-repeats",
+        "minimum-behavior-repeats",
+    }
+    for gate_id, (dimension_id, gate) in gate_map.items():
+        status = gate.get("status")
+        hard = gate.get("hard") is True
+        if gate_id in intentionally_non_approving:
+            continue
+        if gate_id == "execution-completeness" and not discovery_changed:
+            observed = gate.get("observed")
+            behavior_errors = (
+                observed.get("behavior_failed_runs") if isinstance(observed, dict) else None
+            )
+            if (
+                isinstance(behavior_errors, dict)
+                and set(behavior_errors) == {"skill", "baseline", "candidate"}
+                and all(value == 0 for value in behavior_errors.values())
+            ):
+                continue
+        if status == "pass" or (
+            not hard and not discovery_changed and dimension_id == "triggering"
+        ):
+            continue
+        if status == "fail" and dimension_id in {
+            "correctness",
+            "safety",
+            "triggering",
+            "context",
+        }:
+            substantive_failures.append(gate_id)
+        else:
+            blockers.append(f"{gate_id}: {status}")
+
+    if substantive_failures:
+        return "reject", substantive_failures + blockers
+    if blockers:
+        return "incomplete", blockers
+    return "eligible-for-escalation", []
+
+
+def _aggregate_routine_screen(
+    profiles: tuple[ModelProfile, ...],
+    cells: list[dict[str, Any]],
+    *,
+    discovery_changed: bool,
+    protected_gate_ids: tuple[str, ...],
+    cell_errors: list[dict[str, str]],
+) -> dict[str, Any]:
+    """Aggregate required routine cells into a report-only outcome."""
+    expected = {
+        (profile.id, universe) for profile in profiles for universe in ("repository", "isolated")
+    }
+    observed = {(cell["profile_id"], cell["universe"]) for cell in cells}
+    missing = sorted(expected - observed)
+    cell_results = []
+    for cell in sorted(cells, key=lambda item: (item["profile_id"], item["universe"])):
+        status, blockers = _routine_cell_status(
+            cell,
+            discovery_changed=discovery_changed,
+            protected_gate_ids=protected_gate_ids,
+        )
+        cell_results.append(
+            {
+                "profile_id": cell["profile_id"],
+                "universe": cell["universe"],
+                "status": status,
+                "blockers": blockers,
+            }
+        )
+    if any(item["status"] == "reject" for item in cell_results):
+        outcome = "reject"
+    elif cell_errors or missing or any(item["status"] == "incomplete" for item in cell_results):
+        outcome = "incomplete"
+    elif cell_results:
+        outcome = "eligible-for-escalation"
+    else:
+        outcome = "incomplete"
+    return {
+        "outcome": outcome,
+        "report_only": True,
+        "approval_possible": False,
+        "automatic_promotion": False,
+        "cell_results": cell_results,
+        "cell_errors": cell_errors,
+        "missing_cells": [
+            {"profile_id": profile_id, "universe": universe} for profile_id, universe in missing
+        ],
+        "detail": (
+            "Eligibility permits only a human-opted full escalation. It is not "
+            "approval or promotion evidence."
+        ),
+    }
+
+
+def run_routine_screen(
+    config: RoutineScreenConfig,
+    evaluation_runner: EvaluationRunner,
+) -> tuple[dict[str, Any], Path]:
+    """Run the bounded routine screen concurrently across both universes."""
+    review_config = config.review
+    repo_root = review_config.repo_root.resolve()
+    skill_dir = resolve_skill(repo_root, review_config.skill)
+    candidate_dir = resolve_candidate_skill(
+        repo_root,
+        review_config.candidate,
+        skill_dir.name,
+    )
+    spec = load_eval_spec(skill_dir, repo_root / "evals")
+    current_digest = stable_digest(skill_dir, exclude=RUNTIME_EXCLUDED_NAMES)
+    candidate_digest = stable_digest(candidate_dir, exclude=RUNTIME_EXCLUDED_NAMES)
+    eval_spec_digest = stable_digest(spec.path)
+    eval_digest = stable_digest(
+        spec.path.parent,
+        exclude=EVAL_DIGEST_EXCLUDED_NAMES,
+    )
+    groups_digest = _case_groups_digest(review_config.case_groups)
+    judge_policy_digest = canonical_digest(_review_policy_payload(spec, review_config.contract))
+    harness_path = repo_root / "harnesses" / "codex.json"
+    if not harness_path.is_file():
+        raise EvalError(f"Missing Codex harness manifest: {harness_path}")
+    harness_digest = stable_digest(harness_path)
+    current_discovery = canonical_discovery_inputs(skill_dir)
+    candidate_discovery = canonical_discovery_inputs(candidate_dir)
+    changed_fields = [
+        field
+        for field in ("name", "description")
+        if current_discovery[field] != candidate_discovery[field]
+    ]
+    discovery_changed = bool(changed_fields)
+    selected_trigger = config.contract.trigger_cases if discovery_changed else ()
+    behavior_by_id = {case.id: case for case in spec.behavior_cases}
+    protected_gate_ids = tuple(
+        f"protected-check:{check.id}"
+        for case_id in config.contract.behavior_cases
+        for check in behavior_by_id[case_id].checks
+        if check.gate == "hard"
+    )
+    routine_groups = (
+        CaseGroup(
+            id="routine-development",
+            kind="development",
+            trigger_cases=selected_trigger,
+            behavior_cases=config.contract.behavior_cases,
+        ),
+    )
+
+    _verify_expected(
+        "--expected-current-digest",
+        review_config.expected_current_digest,
+        current_digest,
+    )
+    _verify_expected(
+        "--expected-candidate-digest",
+        review_config.expected_candidate_digest,
+        candidate_digest,
+    )
+    _verify_expected("--expected-eval-digest", review_config.expected_eval_digest, eval_digest)
+    _verify_expected(
+        "--expected-profiles-digest",
+        review_config.expected_profiles_digest,
+        review_config.contract.digest_sha256,
+    )
+    _verify_expected(
+        "--expected-case-groups-digest",
+        review_config.expected_case_groups_digest,
+        groups_digest,
+    )
+
+    pinned_inputs = {
+        "skill": spec.skill_name,
+        "current_digest_sha256": current_digest,
+        "candidate_digest_sha256": candidate_digest,
+        "eval_digest_sha256": eval_digest,
+        "eval_spec_digest_sha256": eval_spec_digest,
+        "profiles_digest_sha256": review_config.contract.digest_sha256,
+        "case_groups_digest_sha256": groups_digest,
+        "routine_contract_digest_sha256": config.contract.digest_sha256,
+        "judge_policy_digest_sha256": judge_policy_digest,
+        "harness_manifest_digest_sha256": harness_digest,
+        "profiles": [profile.id for profile in review_config.profiles],
+        "universes": ["repository", "isolated"],
+        "trigger_repeats": 1,
+        "behavior_repeats": 1,
+        "trigger_cases": list(selected_trigger),
+        "behavior_cases": list(config.contract.behavior_cases),
+        "protected_gate_ids": list(protected_gate_ids),
+        "discovery_inputs_changed": discovery_changed,
+        "changed_discovery_fields": changed_fields,
+        "budget_seconds": config.budget_seconds,
+        "deadline_seconds": config.deadline_seconds,
+    }
+    input_digest = canonical_digest(pinned_inputs)
+    timestamp = datetime.now(UTC)
+    local_id = f"{timestamp.strftime('%Y%m%dT%H%M%SZ')}-{input_digest[:12]}"
+    local_root = (
+        review_config.output_root.resolve() / spec.skill_name / "routine-screens" / local_id
+    )
+    suffix = 1
+    while local_root.exists():
+        local_root = local_root.with_name(f"{local_id}-{suffix}")
+        suffix += 1
+    local_root.mkdir(parents=True)
+    local_manifest: dict[str, Any] = {
+        "schema_version": 1,
+        "workflow": "routine",
+        "orchestrator_version": ROUTINE_ORCHESTRATOR_VERSION,
+        "status": "running",
+        "started_at": timestamp.isoformat(),
+        "pinned_inputs": pinned_inputs,
+        "cells": [],
+    }
+    _write_json(local_root / "review.json", local_manifest)
+
+    def run_cell(
+        profile: ModelProfile, universe: str
+    ) -> tuple[dict[str, Any], dict[str, Any], str]:
+        _assert_pinned_sources(
+            review_config,
+            skill_dir=skill_dir,
+            candidate_dir=candidate_dir,
+            spec=spec,
+            current_digest=current_digest,
+            candidate_digest=candidate_digest,
+            eval_digest=eval_digest,
+            harness_path=harness_path,
+            harness_digest=harness_digest,
+            groups_digest=groups_digest,
+        )
+        observed_contract = load_routine_screen_contract(
+            config.contract_source,
+            spec,
+            review_config.case_groups,
+        )
+        if observed_contract.digest_sha256 != config.contract.digest_sha256:
+            raise EvalError("Routine screen contract changed during the evaluation")
+        cell_root = local_root / "profiles" / profile.id / universe
+        args = _build_eval_args(
+            review_config,
+            profile=profile,
+            universe=universe,
+            cell_root=cell_root,
+            trigger_cases=selected_trigger,
+            behavior_cases=config.contract.behavior_cases,
+            deadline_seconds=config.deadline_seconds,
+        )
+        result, run_dir = evaluation_runner(args)
+        try:
+            run_dir.resolve().relative_to(cell_root.resolve())
+        except ValueError as exc:
+            raise EvalError(
+                f"Profile {profile.id} in {universe} wrote outside its local "
+                f"routine root: {run_dir}"
+            ) from exc
+        if not (run_dir / "results.json").is_file():
+            raise EvalError(
+                f"Profile {profile.id} in {universe} did not retain results.json "
+                "under the local routine root"
+            )
+        runner_version = _validate_result(
+            result,
+            profile=profile,
+            universe=universe,
+            current_digest=current_digest,
+            candidate_digest=candidate_digest,
+            eval_spec_digest=eval_spec_digest,
+            expected_trigger_cases=selected_trigger,
+            expected_behavior_cases=config.contract.behavior_cases,
+            expected_trigger_repeats=1,
+            expected_behavior_repeats=1,
+            expected_deadline_seconds=config.deadline_seconds,
+        )
+        cell = _cell_summary(
+            result,
+            profile=profile,
+            universe=universe,
+            groups=routine_groups,
+            trigger_repeats=1,
+            behavior_repeats=1,
+        )
+        manifest_cell = {
+            "profile_id": profile.id,
+            "profile_role": profile.role,
+            "universe": universe,
+            "verdict": cell["verdict"],
+            "run_directory": str(run_dir.resolve()),
+            "results_file": str((run_dir / "results.json").resolve()),
+        }
+        return cell, manifest_cell, runner_version
+
+    cells: list[dict[str, Any]] = []
+    cell_errors: list[dict[str, str]] = []
+    runner_versions: set[str] = set()
+    futures: dict[
+        concurrent.futures.Future[tuple[dict[str, Any], dict[str, Any], str]],
+        tuple[ModelProfile, str],
+    ] = {}
+    matrix_workers = len(review_config.profiles) * 2
+    try:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=matrix_workers) as executor:
+            for profile in review_config.profiles:
+                for universe in ("repository", "isolated"):
+                    futures[executor.submit(run_cell, profile, universe)] = (profile, universe)
+            for future in concurrent.futures.as_completed(futures):
+                profile, universe = futures[future]
+                try:
+                    cell, manifest_cell, runner_version = future.result()
+                except EvalError:
+                    for outstanding in futures:
+                        outstanding.cancel()
+                    raise
+                except Exception as exc:
+                    cell_errors.append(
+                        {
+                            "profile_id": profile.id,
+                            "universe": universe,
+                            "error": f"{type(exc).__name__}: {exc}",
+                        }
+                    )
+                    continue
+                cells.append(cell)
+                runner_versions.add(runner_version)
+                local_manifest["cells"].append(manifest_cell)
+                _write_json(local_root / "review.json", local_manifest)
+
+        if len(runner_versions) > 1:
+            raise EvalError(
+                "Runner version changed during the routine screen: "
+                + ", ".join(sorted(runner_versions))
+            )
+        _assert_pinned_sources(
+            review_config,
+            skill_dir=skill_dir,
+            candidate_dir=candidate_dir,
+            spec=spec,
+            current_digest=current_digest,
+            candidate_digest=candidate_digest,
+            eval_digest=eval_digest,
+            harness_path=harness_path,
+            harness_digest=harness_digest,
+            groups_digest=groups_digest,
+        )
+    except Exception as exc:
+        local_manifest["status"] = "failed"
+        local_manifest["error"] = f"{type(exc).__name__}: {exc}"
+        _write_json(local_root / "review.json", local_manifest)
+        raise
+    aggregate = _aggregate_routine_screen(
+        review_config.profiles,
+        cells,
+        discovery_changed=discovery_changed,
+        protected_gate_ids=protected_gate_ids,
+        cell_errors=cell_errors,
+    )
+    local_manifest["status"] = "completed"
+    local_manifest["completed_at"] = datetime.now(UTC).isoformat()
+    local_manifest["runner_version"] = next(iter(runner_versions), None)
+    local_manifest["aggregate"] = aggregate
+    local_manifest["cells"].sort(key=lambda item: (item["profile_id"], item["universe"]))
+    _write_json(local_root / "review.json", local_manifest)
+    review = {
+        "schema_version": 1,
+        "workflow": "routine",
+        "orchestrator_version": ROUTINE_ORCHESTRATOR_VERSION,
+        "local_review_id": local_root.name,
+        "pinned_inputs": pinned_inputs,
+        "coverage": {
+            "universes": ["repository", "isolated"],
+            "both_universes": True,
+            "trigger_policy": "blocking-compact" if discovery_changed else "observational-omitted",
+            "trigger_cases": list(selected_trigger),
+            "behavior_cases": list(config.contract.behavior_cases),
+            "trigger_repeats": 1,
+            "behavior_repeats": 1,
+            "held_back_cases_used": False,
+        },
+        "cells": sorted(cells, key=lambda item: (item["profile_id"], item["universe"])),
+        "aggregate": aggregate,
+    }
+    return review, local_root
+
+
+def validate_routine_escalation(
+    path: Path,
+    config: CapabilityReviewConfig,
+) -> None:
+    """Require an eligible routine screen pinned to the full escalation inputs."""
+    payload = _object(_load_json(path, label="routine screen evidence"), location=str(path))
+    if payload.get("workflow") != "routine" or payload.get("status") != "completed":
+        raise EvalError("--escalate-from must reference a completed routine review.json")
+    aggregate = payload.get("aggregate")
+    if (
+        not isinstance(aggregate, dict)
+        or aggregate.get("outcome") != "eligible-for-escalation"
+        or aggregate.get("report_only") is not True
+        or aggregate.get("approval_possible") is not False
+        or aggregate.get("automatic_promotion") is not False
+    ):
+        raise EvalError("--escalate-from routine outcome must be eligible-for-escalation")
+    pinned = payload.get("pinned_inputs")
+    if not isinstance(pinned, dict):
+        raise EvalError("--escalate-from routine evidence is missing pinned inputs")
+    profiles = pinned.get("profiles")
+    required_profile_ids = [profile.id for profile in config.contract.profiles if profile.required]
+    if (
+        not isinstance(profiles, list)
+        or not all(isinstance(profile_id, str) for profile_id in profiles)
+        or set(profiles) != set(required_profile_ids)
+        or len(profiles) != len(required_profile_ids)
+    ):
+        raise EvalError("--escalate-from routine evidence does not cover required profiles")
+    cell_results = aggregate.get("cell_results")
+    expected_cells = {
+        (profile_id, universe) for profile_id in profiles for universe in ("repository", "isolated")
+    }
+    observed_cells = (
+        {
+            (item.get("profile_id"), item.get("universe"))
+            for item in cell_results
+            if isinstance(item, dict) and item.get("status") == "eligible-for-escalation"
+        }
+        if isinstance(cell_results, list)
+        else set()
+    )
+    if not expected_cells or observed_cells != expected_cells:
+        raise EvalError("--escalate-from routine evidence has incomplete eligible cells")
+
+    repo_root = config.repo_root.resolve()
+    skill_dir = resolve_skill(repo_root, config.skill)
+    candidate_dir = resolve_candidate_skill(repo_root, config.candidate, skill_dir.name)
+    spec = load_eval_spec(skill_dir, repo_root / "evals")
+    harness_path = repo_root / "harnesses" / "codex.json"
+    if not harness_path.is_file():
+        raise EvalError(f"Missing Codex harness manifest: {harness_path}")
+    expected = {
+        "skill": spec.skill_name,
+        "current_digest_sha256": stable_digest(skill_dir, exclude=RUNTIME_EXCLUDED_NAMES),
+        "candidate_digest_sha256": stable_digest(
+            candidate_dir,
+            exclude=RUNTIME_EXCLUDED_NAMES,
+        ),
+        "eval_digest_sha256": stable_digest(
+            spec.path.parent,
+            exclude=EVAL_DIGEST_EXCLUDED_NAMES,
+        ),
+        "profiles_digest_sha256": config.contract.digest_sha256,
+        "case_groups_digest_sha256": _case_groups_digest(config.case_groups),
+        "judge_policy_digest_sha256": canonical_digest(
+            _review_policy_payload(spec, config.contract)
+        ),
+        "harness_manifest_digest_sha256": stable_digest(harness_path),
+    }
+    mismatches = [
+        key for key, expected_value in expected.items() if pinned.get(key) != expected_value
+    ]
+    if mismatches:
+        raise EvalError(
+            "--escalate-from does not match current full-review inputs: " + ", ".join(mismatches)
+        )
 
 
 def _portable_source(path: Path | None, repo_root: Path, fallback: str) -> str | None:

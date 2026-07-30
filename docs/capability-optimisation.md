@@ -13,6 +13,39 @@ inputs. `scripts/ablate_skill_components.py` uses that evidence to perform
 component ablation through greedy backward elimination and a final combined
 candidate rerun.
 
+## Two-tier evaluation workflow
+
+Routine use begins with a one-skill, one-candidate screen capped at one hour.
+Repository-owned `routine-screen.json` contracts select two or three
+high-signal development behavior cases and one positive/near-miss trigger
+pair. Required profiles run once in both repository and isolated universes;
+the universe cells execute concurrently. A 55-minute evaluator deadline
+reserves five minutes for bounded aggregation.
+
+Unchanged canonical discovery inputs make trigger variation observational, so
+the routine screen omits trigger execution and prioritises behavior. Changed
+`name` or `description` inputs activate the compact trigger pair as a blocking
+gate. Baseline is retained only for the selected behavior cases so the screen
+can check that the Candidate still has value beyond no skill without paying
+for the complete matrix.
+
+The routine vocabulary is deliberately non-approving:
+
+- `reject` means selected substantive evidence failed.
+- `incomplete` means timeout, budget, unknown, execution, judgment, integrity,
+  or coverage evidence could not support escalation.
+- `eligible-for-escalation` means a meaningful reduction passed the bounded
+  screen and may be considered for a human-opted full review.
+
+Eligibility never approves, exports, applies, promotes, or publishes a
+Candidate. Full escalation requires matching local routine evidence plus an
+explicit human opt-in. It preserves every case, both universes, configured
+repeats, condition-blind judging, protected and completeness gates, held-back
+cases, final combined-candidate reevaluation, and the existing no-automatic-
+promotion boundary. Commands that omit `--workflow` continue to select the
+full path for compatibility, while the documented operational workflow is
+routine first.
+
 ## Two evidence paths
 
 | Change path | Starting evidence | Candidate goal | Required proof |

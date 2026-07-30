@@ -19,13 +19,17 @@ from skill_review.core import (
     DISPOSITIONS,
     CapabilityReviewConfig,
     EvaluationRunner,
+    RoutineScreenConfig,
     build_durable_summary,
     export_durable_summary,
     load_case_groups,
     load_profile_contract,
+    load_routine_screen_contract,
     run_capability_review,
+    run_routine_screen,
     select_profiles,
     validate_durable_disposition,
+    validate_routine_escalation,
     validate_universes,
 )
 
@@ -36,9 +40,15 @@ def build_parser() -> argparse.ArgumentParser:
     """Build the capability-review command-line interface."""
     parser = argparse.ArgumentParser(
         description=(
-            "Run one full candidate evaluation suite across required and selected "
-            "observed Codex model profiles."
+            "Run a bounded routine screen or full candidate evaluation matrix "
+            "across pinned Codex model profiles."
         )
+    )
+    parser.add_argument(
+        "--workflow",
+        choices=("full", "routine"),
+        default="full",
+        help="Run the compatibility-preserving full matrix or the bounded routine screen",
     )
     parser.add_argument("--skill", required=True, help="Short name, full skill id, or directory")
     parser.add_argument(
@@ -84,11 +94,36 @@ def build_parser() -> argparse.ArgumentParser:
         "--universe-limitation",
         help="Required documented scope limitation when selecting only one universe",
     )
-    parser.add_argument("--trigger-repeats", type=int, default=2)
-    parser.add_argument("--behavior-repeats", type=int, default=2)
+    parser.add_argument("--trigger-repeats", type=int)
+    parser.add_argument("--behavior-repeats", type=int)
     parser.add_argument("--activation-threshold", type=float, default=0.5)
     parser.add_argument("--jobs", type=int, default=2)
     parser.add_argument("--timeout", type=int, default=300)
+    parser.add_argument(
+        "--routine-contract",
+        type=Path,
+        help="Repository-owned high-signal routine selection; defaults beside evals.json",
+    )
+    parser.add_argument(
+        "--budget-seconds",
+        type=int,
+        help="Routine wall-clock budget; may not exceed one hour",
+    )
+    parser.add_argument(
+        "--deadline-seconds",
+        type=int,
+        help="Routine evaluator hard stop, leaving five minutes for aggregation",
+    )
+    parser.add_argument(
+        "--escalate-from",
+        type=Path,
+        help="Eligible local routine review.json pinned to this full matrix",
+    )
+    parser.add_argument(
+        "--human-opt-in",
+        action="store_true",
+        help="Confirm the human decision to run a full escalation",
+    )
     parser.add_argument("--codex-binary", default="codex")
     parser.add_argument(
         "--sandbox",
@@ -150,7 +185,9 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _configuration(args: argparse.Namespace) -> CapabilityReviewConfig:
+def _configuration(
+    args: argparse.Namespace,
+) -> tuple[CapabilityReviewConfig, RoutineScreenConfig | None]:
     """Load and validate all review contracts before any model call."""
     repo_root = args.repo_root.resolve()
     contract = load_profile_contract(args.profiles)
@@ -167,20 +204,29 @@ def _configuration(args: argparse.Namespace) -> CapabilityReviewConfig:
         if peer_dir not in {skill_dir, candidate_dir}:
             validate_candidate_separation(peer_dir, candidate_dir)
     spec = load_eval_spec(skill_dir, repo_root / "evals")
-    groups = load_case_groups(args.case_groups, spec)
-    return CapabilityReviewConfig(
+    case_group_source = args.case_groups
+    if args.workflow == "routine" and case_group_source is None:
+        case_group_source = spec.path.parent / "capability-case-groups.json"
+    groups = load_case_groups(case_group_source, spec)
+    trigger_repeats = args.trigger_repeats
+    behavior_repeats = args.behavior_repeats
+    if trigger_repeats is None:
+        trigger_repeats = 1 if args.workflow == "routine" else 2
+    if behavior_repeats is None:
+        behavior_repeats = 1 if args.workflow == "routine" else 2
+    config = CapabilityReviewConfig(
         repo_root=repo_root,
         skill=args.skill,
         candidate=args.candidate,
         profile_source=args.profiles,
         contract=contract,
         profiles=profiles,
-        case_group_source=args.case_groups,
+        case_group_source=case_group_source,
         case_groups=groups,
         universes=universes,
         universe_limitation=args.universe_limitation,
-        trigger_repeats=args.trigger_repeats,
-        behavior_repeats=args.behavior_repeats,
+        trigger_repeats=trigger_repeats,
+        behavior_repeats=behavior_repeats,
         activation_threshold=args.activation_threshold,
         jobs=args.jobs,
         timeout=args.timeout,
@@ -194,6 +240,17 @@ def _configuration(args: argparse.Namespace) -> CapabilityReviewConfig:
         expected_profiles_digest=args.expected_profiles_digest,
         expected_case_groups_digest=args.expected_case_groups_digest,
     )
+    if args.workflow == "full":
+        return config, None
+    routine_source = args.routine_contract or spec.path.parent / "routine-screen.json"
+    routine = RoutineScreenConfig(
+        review=config,
+        contract_source=routine_source,
+        contract=load_routine_screen_contract(routine_source, spec, groups),
+        budget_seconds=args.budget_seconds if args.budget_seconds is not None else 3600,
+        deadline_seconds=args.deadline_seconds if args.deadline_seconds is not None else 3300,
+    )
+    return config, routine
 
 
 def _validate_export_args(args: argparse.Namespace) -> None:
@@ -211,6 +268,25 @@ def _validate_export_args(args: argparse.Namespace) -> None:
         raise EvalError("--reviewer, --disposition, and --disposition-rationale require --export")
     if args.plan and args.export:
         raise EvalError("--plan cannot export a durable review")
+    if args.workflow == "routine" and args.export:
+        raise EvalError("Routine screens are local report-only evidence and cannot be exported")
+    if args.workflow == "routine" and (args.observed_profile or args.include_all_observed):
+        raise EvalError("Routine screens run required profiles only")
+    if args.workflow == "routine" and (args.escalate_from or args.human_opt_in):
+        raise EvalError("Routine screens cannot use full-escalation controls")
+    if args.workflow == "full" and (
+        args.routine_contract is not None
+        or args.budget_seconds is not None
+        or args.deadline_seconds is not None
+    ):
+        raise EvalError(
+            "--routine-contract, --budget-seconds, and --deadline-seconds "
+            "require --workflow routine"
+        )
+    if args.escalate_from is not None and not args.human_opt_in:
+        raise EvalError("--escalate-from requires --human-opt-in")
+    if args.human_opt_in and args.escalate_from is None:
+        raise EvalError("--human-opt-in requires --escalate-from")
 
 
 def main(
@@ -223,8 +299,19 @@ def main(
     args = parser.parse_args(argv)
     try:
         _validate_export_args(args)
-        config = _configuration(args)
+        config, routine = _configuration(args)
+        if args.escalate_from is not None:
+            validate_routine_escalation(args.escalate_from, config)
         if args.plan:
+            if routine is not None:
+                discovery = (
+                    "compact blocking positive/near-miss set when discovery inputs change; "
+                    "otherwise omitted as observational"
+                )
+                print("Workflow: routine (report only)")
+                print("Behavior cases: " + ", ".join(routine.contract.behavior_cases))
+                print("Trigger policy: " + discovery)
+                print(f"Budget: {routine.budget_seconds}s; hard stop: {routine.deadline_seconds}s")
             print("Profiles: " + ", ".join(f"{item.id} ({item.role})" for item in config.profiles))
             print("Universes: " + ", ".join(config.universes))
             print(
@@ -237,6 +324,11 @@ def main(
             from eval_skills import run_evaluation
 
             evaluation_runner = run_evaluation
+        if routine is not None:
+            review, local_root = run_routine_screen(routine, evaluation_runner)
+            print(f"Local routine screen: {local_root}")
+            print(f"Routine outcome: {review['aggregate']['outcome']}")
+            return 0 if review["aggregate"]["outcome"] == "eligible-for-escalation" else 2
         review, local_root = run_capability_review(config, evaluation_runner)
         print(f"Local capability review: {local_root}")
         print(f"Evidence verdict: {review['aggregate']['verdict']}")

@@ -20,12 +20,16 @@ from skill_eval.core import (  # noqa: E402
 )
 from skill_review.core import (  # noqa: E402
     CapabilityReviewConfig,
+    RoutineScreenConfig,
     build_durable_summary,
     export_durable_summary,
     load_case_groups,
     load_profile_contract,
+    load_routine_screen_contract,
     run_capability_review,
+    run_routine_screen,
     select_profiles,
+    validate_routine_escalation,
     validate_universes,
 )
 
@@ -56,6 +60,7 @@ class CapabilityReviewFixture:
                     "trigger_evals": [
                         {"id": 1, "query": "development trigger", "should_trigger": True},
                         {"id": 2, "query": "held-back trigger", "should_trigger": False},
+                        {"id": 3, "query": "development near miss", "should_trigger": False},
                     ],
                     "behavior_evals": [
                         {
@@ -71,6 +76,20 @@ class CapabilityReviewFixture:
                             "expected_behavior": "held back",
                             "fixtures": [],
                             "checks": ["held-back check"],
+                        },
+                        {
+                            "id": 3,
+                            "prompt": "SECOND DEVELOPMENT PROMPT MUST NOT EXPORT",
+                            "expected_behavior": "second development",
+                            "fixtures": [],
+                            "checks": [
+                                {
+                                    "id": "development-safety",
+                                    "text": "development safety check",
+                                    "class": "safety",
+                                    "gate": "hard",
+                                }
+                            ],
                         },
                     ],
                     "review_policy": {},
@@ -125,8 +144,8 @@ class CapabilityReviewFixture:
                         {
                             "id": "development",
                             "kind": "development",
-                            "trigger_cases": [1],
-                            "behavior_cases": [1],
+                            "trigger_cases": [1, 3],
+                            "behavior_cases": [1, 3],
                         },
                         {
                             "id": "held-back-v1",
@@ -135,6 +154,18 @@ class CapabilityReviewFixture:
                             "behavior_cases": [2],
                         },
                     ],
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        self.routine_contract = self.repo / "evals" / "demo" / "routine-screen.json"
+        self.routine_contract.write_text(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "trigger_cases": [1, 3],
+                    "behavior_cases": [1, 3],
                 }
             )
             + "\n",
@@ -176,6 +207,24 @@ class CapabilityReviewFixture:
             sandbox="workspace-write",
             allow_fixture_scripts=True,
             output_root=self.output,
+        )
+
+    def routine_config(self) -> RoutineScreenConfig:
+        review = replace(
+            self.config(include_observed=False),
+            trigger_repeats=1,
+            behavior_repeats=1,
+            jobs=2,
+        )
+        spec = load_eval_spec(self.skill, self.repo / "evals")
+        return RoutineScreenConfig(
+            review=review,
+            contract_source=self.routine_contract,
+            contract=load_routine_screen_contract(
+                self.routine_contract,
+                spec,
+                review.case_groups,
+            ),
         )
 
 
@@ -354,6 +403,163 @@ class FakeEvaluationRunner:
             json.dumps(result) + "\n",
             encoding="utf-8",
         )
+        return result, run_dir
+
+
+class RoutineEvaluationRunner(FakeEvaluationRunner):
+    """Produce filtered, single-repeat gates without external model calls."""
+
+    def __init__(self, *, failure: str | None = None) -> None:
+        super().__init__()
+        self.failure = failure
+        self.arguments: list[Any] = []
+
+    def __call__(self, args: Any) -> tuple[dict[str, Any], Path]:
+        self.arguments.append(args)
+        result, run_dir = super().__call__(args)
+        trigger_hard = args.suite == "all"
+        result["runtime"]["deadline_seconds"] = args.deadline_seconds
+        result["config"] = {
+            "trigger_case_ids": list(args.trigger_case),
+            "behavior_case_ids": list(args.behavior_case),
+            "trigger_repeats": args.trigger_repeats,
+            "behavior_repeats": args.behavior_repeats,
+        }
+        dimensions: dict[str, Any] = {
+            "correctness": {
+                "status": "pass",
+                "gates": [
+                    {
+                        "id": "candidate-non-inferiority",
+                        "status": "pass",
+                        "hard": True,
+                        "observed": 0.0,
+                        "required": -0.05,
+                    },
+                    {
+                        "id": "retained-skill-baseline-value",
+                        "status": "pass",
+                        "hard": True,
+                        "observed": 0.1,
+                        "required": 0.05,
+                    },
+                ],
+            },
+            "safety": {
+                "status": "pass",
+                "gates": [
+                    {
+                        "id": "protected-check:development-safety",
+                        "status": "pass",
+                        "hard": True,
+                        "observed": {"candidate_failures": 0},
+                        "required": {"candidate_failures": 0},
+                    }
+                ],
+            },
+            "triggering": {
+                "status": "pass" if trigger_hard else "insufficient-evidence",
+                "gates": [
+                    {
+                        "id": metric + "-non-inferiority",
+                        "status": "pass" if trigger_hard else "insufficient-evidence",
+                        "hard": trigger_hard,
+                        "observed": 0.0 if trigger_hard else None,
+                        "required": -0.05,
+                    }
+                    for metric in ("recall", "specificity")
+                ],
+            },
+            "context": {
+                "status": "pass",
+                "gates": [
+                    {
+                        "id": "meaningful-context-reduction",
+                        "status": "pass",
+                        "hard": True,
+                        "observed": {"thresholds_met": ["skill_md_body_characters"]},
+                        "required": {"at_least_one_minimum_reduction": True},
+                    }
+                ],
+            },
+            "integrity": {
+                "status": "insufficient-evidence",
+                "gates": [
+                    {
+                        "id": gate_id,
+                        "status": (
+                            "insufficient-evidence"
+                            if gate_id
+                            in {
+                                "complete-suite-coverage",
+                                "minimum-trigger-repeats",
+                                "minimum-behavior-repeats",
+                            }
+                            else "pass"
+                        ),
+                        "hard": True,
+                        "observed": (
+                            {
+                                "current_trigger_errors": 0 if trigger_hard else None,
+                                "candidate_trigger_errors": 0 if trigger_hard else None,
+                                "behavior_failed_runs": {
+                                    "skill": 0,
+                                    "baseline": 0,
+                                    "candidate": 0,
+                                },
+                            }
+                            if gate_id == "execution-completeness"
+                            else True
+                        ),
+                        "required": True,
+                    }
+                    for gate_id in (
+                        "repository-review-policy",
+                        "complete-suite-coverage",
+                        "minimum-trigger-repeats",
+                        "minimum-behavior-repeats",
+                        "behavior-evidence-coverage",
+                        "execution-completeness",
+                        "judgment-completeness",
+                        "fixture-fidelity",
+                        "fixture-parity",
+                        "condition-blind-grading",
+                    )
+                ],
+            },
+        }
+        if self.failure == "safety":
+            gate = dimensions["safety"]["gates"][0]
+            gate["status"] = "fail"
+            dimensions["safety"]["status"] = "fail"
+        elif self.failure == "missing-protected":
+            dimensions["safety"]["gates"] = []
+            dimensions["safety"]["status"] = "not-applicable"
+        elif self.failure == "budget":
+            gate = next(
+                item
+                for item in dimensions["integrity"]["gates"]
+                if item["id"] == "execution-completeness"
+            )
+            gate["status"] = "fail"
+            gate["observed"]["behavior_failed_runs"]["candidate"] = 1
+        elif self.failure == "controls":
+            result["runtime"]["deadline_seconds"] = None
+        result["optimisation_review"] = {
+            "verdict": "insufficient-evidence",
+            "approved": False,
+            "hard_failure": self.failure is not None,
+            "hard_blocked": True,
+            "trigger_gate_scope": {
+                "canonical_fields": ["name", "description"],
+                "changed": trigger_hard,
+                "changed_fields": ["description"] if trigger_hard else [],
+                "trigger_gate_mode": "blocking" if trigger_hard else "observational",
+            },
+            "dimensions": dimensions,
+            "no_aggregate_override": True,
+        }
+        (run_dir / "results.json").write_text(json.dumps(result) + "\n", encoding="utf-8")
         return result, run_dir
 
 
@@ -546,6 +752,142 @@ class CapabilityReviewOrchestrationTests(unittest.TestCase):
             with self.assertRaisesRegex(EvalError, "evaluation bundle changed"):
                 run_capability_review(config, drifting_runner)
 
+            manifests = list(fixture.output.rglob("review.json"))
+            self.assertEqual(len(manifests), 1)
+            manifest = json.loads(manifests[0].read_text(encoding="utf-8"))
+            self.assertEqual(manifest["status"], "failed")
+
+
+class RoutineScreenTests(unittest.TestCase):
+    def test_changed_discovery_runs_compact_triggers_and_is_eligible(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fixture = CapabilityReviewFixture(Path(temp_dir))
+            runner = RoutineEvaluationRunner()
+
+            review, local_root = run_routine_screen(fixture.routine_config(), runner)
+            manifest = json.loads((local_root / "review.json").read_text(encoding="utf-8"))
+
+        self.assertEqual(review["aggregate"]["outcome"], "eligible-for-escalation")
+        self.assertFalse(review["aggregate"]["approval_possible"])
+        self.assertEqual(review["coverage"]["trigger_policy"], "blocking-compact")
+        self.assertFalse(review["coverage"]["held_back_cases_used"])
+        self.assertEqual(len(runner.arguments), 2)
+        self.assertEqual(
+            {tuple(args.trigger_case) for args in runner.arguments},
+            {("1", "3")},
+        )
+        self.assertEqual(
+            {tuple(args.behavior_case) for args in runner.arguments},
+            {("1", "3")},
+        )
+        self.assertTrue(all(args.deadline_seconds == 3300 for args in runner.arguments))
+        self.assertEqual(manifest["aggregate"]["outcome"], "eligible-for-escalation")
+
+    def test_unchanged_discovery_omits_observational_triggers(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fixture = CapabilityReviewFixture(Path(temp_dir))
+            (fixture.candidate / "SKILL.md").write_text(
+                "---\nname: demo\ndescription: Current demo\n---\n# Smaller candidate\n",
+                encoding="utf-8",
+            )
+            runner = RoutineEvaluationRunner()
+
+            review, _local_root = run_routine_screen(fixture.routine_config(), runner)
+
+        self.assertEqual(review["aggregate"]["outcome"], "eligible-for-escalation")
+        self.assertEqual(review["coverage"]["trigger_policy"], "observational-omitted")
+        self.assertTrue(all(args.suite == "behavior" for args in runner.arguments))
+        self.assertTrue(all(args.trigger_case == [] for args in runner.arguments))
+
+    def test_safety_failure_rejects_but_budget_failure_is_incomplete(self) -> None:
+        for failure, expected in (
+            ("safety", "reject"),
+            ("budget", "incomplete"),
+            ("missing-protected", "incomplete"),
+        ):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as temp_dir:
+                fixture = CapabilityReviewFixture(Path(temp_dir))
+                review, _local_root = run_routine_screen(
+                    fixture.routine_config(),
+                    RoutineEvaluationRunner(failure=failure),
+                )
+                self.assertEqual(review["aggregate"]["outcome"], expected)
+
+    def test_full_escalation_requires_matching_eligible_pins(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fixture = CapabilityReviewFixture(Path(temp_dir))
+            _review, local_root = run_routine_screen(
+                fixture.routine_config(),
+                RoutineEvaluationRunner(),
+            )
+            full_config = fixture.config(include_observed=False)
+
+            validate_routine_escalation(local_root / "review.json", full_config)
+            harness = fixture.repo / "harnesses" / "codex.json"
+            original_harness = harness.read_text(encoding="utf-8")
+            harness.write_text(
+                '{"project_install_root": ".changed", "user_install_root": "~/.changed"}\n',
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(EvalError, "harness_manifest_digest_sha256"):
+                validate_routine_escalation(local_root / "review.json", full_config)
+            harness.write_text(original_harness, encoding="utf-8")
+            (fixture.candidate / "SKILL.md").write_text(
+                "---\nname: demo\ndescription: Candidate demo\n---\n# Drifted\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(EvalError, "candidate_digest_sha256"):
+                validate_routine_escalation(local_root / "review.json", full_config)
+
+    def test_contract_rejects_held_back_cases_and_invalid_budget(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fixture = CapabilityReviewFixture(Path(temp_dir))
+            valid_contract = fixture.routine_config().contract
+            fixture.routine_contract.write_text(
+                '{"schema_version":1,"trigger_cases":[1,2],"behavior_cases":[1,2]}\n',
+                encoding="utf-8",
+            )
+            review = fixture.config(include_observed=False)
+            spec = load_eval_spec(fixture.skill, fixture.repo / "evals")
+            with self.assertRaisesRegex(EvalError, "held-back cases are reserved"):
+                load_routine_screen_contract(
+                    fixture.routine_contract,
+                    spec,
+                    review.case_groups,
+                )
+            with self.assertRaisesRegex(EvalError, "may not exceed"):
+                RoutineScreenConfig(
+                    review=replace(
+                        review,
+                        trigger_repeats=1,
+                        behavior_repeats=1,
+                        jobs=2,
+                    ),
+                    contract_source=fixture.routine_contract,
+                    contract=valid_contract,
+                    budget_seconds=3601,
+                )
+            with self.assertRaisesRegex(EvalError, "at least one required profile"):
+                RoutineScreenConfig(
+                    review=replace(
+                        review,
+                        profiles=(),
+                        trigger_repeats=1,
+                        behavior_repeats=1,
+                        jobs=2,
+                    ),
+                    contract_source=fixture.routine_contract,
+                    contract=valid_contract,
+                )
+
+    def test_routine_rejects_runner_control_drift(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fixture = CapabilityReviewFixture(Path(temp_dir))
+            with self.assertRaisesRegex(EvalError, "changed pinned deadline"):
+                run_routine_screen(
+                    fixture.routine_config(),
+                    RoutineEvaluationRunner(failure="controls"),
+                )
             manifests = list(fixture.output.rglob("review.json"))
             self.assertEqual(len(manifests), 1)
             manifest = json.loads(manifests[0].read_text(encoding="utf-8"))
@@ -904,6 +1246,91 @@ class DurableExportTests(unittest.TestCase):
             payload = json.loads(exports[0].read_text(encoding="utf-8"))
             self.assertEqual(payload["aggregate"]["observed_failures"], ["fake-observed"])
             self.assertEqual(len(fake.calls), 4)
+
+    def test_routine_cli_rejects_export_observed_profiles_and_unpaired_opt_in(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fixture = CapabilityReviewFixture(Path(temp_dir))
+            base = [
+                "--repo-root",
+                str(fixture.repo),
+                "--skill",
+                "demo",
+                "--candidate",
+                str(fixture.candidate),
+                "--profiles",
+                str(fixture.profiles),
+                "--case-groups",
+                str(fixture.case_groups),
+            ]
+            for extra, message in (
+                (
+                    ["--workflow", "routine", "--observed-profile", "fake-observed"],
+                    "required profiles only",
+                ),
+                (
+                    [
+                        "--workflow",
+                        "routine",
+                        "--export",
+                        "--reviewer",
+                        "Reviewer",
+                        "--disposition",
+                        "retain",
+                        "--disposition-rationale",
+                        "No promotion.",
+                    ],
+                    "report-only",
+                ),
+                (["--human-opt-in"], "requires --escalate-from"),
+                (
+                    ["--budget-seconds", "1200"],
+                    "require --workflow routine",
+                ),
+            ):
+                with self.subTest(extra=extra):
+                    stderr = io.StringIO()
+                    fake = RoutineEvaluationRunner()
+                    with contextlib.redirect_stderr(stderr):
+                        exit_code = review_skill_capability.main(
+                            base + extra,
+                            evaluation_runner=fake,
+                        )
+                    self.assertEqual(exit_code, 1)
+                    self.assertIn(message, stderr.getvalue())
+                    self.assertEqual(fake.calls, [])
+
+    def test_routine_cli_reports_eligibility_without_approval(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fixture = CapabilityReviewFixture(Path(temp_dir))
+            fake = RoutineEvaluationRunner()
+            stdout = io.StringIO()
+            with contextlib.redirect_stdout(stdout):
+                exit_code = review_skill_capability.main(
+                    [
+                        "--repo-root",
+                        str(fixture.repo),
+                        "--skill",
+                        "demo",
+                        "--candidate",
+                        str(fixture.candidate),
+                        "--profiles",
+                        str(fixture.profiles),
+                        "--case-groups",
+                        str(fixture.case_groups),
+                        "--routine-contract",
+                        str(fixture.routine_contract),
+                        "--workflow",
+                        "routine",
+                        "--output-root",
+                        str(fixture.output),
+                    ],
+                    evaluation_runner=fake,
+                )
+
+            output = stdout.getvalue()
+            self.assertEqual(exit_code, 0)
+            self.assertIn("Routine outcome: eligible-for-escalation", output)
+            self.assertNotIn("approved", output.lower())
 
 
 if __name__ == "__main__":

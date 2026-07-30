@@ -84,8 +84,70 @@ identifiers, unknown keys, unsupported adapters, duplicate IDs, and
 is also published as
 [`schemas/eval-profiles-v1.schema.json`](../schemas/eval-profiles-v1.schema.json).
 
-Preview the required-profile, universe, and case-group matrix without model
-calls:
+### Routine screen
+
+Routine evaluation is the operational first step, selected explicitly with
+`--workflow routine`. It runs required profiles only, one repeat, and both
+repository-owned universes concurrently. Each skill's
+`evals/<skill>/routine-screen.json` selects two or three high-signal
+development behavior cases and a compact positive/near-miss trigger pair. The
+contract shape is published as
+[`schemas/routine-screen-v1.schema.json`](../schemas/routine-screen-v1.schema.json).
+Held-back cases are invalid in this contract and remain reserved for full
+escalation.
+
+```bash
+python3 scripts/review_skill_capability.py \
+  --skill skill-architect \
+  --candidate /path/to/candidate-skill \
+  --workflow routine \
+  --plan
+```
+
+The screen has a hard one-hour ceiling. Evaluator turns stop at 55 minutes by
+default, leaving five minutes for bounded aggregation. Independent repository
+and isolated cells run concurrently, with at least two evaluator jobs per
+cell. Timeout, budget-exceeded, execution, judgment, unknown, missing, and
+integrity evidence produces `incomplete`.
+
+When Candidate changes canonical frontmatter `name` or `description`, the
+screen runs its compact positive and near-miss trigger pair as blocking
+evidence. When both discovery inputs are unchanged, it omits trigger execution:
+independent trigger variation would be observational, so the routine budget is
+spent on behavior. Baseline runs only for the selected high-signal behavior
+cases, which is the minimum retained-value evidence used by the screen.
+
+Routine outcomes are exactly `reject`, `incomplete`, or
+`eligible-for-escalation`. Eligibility requires meaningful context reduction,
+behavior non-inferiority, retained value over Baseline, protected checks, and
+complete selected-case evidence in both universes. It is report-only: approval,
+durable export, automatic promotion, runtime edits, and publication are
+disabled.
+
+### Full escalation
+
+After an eligible routine screen and a human decision that the reduction is
+meaningful enough to justify the cost, run the complete matrix with pinned
+routine evidence:
+
+```bash
+python3 scripts/review_skill_capability.py \
+  --skill skill-architect \
+  --candidate /path/to/candidate-skill \
+  --workflow full \
+  --case-groups evals/skill-architect/capability-case-groups.json \
+  --escalate-from .skill-evals/skill-architect/routine-screens/<id>/review.json \
+  --human-opt-in
+```
+
+The command rejects stale routine evidence when Current, Candidate, eval,
+profile, case-group, judge-policy, or harness-manifest digests differ. Existing
+commands that omit `--workflow` retain the prior full-matrix default for CLI
+compatibility, but new operational runs should use the routine-first escalation
+sequence.
+
+Preview the required-profile, universe, and case-group full matrix without
+model calls:
 
 ```bash
 python3 scripts/review_skill_capability.py \
