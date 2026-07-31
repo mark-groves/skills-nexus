@@ -1,5 +1,38 @@
 {
   "skill_name": "cloud-diagram",
+  "review_policy": {
+    "minimum_repeats": {
+      "trigger": 2,
+      "behavior": 2
+    },
+    "quality": {
+      "non_inferiority_margin": 0.05,
+      "minimum_lift_over_baseline": 0.05,
+      "minimum_evidence_coverage": 1.0
+    },
+    "triggering": {
+      "recall_non_inferiority_margin": 0.05,
+      "specificity_non_inferiority_margin": 0.05
+    },
+    "context": {
+      "minimum_reductions": {
+        "description_characters": 20,
+        "skill_md_body_characters": 100,
+        "runtime_package_bytes": 1024,
+        "dynamic_input_tokens": 100
+      }
+    },
+    "integrity": {
+      "allowed_fixture_fidelity": [
+        "none",
+        "files",
+        "executable",
+        "description-only"
+      ],
+      "require_fixture_parity": true,
+      "require_blind_grading": true
+    }
+  },
   "trigger_evals": [
     {
       "id": 1,
@@ -34,7 +67,12 @@
         "Uses correct aws4 shape names (resIcon=mxgraph.aws4.*)",
         "All edge elements contain <mxGeometry relative='1' as='geometry' /> child",
         "Service icon dimensions are 50x50",
-        "No HTML tags in label text",
+        {
+          "id": "plain-text-labels",
+          "text": "No HTML tags in label text",
+          "class": "safety",
+          "gate": "hard"
+        },
         "Edges include protocol:port labels"
       ]
     },
@@ -57,7 +95,12 @@
       "expected_behavior": "Creates a serverless AWS diagram using only the requested services and the expected flow edges.",
       "fixtures": [],
       "checks": [
-        "Does NOT add services the user did not mention (no EC2, no RDS, no VPC unless user specified)",
+        {
+          "id": "preserve-requested-service-scope",
+          "text": "Does NOT add services the user did not mention (no EC2, no RDS, no VPC unless user specified)",
+          "class": "local-contract",
+          "gate": "hard"
+        },
         "API Gateway, Lambda, DynamoDB, and Cognito are present",
         "Edges show request flow direction with labels",
         "Uses correct aws4 shape names for all four services"
@@ -81,7 +124,12 @@
       "expected_behavior": "Creates a `.drawio` file and attempts PNG export if the draw.io CLI is available.",
       "fixtures": [],
       "checks": [
-        "Creates a .drawio file first",
+        {
+          "id": "source-drawio-before-export",
+          "text": "Creates a .drawio file first",
+          "class": "local-contract",
+          "gate": "hard"
+        },
         "Attempts to export to PNG with --embed-diagram flag",
         "Contains S3, CloudFront, and Route 53 with correct shapes",
         "Does not add unnecessary VPC or subnet containers for a CDN architecture"

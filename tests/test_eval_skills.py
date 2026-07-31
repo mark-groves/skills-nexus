@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import textwrap
+import time
 import unittest
 from dataclasses import FrozenInstanceError
 from pathlib import Path
@@ -1719,6 +1720,41 @@ class EvalCoreTests(unittest.TestCase):
                 json.loads(runner.auth_payload),
                 {"auth_mode": "apikey", "OPENAI_API_KEY": "ci-test-key"},
             )
+
+    def test_expired_evaluator_deadline_does_not_start_agent_process(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            skill = root / "skill"
+            workspace = root / "workspace"
+            run_dir = root / "run"
+            skill.mkdir()
+            workspace.mkdir()
+            (skill / "SKILL.md").write_text("# Skill\n", encoding="utf-8")
+            conditions = default_evaluation_conditions(skill)
+            runner = object.__new__(CodexRunner)
+            runner.conditions = conditions
+            runner.codex_binary = "/bin/false"
+            runner.model = None
+            runner.judge_model = None
+            runner.timeout_seconds = 30
+            runner.deadline_monotonic = time.monotonic() - 1
+            runner.sandbox = "read-only"
+            runner.peer_skills = ()
+            runner.runtime_skill_names = {"skill"}
+            runner.runtime_instruction_texts = ("# Skill\n",)
+            runner.auth_payload = "{}"
+
+            result = runner._execute(
+                run_dir=run_dir,
+                workspace=workspace,
+                prompt="Do not run.",
+                condition=conditions[0],
+                sandbox="read-only",
+                model=None,
+            )
+
+        self.assertEqual(result["status"], "budget_exceeded")
+        self.assertIsNone(result["exit_code"])
 
     def test_combined_skill_read_keeps_non_skill_command_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

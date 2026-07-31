@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "components": [
+    {
+      "id": "file-output",
+      "source": "SKILL.md",
+      "heading": "## Step 7 — Write the file",
+      "class": "safety",
+      "protected": true
+    },
+    {
+      "id": "visual-review",
+      "source": "SKILL.md",
+      "heading": "## Step 8 — Visual review",
+      "class": "local-contract",
+      "protected": true
+    },
+    {
+      "id": "mcp-refinement",
+      "source": "SKILL.md",
+      "heading": "## Step 9 — MCP refinement",
+      "class": "workflow",
+      "protected": false
+    },
+    {
+      "id": "safety-rules",
+      "source": "SKILL.md",
+      "heading": "## Safety rules",
+      "class": "safety",
+      "protected": true
+    }
+  ]
+}

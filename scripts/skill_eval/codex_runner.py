@@ -193,6 +193,7 @@ class CodexRunner:
         timeout_seconds: int,
         sandbox: str,
         peer_skills: tuple[Path, ...] = (),
+        deadline_seconds: int | None = None,
     ) -> None:
         resolved_binary = shutil.which(codex_binary)
         if resolved_binary is None:
@@ -206,6 +207,9 @@ class CodexRunner:
         self.model = model
         self.judge_model = judge_model or model
         self.timeout_seconds = timeout_seconds
+        self.deadline_monotonic = (
+            time.monotonic() + deadline_seconds if deadline_seconds is not None else None
+        )
         self.sandbox = sandbox
         self.peer_skills = tuple(path.resolve() for path in peer_skills)
         runtime_conditions = tuple(
@@ -373,47 +377,67 @@ class CodexRunner:
         env["GIT_CEILING_DIRECTORIES"] = git_ceiling
         started = time.monotonic()
         timed_out = False
+        budget_exceeded = False
         process: subprocess.Popen[str] | None = None
         stdout_thread: threading.Thread | None = None
         stderr_thread: threading.Thread | None = None
         stdout_chunks: list[str] = []
         stderr_chunks: list[str] = []
+        exit_code: int | None
         try:
             try:
-                process = subprocess.Popen(
-                    command,
-                    stdin=subprocess.PIPE,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    cwd=workspace,
-                    env=env,
-                    text=True,
+                remaining = (
+                    self.deadline_monotonic - time.monotonic()
+                    if self.deadline_monotonic is not None
+                    else None
                 )
-                if process.stdin is None or process.stdout is None or process.stderr is None:
-                    raise EvalError("Codex process pipes were not available")
-                stdout_thread = threading.Thread(
-                    target=self._capture_process_output,
-                    args=(process.stdout, stdout_chunks, auth_path),
-                    daemon=True,
-                )
-                stderr_thread = threading.Thread(
-                    target=self._capture_process_output,
-                    args=(process.stderr, stderr_chunks),
-                    daemon=True,
-                )
-                stdout_thread.start()
-                stderr_thread.start()
-                try:
-                    process.stdin.write(prompt)
-                    process.stdin.flush()
-                except BrokenPipeError:
-                    pass
-                finally:
-                    process.stdin.close()
-                process.wait(timeout=self.timeout_seconds)
-                exit_code: int | None = process.returncode
+                if remaining is not None and remaining <= 0:
+                    budget_exceeded = True
+                    exit_code = None
+                else:
+                    process = subprocess.Popen(
+                        command,
+                        stdin=subprocess.PIPE,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        cwd=workspace,
+                        env=env,
+                        text=True,
+                    )
+                    if process.stdin is None or process.stdout is None or process.stderr is None:
+                        raise EvalError("Codex process pipes were not available")
+                    stdout_thread = threading.Thread(
+                        target=self._capture_process_output,
+                        args=(process.stdout, stdout_chunks, auth_path),
+                        daemon=True,
+                    )
+                    stderr_thread = threading.Thread(
+                        target=self._capture_process_output,
+                        args=(process.stderr, stderr_chunks),
+                        daemon=True,
+                    )
+                    stdout_thread.start()
+                    stderr_thread.start()
+                    try:
+                        process.stdin.write(prompt)
+                        process.stdin.flush()
+                    except BrokenPipeError:
+                        pass
+                    finally:
+                        process.stdin.close()
+                    turn_timeout = (
+                        min(self.timeout_seconds, max(0.001, remaining))
+                        if remaining is not None
+                        else self.timeout_seconds
+                    )
+                    process.wait(timeout=turn_timeout)
+                    exit_code = process.returncode
             except subprocess.TimeoutExpired:
                 timed_out = True
+                budget_exceeded = (
+                    self.deadline_monotonic is not None
+                    and time.monotonic() >= self.deadline_monotonic
+                )
                 if process is not None:
                     process.kill()
                     process.wait()
@@ -455,7 +479,15 @@ class CodexRunner:
         if output_message.is_file():
             summary["final_response"] = output_message.read_text(encoding="utf-8", errors="replace")
 
-        status = "timeout" if timed_out else "completed" if exit_code == 0 else "failed"
+        status = (
+            "budget_exceeded"
+            if budget_exceeded
+            else "timeout"
+            if timed_out
+            else "completed"
+            if exit_code == 0
+            else "failed"
+        )
         return {
             "status": status,
             "exit_code": exit_code,

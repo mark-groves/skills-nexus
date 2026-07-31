@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "groups": [
+    {
+      "id": "development",
+      "kind": "development",
+      "trigger_cases": [
+        "1",
+        "3"
+      ],
+      "behavior_cases": [
+        "1",
+        "3"
+      ]
+    },
+    {
+      "id": "held-back-v1",
+      "kind": "held-back",
+      "trigger_cases": [
+        "2",
+        "4"
+      ],
+      "behavior_cases": [
+        "2",
+        "4",
+        "5"
+      ]
+    }
+  ]
+}

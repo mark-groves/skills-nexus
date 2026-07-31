@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "trigger_cases": [
+    "2",
+    "4"
+  ],
+  "behavior_cases": [
+    "2",
+    "7",
+    "8"
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "components": [
+    {
+      "id": "provider-download",
+      "source": "SKILL.md",
+      "heading": "## Step 2 — Download the sidebar JS file",
+      "class": "local-contract",
+      "protected": true
+    },
+    {
+      "id": "consumer-handoff",
+      "source": "SKILL.md",
+      "heading": "## Step 5 — Report results",
+      "class": "local-contract",
+      "protected": true
+    },
+    {
+      "id": "encoding-pattern-guidance",
+      "source": "SKILL.md",
+      "heading": "## Adapting to new encoding patterns",
+      "class": "reference",
+      "protected": false
+    }
+  ]
+}

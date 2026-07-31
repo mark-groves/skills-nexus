@@ -1,5 +1,38 @@
 {
   "skill_name": "drawio-shapes",
+  "review_policy": {
+    "minimum_repeats": {
+      "trigger": 2,
+      "behavior": 2
+    },
+    "quality": {
+      "non_inferiority_margin": 0.05,
+      "minimum_lift_over_baseline": 0.05,
+      "minimum_evidence_coverage": 1.0
+    },
+    "triggering": {
+      "recall_non_inferiority_margin": 0.05,
+      "specificity_non_inferiority_margin": 0.05
+    },
+    "context": {
+      "minimum_reductions": {
+        "description_characters": 20,
+        "skill_md_body_characters": 100,
+        "runtime_package_bytes": 1024,
+        "dynamic_input_tokens": 100
+      }
+    },
+    "integrity": {
+      "allowed_fixture_fidelity": [
+        "none",
+        "files",
+        "executable",
+        "description-only"
+      ],
+      "require_fixture_parity": true,
+      "require_blind_grading": true
+    }
+  },
   "trigger_evals": [
     {
       "id": 1,
@@ -30,7 +63,12 @@
       "fixtures": [],
       "checks": [
         "At least one JSON file with a 'categories' key exists in outputs",
-        "Downloaded sidebar JS via gh api blob endpoint, not curl/wget",
+        {
+          "id": "provider-api-download",
+          "text": "Downloaded sidebar JS via gh api blob endpoint, not curl/wget",
+          "class": "local-contract",
+          "gate": "hard"
+        },
         "Total extracted shape count >= 400 across all categories",
         "At least 15 distinct categories present in output",
         "No base64 decode errors (or at most 1 known benign warning)"
@@ -49,7 +87,12 @@
         "Style strings contain shape=mxgraph.gcp2.* references",
         "GCPIcons categories are present in the merged output",
         "At least one overlapping GCP icon name is preserved with a ' (GCPIcons)' suffix",
-        "Does not instruct the user to run sibling-skill scripts as part of this skill"
+        {
+          "id": "no-sibling-script-dependency",
+          "text": "Does not instruct the user to run sibling-skill scripts as part of this skill",
+          "class": "local-contract",
+          "gate": "hard"
+        }
       ]
     },
     {
@@ -88,8 +131,18 @@
         "Uses the committed scripts/generate_catalog.py rather than a throwaway generator in working/",
         "AWS4 is treated as style-expression extraction, not generic base64 decoding",
         "Merged GCP output includes both GCP2 and GCPIcons families",
-        "Does not mutate cloud-diagram directly during fragment generation",
-        "Does not invoke sibling-skill importers or renderers from this skill",
+        {
+          "id": "no-consumer-skill-mutation",
+          "text": "Does not mutate cloud-diagram directly during fragment generation",
+          "class": "safety",
+          "gate": "hard"
+        },
+        {
+          "id": "no-sibling-runtime-dependency",
+          "text": "Does not invoke sibling-skill importers or renderers from this skill",
+          "class": "local-contract",
+          "gate": "hard"
+        },
         "States explicitly when downstream validation must happen in the consumer after handoff"
       ]
     }

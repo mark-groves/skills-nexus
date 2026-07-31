@@ -78,6 +78,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--activation-threshold", type=float, default=0.5)
     parser.add_argument("--jobs", type=int, default=2, help="Maximum concurrent agent turns")
     parser.add_argument("--timeout", type=int, default=300, help="Seconds per agent turn")
+    parser.add_argument(
+        "--deadline-seconds",
+        type=int,
+        help=(
+            "Hard wall-clock deadline for this evaluator run; queued and active "
+            "agent turns fail closed when the deadline is reached"
+        ),
+    )
     parser.add_argument("--model", help="Codex model for task runs")
     parser.add_argument("--judge-model", help="Codex model for grading; defaults to --model")
     parser.add_argument("--codex-binary", default="codex")
@@ -505,6 +513,7 @@ def _run_evaluation(
             if args.skill_universe == "repository"
             else ()
         ),
+        deadline_seconds=args.deadline_seconds,
     )
     print(f"Run {run_id}: {output_dir}", flush=True)
 
@@ -856,6 +865,8 @@ def _run_evaluation(
         reproduce.extend(["--judge-model", args.judge_model])
     if args.fail_under is not None:
         reproduce.extend(["--fail-under", str(args.fail_under)])
+    if args.deadline_seconds is not None:
+        reproduce.extend(["--deadline-seconds", str(args.deadline_seconds)])
 
     result: dict[str, Any] = {
         "schema_version": 3 if candidate_condition is not None else 1,
@@ -877,12 +888,15 @@ def _run_evaluation(
             "judge_model": args.judge_model or args.model or "runtime-default",
             "sandbox": args.sandbox,
             "timeout_seconds": args.timeout,
+            "deadline_seconds": args.deadline_seconds,
             "jobs": args.jobs,
             "skill_universe": args.skill_universe,
             "peer_skills": [path.name for path in runner.peer_skills],
         },
         "config": {
             "suite": args.suite,
+            "trigger_case_ids": [case.id for case in trigger_cases],
+            "behavior_case_ids": [case.id for case in behavior_cases],
             "trigger_repeats": args.trigger_repeats,
             "behavior_repeats": args.behavior_repeats,
             "activation_threshold": args.activation_threshold,
@@ -950,6 +964,7 @@ def main(argv: list[str] | None = None) -> int:
         _positive_int(args.behavior_repeats, "--behavior-repeats")
         _positive_int(args.jobs, "--jobs")
         _positive_int(args.timeout, "--timeout")
+        _positive_int(args.deadline_seconds, "--deadline-seconds")
         _positive_int(args.max_trigger_cases, "--max-trigger-cases")
         _positive_int(args.max_behavior_cases, "--max-behavior-cases")
         if not 0 <= args.activation_threshold <= 1:

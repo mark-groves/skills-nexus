@@ -58,14 +58,18 @@ Preview an evaluation without invoking agent turns:
 python3 scripts/eval_skills.py --skill skill-architect --plan
 ```
 
-Preview a pinned multi-profile candidate capability review:
+Preview the bounded routine screen for a candidate:
 
 ```bash
 python3 scripts/review_skill_capability.py \
   --skill skill-architect \
   --candidate /path/to/candidate-skill \
+  --workflow routine \
   --plan
 ```
+
+Routine screens are report-only. A positive result is only eligible for a
+human-opted full escalation; it never approves or promotes a candidate.
 
 Preview repository-owned component boundaries before running backward
 elimination:

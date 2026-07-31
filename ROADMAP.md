@@ -49,7 +49,9 @@ The implementation items below are ordered by dependency. The default
 two-condition evaluator behavior remains unchanged; candidate mode now adds the
 baseline/current/candidate comparison, separate context evidence, and
 repository-owned optimisation gates. Model-profile orchestration and component
-ablation compose those unchanged evaluations.
+ablation compose those unchanged evaluations. Routine use starts with a
+bounded report-only screen; the complete matrix is reserved for explicit
+human-opted escalation.
 
 - [x] Define separate corrective-improvement and context-reduction evidence
       paths, context budgets, review verdicts, and the higher retirement bar
@@ -65,6 +67,8 @@ ablation compose those unchanged evaluations.
       summaries (#27).
 - [x] Evaluate coherent component marginal value with protected component
       boundaries and combined-candidate verification (#28).
+- [x] Add a one-hour routine screen before the complete escalation matrix
+      (#42).
 - [ ] Pilot both useful reduction and protected-regression rejection before
       declaring Capability Optimisation v1 verified (#29).
 

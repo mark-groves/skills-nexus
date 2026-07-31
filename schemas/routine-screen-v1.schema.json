@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://skills-nexus.local/schemas/routine-screen-v1.schema.json",
+  "title": "Routine skill screen contract v1",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "trigger_cases",
+    "behavior_cases"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "trigger_cases": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "uniqueItems": true,
+      "items": {
+        "type": [
+          "string",
+          "integer"
+        ]
+      }
+    },
+    "behavior_cases": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 3,
+      "uniqueItems": true,
+      "items": {
+        "type": [
+          "string",
+          "integer"
+        ]
+      }
+    }
+  },
+  "additionalProperties": false
+}

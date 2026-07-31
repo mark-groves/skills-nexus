@@ -13,7 +13,11 @@ from pathlib import Path
 
 from skill_eval.core import EvalError, load_eval_spec
 from skill_review.ablation import load_component_contract
-from skill_review.core import load_case_groups, load_profile_contract
+from skill_review.core import (
+    load_case_groups,
+    load_profile_contract,
+    load_routine_screen_contract,
+)
 
 REPO_DIR = Path(__file__).resolve().parents[1]
 SKILLS_DIR = REPO_DIR / "skills"
@@ -941,11 +945,32 @@ def validate_evals(skill_dir: Path, eval_dir: Path) -> None:
             fail(str(exc))
 
     case_groups_json = eval_dir / "capability-case-groups.json"
+    groups = None
     if case_groups_json.exists() or case_groups_json.is_symlink():
         try:
-            load_case_groups(case_groups_json, load_eval_spec(skill_dir, EVALS_DIR))
+            groups = load_case_groups(
+                case_groups_json,
+                load_eval_spec(skill_dir, EVALS_DIR),
+            )
         except EvalError as exc:
             fail(str(exc))
+
+    routine_json = eval_dir / "routine-screen.json"
+    if routine_json.exists() or routine_json.is_symlink():
+        if groups is None:
+            fail(
+                "routine-screen.json requires a valid capability-case-groups.json in "
+                f"{repo_relative(eval_dir)}"
+            )
+        else:
+            try:
+                load_routine_screen_contract(
+                    routine_json,
+                    load_eval_spec(skill_dir, EVALS_DIR),
+                    groups,
+                )
+            except EvalError as exc:
+                fail(str(exc))
 
 
 def validate_skill_contract(skill_dir: Path) -> None:
