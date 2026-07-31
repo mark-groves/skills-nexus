@@ -22,8 +22,11 @@ non-obvious caveats are noted here.
   (`apt install shellcheck`) captured in the VM snapshot, not a pip dependency — the
   script fails if it is missing.
 - Running the product: `bash scripts/deploy-skills.sh --harness <target> --skill <name>`
-  (or `--all`). With default user scope this installs into `~/.agents/skills` (outside
-  the repo), so deployments do not create git changes.
+  (or `--all`). With default user scope this installs into the selected harness's
+  `user_install_root` from `harnesses/<target>.json` (e.g. `~/.agents/skills` for
+  `agents`/`codex`, `~/.claude/skills`, `~/.copilot/skills`, `~/.cursor/skills`,
+  `~/.kiro/skills`) — all under the home directory and outside the repo, so
+  deployments do not create git changes.
 - Skill evaluation scripts (`eval_skills.py`, `review_skill_capability.py`,
   `ablate_skill_components.py`) all support a `--plan` dry-run that needs no external
   service. Live (non-`--plan`) runs require the Codex CLI on `PATH` plus credentials
