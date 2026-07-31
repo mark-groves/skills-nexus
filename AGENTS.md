@@ -17,18 +17,18 @@ non-obvious caveats are noted here.
 - Tests + repo contract validation: `bash scripts/check-skills.sh`
   (`unittest discover tests/` then `scripts/validate_repo.py`).
 - Lint/type/security: `bash scripts/check-quality.sh` runs ruff, `ruff format --check`,
-  mypy, ShellCheck, actionlint, Bandit, and zizmor. `actionlint` is provided by the
-  `actionlint-py` pip package (inside `.venv`), but **ShellCheck is a system binary**
-  (`apt install shellcheck`) captured in the VM snapshot, not a pip dependency — the
+  mypy, ShellCheck, actionlint, Bandit, and zizmor. `actionlint` comes from the
+  `actionlint-py` pip package inside `.venv`. ShellCheck is a system binary
+  (`apt install shellcheck`) captured in the VM snapshot, not a pip dependency, so the
   script fails if it is missing.
 - Running the product: `bash scripts/deploy-skills.sh --harness <target> --skill <name>`
   (or `--all`). With default user scope this installs into the selected harness's
-  `user_install_root` from `harnesses/<target>.json` (e.g. `~/.agents/skills` for
-  `agents`/`codex`, `~/.claude/skills`, `~/.copilot/skills`, `~/.cursor/skills`,
-  `~/.kiro/skills`) — all under the home directory and outside the repo, so
+  `user_install_root` from `harnesses/<target>.json` (for example `~/.agents/skills` for
+  `agents` and `codex`, `~/.claude/skills`, `~/.copilot/skills`, `~/.cursor/skills`,
+  `~/.kiro/skills`). These all live under the home directory, outside the repo, so
   deployments do not create git changes.
 - Skill evaluation scripts (`eval_skills.py`, `review_skill_capability.py`,
   `ablate_skill_components.py`) all support a `--plan` dry-run that needs no external
-  service. Live (non-`--plan`) runs require the Codex CLI on `PATH` plus credentials
-  (`CODEX_API_KEY` or `~/.codex/auth.json`) and network access — optional, not needed
-  for tests/validation/deployment.
+  service. Live (non-`--plan`) runs require the Codex CLI on `PATH`, credentials
+  (`CODEX_API_KEY` or `~/.codex/auth.json`), and network access. Those runs are optional
+  and not needed for tests, validation, or deployment.
