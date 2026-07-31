@@ -3,9 +3,12 @@
 ## Cursor Cloud specific instructions
 
 `skills-nexus` is a Python 3.11+ CLI/tooling repo (no runtime services, servers, or
-databases). All work runs offline via Python scripts and Bash wrappers. Standard
-commands live in `README.md` and `docs/development.md`; only non-obvious caveats are
-noted here.
+databases); it runs via Python scripts and Bash wrappers. Local validation
+(`check-skills.sh`, `check-quality.sh`), skill deployment, and `--plan` evaluation
+run fully offline. The one exception is live (non-`--plan`) skill evaluation, which
+invokes the Codex CLI and requires network access plus credentials (see the last
+bullet). Standard commands live in `README.md` and `docs/development.md`; only
+non-obvious caveats are noted here.
 
 - A Python virtualenv is provided at `.venv` (dev/quality tools from
   `requirements-dev.txt` are installed there by the startup update script). Activate it
