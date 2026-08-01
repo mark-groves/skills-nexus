@@ -35,8 +35,8 @@ The local checks on 2026-08-01 found:
 - Cursor desktop launcher: `3.14.7`, build
   `a758f2241ca99fecf380180b6cbdbbce0f1f42c0`, x64.
 - Cursor Agent CLI: `2026.07.23-e383d2b`.
-- `agent --help` exposes `--model`, `--output-format stream-json`, `--mode`,
-  `--sandbox`, `--workspace`, `--resume`, and `--force`.
+- `agent --help` exposes `--print`, `--model`, `--output-format stream-json`,
+  `--mode`, `--sandbox`, `--trust`, `--workspace`, `--resume`, and `--force`.
 - A fresh temporary `HOME` reports `isAuthenticated: false`; no API key or auth
   token was inherited for preflight.
 - The installed CLI was not logged in, so no live model turn was attempted and

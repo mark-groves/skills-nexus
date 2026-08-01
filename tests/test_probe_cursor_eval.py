@@ -58,6 +58,28 @@ class CursorStreamTests(unittest.TestCase):
             with self.subTest(name=name), self.assertRaises(probe.ProbeError):
                 probe.parse_cursor_stream((self.fixtures / name).read_text(encoding="utf-8"))
 
+    def test_unicode_line_separator_inside_json_string_is_not_an_ndjson_boundary(self) -> None:
+        events = [
+            {
+                "type": "system",
+                "subtype": "init",
+                "session_id": "unicode-session",
+                "model": "gpt-5",
+            },
+            {
+                "type": "result",
+                "subtype": "success",
+                "is_error": False,
+                "result": "before\u2028after",
+                "session_id": "unicode-session",
+            },
+        ]
+        parsed = probe.parse_cursor_stream(
+            "\n".join(json.dumps(event, ensure_ascii=False) for event in events)
+        )
+
+        self.assertEqual(parsed.final_response, "before\u2028after")
+
     def test_activation_true_requires_exact_completed_skill_read(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             skill = Path(temp_dir) / ".cursor" / "skills" / "demo" / "SKILL.md"
@@ -158,7 +180,17 @@ class CursorProcessBoundaryTests(unittest.TestCase):
                 return "2026.07.23-test"
             if command[-1] == "--help":
                 return " ".join(
-                    ("--model", "--output-format", "--sandbox", "--workspace", "--mode", "--resume")
+                    (
+                        "--print",
+                        "--model",
+                        "--output-format",
+                        "--sandbox",
+                        "--trust",
+                        "--workspace",
+                        "--mode",
+                        "--force",
+                        "--resume",
+                    )
                 )
             self.assertNotIn("CURSOR_API_KEY", kwargs["env"])
             return json.dumps({"isAuthenticated": False})
@@ -195,6 +227,50 @@ class CursorProcessBoundaryTests(unittest.TestCase):
                     model="gpt-5",
                     timeout_seconds=1,
                 )
+
+    def test_live_probe_purges_dedicated_auth_on_preflight_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_root = Path(temp_dir)
+            auth_template = output_root / "auth-template"
+            auth_template.mkdir()
+            (auth_template / "auth-data.txt").write_text("fixture\n", encoding="utf-8")
+
+            with mock.patch.dict("os.environ", {"CURSOR_API_KEY": "never-used"}, clear=True):
+                with self.assertRaises(probe.ProbeError):
+                    probe.run_live_probe(
+                        command="agent",
+                        auth_template=auth_template,
+                        output_root=output_root,
+                        model="gpt-5",
+                        timeout_seconds=1,
+                    )
+
+            self.assertFalse(auth_template.exists())
+
+    def test_live_probe_stops_after_cancelled_case(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_root = Path(temp_dir)
+            auth_template = output_root / "auth-template"
+            auth_template.mkdir()
+            cancelled = ({"process_status": "cancelled"}, None)
+            with mock.patch.dict("os.environ", {}, clear=True):
+                with mock.patch.object(probe, "_resolved_command", return_value="/tmp/agent"):
+                    with mock.patch.object(
+                        probe,
+                        "_run_live_case",
+                        return_value=cancelled,
+                    ) as run_case:
+                        with self.assertRaisesRegex(probe.ProbeError, "cancelled"):
+                            probe.run_live_probe(
+                                command="agent",
+                                auth_template=auth_template,
+                                output_root=output_root,
+                                model="gpt-5",
+                                timeout_seconds=1,
+                            )
+
+            self.assertEqual(run_case.call_count, 1)
+            self.assertFalse(auth_template.exists())
 
     def test_timeout_terminates_process_group_and_records_timeout(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -328,6 +404,46 @@ class CursorProcessBoundaryTests(unittest.TestCase):
         self.assertFalse(probe._permission_echo_denied([event({"success": {"output": "probe"}})]))
         self.assertTrue(probe._permission_echo_denied([event({"error": "denied"})]))
 
+    def test_behavior_artifact_requires_successful_probe_action_tool_call(self) -> None:
+        successful = {
+            "type": "tool_call",
+            "subtype": "completed",
+            "tool_call": {
+                "shellToolCall": {
+                    "args": {"command": "python3 probe_action.py"},
+                    "result": {"success": {"output": ""}},
+                }
+            },
+        }
+        direct_artifact = {
+            "type": "tool_call",
+            "subtype": "completed",
+            "tool_call": {
+                "shellToolCall": {
+                    "args": {"command": "echo '{}' > probe-observation.json"},
+                    "result": {"success": {"output": ""}},
+                }
+            },
+        }
+
+        self.assertTrue(probe._behavior_action_completed([successful]))
+        self.assertIsNone(probe._behavior_action_completed([direct_artifact]))
+
+    def test_relative_event_path_is_resolved_before_containment_check(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            workspace = root / "run" / "workspace"
+            home = root / "run" / "home"
+            workspace.mkdir(parents=True)
+            home.mkdir()
+            events = [
+                {"tool_call": {"readToolCall": {"args": {"path": "../../../outside/file.txt"}}}}
+            ]
+
+            paths = probe._event_paths(events, default_cwd=workspace, home=home)
+
+        self.assertEqual(paths, (str((root.parent / "outside" / "file.txt").resolve()),))
+
     def test_mcp_side_effect_is_not_attributed_to_agent_run(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             output_root = Path(temp_dir)
@@ -384,6 +500,76 @@ class CursorProcessBoundaryTests(unittest.TestCase):
 
         self.assertTrue(summary["mcp_workspace_mutated"])
         self.assertFalse(summary["workspace_mutated"])
+
+    def test_behavior_artifact_without_probe_action_evidence_is_ignored(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_root = Path(temp_dir)
+            auth_template = output_root / "auth-template"
+            auth_template.mkdir()
+
+            def fake_stream(_command, *, cwd, events_path, **_kwargs):
+                (cwd / "probe-observation.json").write_text(
+                    json.dumps(
+                        {
+                            "workspace_write": True,
+                            "outside_write": False,
+                            "symlink_escape_write": False,
+                            "cursor_api_key_visible": False,
+                            "cursor_auth_token_visible": False,
+                            "secret_canary_visible": False,
+                            "credential_canary_visible": False,
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+                events = [
+                    {
+                        "type": "system",
+                        "subtype": "init",
+                        "session_id": "forged-artifact-session",
+                        "model": "gpt-5",
+                        "cwd": str(cwd),
+                    },
+                    {
+                        "type": "result",
+                        "subtype": "success",
+                        "is_error": False,
+                        "result": "done",
+                        "session_id": "forged-artifact-session",
+                    },
+                ]
+                events_path.write_text(
+                    "\n".join(json.dumps(event) for event in events) + "\n",
+                    encoding="utf-8",
+                )
+                return probe.ProcessResult("completed", 0, 0.1, True)
+
+            with mock.patch.object(
+                probe,
+                "_run_text",
+                return_value="No MCP servers configured",
+            ):
+                with mock.patch.object(
+                    probe,
+                    "_run_streaming_process",
+                    side_effect=fake_stream,
+                ):
+                    summary, _parsed = probe._run_live_case(
+                        executable="/tmp/agent",
+                        auth_template=auth_template,
+                        output_root=output_root,
+                        case_id="forged-artifact",
+                        prompt="probe",
+                        model="gpt-5",
+                        mode="ask",
+                        force=True,
+                        behavior=True,
+                        timeout_seconds=1,
+                    )
+
+        self.assertIsNone(summary["behavior_action_completed"])
+        self.assertTrue(summary["behavior_script_unchanged"])
+        self.assertIsNone(summary["behavior_observation"]["workspace_write"])
 
     def test_generated_behavior_action_is_valid_python(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

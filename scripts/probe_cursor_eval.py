@@ -114,7 +114,7 @@ def parse_cursor_stream(
 
     events: list[dict[str, Any]] = []
     event_lines: list[int] = []
-    for line_number, line in enumerate(text.splitlines(), start=1):
+    for line_number, line in enumerate(text.split("\n"), start=1):
         if not line.strip():
             continue
         if len(line.encode("utf-8")) > MAX_LINE_BYTES:
@@ -386,11 +386,14 @@ def run_preflight(*, command: str) -> dict[str, Any]:
         except json.JSONDecodeError as exc:
             raise ProbeError("Cursor status did not return JSON") from exc
     required_flags = (
+        "--print",
         "--model",
         "--output-format",
         "--sandbox",
+        "--trust",
         "--workspace",
         "--mode",
+        "--force",
         "--resume",
     )
     missing_flags = [
@@ -739,7 +742,21 @@ for name, target in {
     return workspace
 
 
-def _event_paths(events: Sequence[Mapping[str, object]]) -> tuple[str, ...]:
+def _resolved_event_path(raw_path: str, *, base: Path, home: Path) -> Path:
+    if raw_path == "~":
+        return home.resolve()
+    if raw_path.startswith("~/"):
+        return (home / raw_path[2:]).resolve()
+    path = Path(raw_path)
+    return path.resolve() if path.is_absolute() else (base / path).resolve()
+
+
+def _event_paths(
+    events: Sequence[Mapping[str, object]],
+    *,
+    default_cwd: Path,
+    home: Path,
+) -> tuple[str, ...]:
     paths: set[str] = set()
     for event in events:
         tool_call = event.get("tool_call")
@@ -751,9 +768,16 @@ def _event_paths(events: Sequence[Mapping[str, object]]) -> tuple[str, ...]:
             args = value.get("args")
             if not isinstance(args, dict):
                 continue
+            raw_cwd = args.get("cwd")
+            tool_cwd = (
+                _resolved_event_path(raw_cwd, base=default_cwd, home=home)
+                if isinstance(raw_cwd, str)
+                else default_cwd
+            )
             for key, item in args.items():
                 if key in {"path", "cwd", "file_path"} and isinstance(item, str):
-                    paths.add(item)
+                    base = default_cwd if key == "cwd" else tool_cwd
+                    paths.add(str(_resolved_event_path(item, base=base, home=home)))
     return tuple(sorted(paths))
 
 
@@ -788,6 +812,23 @@ def _permission_echo_denied(events: Sequence[Mapping[str, object]]) -> bool | No
             succeeded = _tool_call_succeeded(call)
             if succeeded is not None:
                 return not succeeded
+    return None
+
+
+def _behavior_action_completed(events: Sequence[Mapping[str, object]]) -> bool | None:
+    for event in events:
+        if event.get("type") != "tool_call" or event.get("subtype") != "completed":
+            continue
+        tool_call = event.get("tool_call")
+        if not isinstance(tool_call, dict):
+            continue
+        shell_call = tool_call.get("shellToolCall")
+        if not isinstance(shell_call, dict):
+            continue
+        args = shell_call.get("args")
+        if not isinstance(args, dict) or args.get("command") != "python3 probe_action.py":
+            continue
+        return _tool_call_succeeded(shell_call)
     return None
 
 
@@ -871,6 +912,7 @@ def _run_live_case(
     after_mcp = _snapshot(workspace)
     mcp_workspace_mutated = before_mcp != after_mcp
     before = after_mcp
+    behavior_script_digest = before_mcp.get("probe_action.py") if behavior else None
     command = [
         executable,
         "--print",
@@ -914,13 +956,14 @@ def _run_live_case(
             )
         except ProbeError as exc:
             parse_error = str(exc)
-    paths = _event_paths(parsed.events) if parsed is not None else ()
+    paths = (
+        _event_paths(parsed.events, default_cwd=workspace, home=home) if parsed is not None else ()
+    )
     allowed_roots = (str(run_dir.resolve()), str(home.resolve()), str(workspace.resolve()))
     path_contamination = [
         path
         for path in paths
-        if Path(path).is_absolute()
-        and not any(path == root or path.startswith(root + os.sep) for root in allowed_roots)
+        if not any(path == root or path.startswith(root + os.sep) for root in allowed_roots)
     ]
     summary: dict[str, Any] = {
         "case_id": case_id,
@@ -946,7 +989,12 @@ def _run_live_case(
     if behavior:
         observation_path = workspace / "probe-observation.json"
         observation: dict[str, Any] = {}
-        if observation_path.is_file():
+        action_completed = _behavior_action_completed(parsed.events) if parsed is not None else None
+        script_unchanged = (
+            behavior_script_digest is not None
+            and after.get("probe_action.py") == behavior_script_digest
+        )
+        if observation_path.is_file() and action_completed is True and script_unchanged:
             try:
                 observation = _json_object(
                     json.loads(observation_path.read_text(encoding="utf-8")),
@@ -954,6 +1002,8 @@ def _run_live_case(
                 )
             except json.JSONDecodeError:
                 observation = {}
+        summary["behavior_action_completed"] = action_completed
+        summary["behavior_script_unchanged"] = script_unchanged
         summary["behavior_observation"] = {
             key: observation.get(key)
             for key in (
@@ -973,6 +1023,28 @@ def _run_live_case(
 
 
 def run_live_probe(
+    *,
+    command: str,
+    auth_template: Path,
+    output_root: Path,
+    model: str,
+    timeout_seconds: int,
+) -> dict[str, Any]:
+    dedicated_template = auth_template.resolve() == (output_root.resolve() / "auth-template")
+    try:
+        return _run_live_probe(
+            command=command,
+            auth_template=auth_template,
+            output_root=output_root,
+            model=model,
+            timeout_seconds=timeout_seconds,
+        )
+    finally:
+        if dedicated_template:
+            shutil.rmtree(auth_template, ignore_errors=True)
+
+
+def _run_live_probe(
     *,
     command: str,
     auth_template: Path,
@@ -1028,25 +1100,24 @@ def run_live_probe(
     )
     run_summaries: list[dict[str, Any]] = []
     parsed_by_case: dict[str, ParsedStream] = {}
-    try:
-        for case_id, prompt, mode, force, behavior in cases:
-            summary, parsed = _run_live_case(
-                executable=executable,
-                auth_template=auth_template,
-                output_root=output_root,
-                case_id=case_id,
-                prompt=prompt,
-                model=model,
-                mode=mode,
-                force=force,
-                behavior=behavior,
-                timeout_seconds=timeout_seconds,
-            )
-            run_summaries.append(summary)
-            if parsed is not None:
-                parsed_by_case[case_id] = parsed
-    finally:
-        shutil.rmtree(auth_template, ignore_errors=True)
+    for case_id, prompt, mode, force, behavior in cases:
+        summary, parsed = _run_live_case(
+            executable=executable,
+            auth_template=auth_template,
+            output_root=output_root,
+            case_id=case_id,
+            prompt=prompt,
+            model=model,
+            mode=mode,
+            force=force,
+            behavior=behavior,
+            timeout_seconds=timeout_seconds,
+        )
+        run_summaries.append(summary)
+        if summary["process_status"] == "cancelled":
+            raise ProbeError("live probe cancelled")
+        if parsed is not None:
+            parsed_by_case[case_id] = parsed
 
     judgment_valid = False
     judgment = parsed_by_case.get("structured-judgment")
@@ -1081,6 +1152,8 @@ def run_live_probe(
         ),
         "trigger_workspace_read_only": trigger_positive["workspace_mutated"] is False
         and trigger_near_miss["workspace_mutated"] is False,
+        "behavior_action_completed": behavior_summary.get("behavior_action_completed") is True,
+        "behavior_script_unchanged": behavior_summary.get("behavior_script_unchanged") is True,
         "behavior_workspace_write": observation.get("workspace_write") is True,
         "outside_workspace_contained": observation.get("outside_write") is False,
         "symlink_escape_contained": observation.get("symlink_escape_write") is False,
