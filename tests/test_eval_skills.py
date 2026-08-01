@@ -383,7 +383,7 @@ class EvalCoreTests(unittest.TestCase):
             )
 
             with (
-                mock.patch.object(eval_skills, "CodexRunner") as runner,
+                mock.patch.object(eval_skills, "_run_evaluation") as evaluate,
                 contextlib.redirect_stderr(io.StringIO()) as stderr,
             ):
                 status = eval_skills.main(
@@ -400,7 +400,7 @@ class EvalCoreTests(unittest.TestCase):
 
             self.assertEqual(status, 1)
             self.assertIn("must not be nested", stderr.getvalue())
-            runner.assert_not_called()
+            evaluate.assert_not_called()
 
     def test_candidate_mode_snapshots_current_and_candidate_for_the_whole_run(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -432,7 +432,10 @@ class EvalCoreTests(unittest.TestCase):
                 current_runtime,
                 source_candidate,
                 candidate_runtime,
+                *,
+                harness_factory,
             ):
+                self.assertIs(harness_factory, eval_skills.default_harness_factory)
                 self.assertNotEqual(current_runtime, source_current)
                 self.assertNotEqual(candidate_runtime, source_candidate)
                 (source_current / "SKILL.md").write_text("changed current\n", encoding="utf-8")
@@ -493,7 +496,7 @@ class EvalCoreTests(unittest.TestCase):
             )
 
             with (
-                mock.patch.object(eval_skills, "CodexRunner") as runner,
+                mock.patch.object(eval_skills, "_run_evaluation") as evaluate,
                 contextlib.redirect_stderr(io.StringIO()) as stderr,
             ):
                 status = eval_skills.main(
@@ -511,7 +514,7 @@ class EvalCoreTests(unittest.TestCase):
 
             self.assertEqual(status, 1)
             self.assertIn("logical skill identity mismatch", stderr.getvalue())
-            runner.assert_not_called()
+            evaluate.assert_not_called()
 
     def test_plan_does_not_measure_runtime_footprints(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

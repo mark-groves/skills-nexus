@@ -2,11 +2,8 @@
 
 from __future__ import annotations
 
-import copy
-import hashlib
 import json
 import os
-import re
 import shutil
 import subprocess
 import tempfile
@@ -20,24 +17,20 @@ from .core import (
     BehaviorCase,
     EvalError,
     EvaluationCondition,
-    git_observations,
     json_dump,
     runtime_skill_copy,
     skill_instructions,
-    snapshot_workspace,
-    workspace_delta,
 )
-
-
-def _all_strings(value: object):
-    if isinstance(value, str):
-        yield value
-    elif isinstance(value, dict):
-        for nested in value.values():
-            yield from _all_strings(nested)
-    elif isinstance(value, list):
-        for nested in value:
-            yield from _all_strings(nested)
+from .engine import execute_in_workspace
+from .evidence import (
+    _all_strings,
+    build_evidence_bundle,
+)
+from .evidence import (
+    _scrub as _scrub,
+)
+from .harness import HarnessCapabilities, JudgmentRequest, TaskRequest
+from .judging import grade_behavior, judgment_schema
 
 
 def _load_events(text: str) -> tuple[list[dict[str, Any]], list[str]]:
@@ -102,86 +95,17 @@ def _event_summary(
     }
 
 
-def _scrub(value: str, replacements: dict[str, str]) -> str:
-    result = value
-    for original, replacement in sorted(
-        replacements.items(), key=lambda item: len(item[0]), reverse=True
-    ):
-        result = result.replace(original, replacement)
-    return result
-
-
-def _redact_skill_paths(value: str, markers: set[str]) -> str:
-    """Replace full path tokens that identify installed skill instructions."""
-    result = value.replace("\\", "/")
-    delimiters = set(" \t\r\n\"'`=;|&()<>")
-    for marker in sorted(markers, key=len, reverse=True):
-        while marker in result:
-            marker_start = result.index(marker)
-            token_start = marker_start
-            while token_start and result[token_start - 1] not in delimiters:
-                token_start -= 1
-            marker_end = marker_start + len(marker)
-            result = result[:token_start] + "<SKILL_INSTRUCTIONS>" + result[marker_end:]
-    return result
-
-
-def _may_expose_skill_instructions(
-    command: str,
-    output: str,
-    activation_markers: set[str],
-    runtime_home: str,
-) -> bool:
-    """Detect direct and shell-expanded reads from an installed skill tree."""
-    normalized_command = command.replace("\\", "/")
-    normalized_output = output.replace("\\", "/")
-    combined = f"{normalized_command}\n{normalized_output}"
-    if any(marker in combined for marker in activation_markers):
-        return True
-
-    if not runtime_home or runtime_home not in combined:
-        return False
-
-    lowered_command = normalized_command.lower()
-    normalized_home = runtime_home.replace("\\", "/")
-    if "skill.md" in lowered_command or f"{normalized_home}/.agents/skills" in combined:
-        return True
-
-    return bool(
-        re.search(
-            r"\b(?:awk|cat|find|grep|head|less|more|perl|python\d*|rg|ruby|sed|tail|xargs)\b",
-            lowered_command,
-        )
-    )
-
-
-def _contains_instruction_excerpt(text: str, instructions: tuple[str, ...]) -> bool:
-    for instruction_text in instructions:
-        if instruction_text in text or (len(text) >= 80 and text in instruction_text):
-            return True
-        if any(
-            len(line.strip()) >= 40 and line.strip() in text
-            for line in instruction_text.splitlines()
-        ):
-            return True
-    return False
-
-
-def _redact_artifact_instructions(
-    artifact_delta: dict[str, Any], instructions: tuple[str, ...]
-) -> dict[str, Any]:
-    redacted = copy.deepcopy(artifact_delta)
-    for change_type in ("created", "modified", "deleted"):
-        for record in redacted.get(change_type, []):
-            text = record.get("text")
-            if isinstance(text, str) and _contains_instruction_excerpt(text, instructions):
-                record["text"] = "<REDACTED: artifact included skill instructions>"
-                record["text_redacted"] = True
-    return redacted
-
-
 class CodexRunner:
     """Run task and judge turns with a clean Codex home per invocation."""
+
+    id = "codex"
+    capabilities = HarnessCapabilities(
+        task_execution=True,
+        judgment_execution=True,
+        activation_evidence=True,
+        usage_telemetry=True,
+        structured_output=True,
+    )
 
     def __init__(
         self,
@@ -506,193 +430,105 @@ class CodexRunner:
 
     def run_task(
         self,
+        request: TaskRequest | None = None,
         *,
-        run_dir: Path,
-        workspace_template: Path | None,
-        prompt: str,
-        case_type: str,
-        case_id: str,
-        repeat: int,
-        condition: EvaluationCondition,
+        run_dir: Path | None = None,
+        workspace_template: Path | None = None,
+        prompt: str | None = None,
+        case_type: str | None = None,
+        case_id: str | None = None,
+        repeat: int | None = None,
+        condition: EvaluationCondition | None = None,
     ) -> dict[str, Any]:
+        if request is None:
+            if (
+                run_dir is None
+                or prompt is None
+                or case_type is None
+                or case_id is None
+                or repeat is None
+                or condition is None
+            ):
+                raise TypeError("run_task requires a TaskRequest or the complete legacy arguments")
+            request = TaskRequest(
+                run_dir=run_dir,
+                workspace_template=workspace_template,
+                prompt=prompt,
+                case_type=case_type,
+                case_id=case_id,
+                repeat=repeat,
+                condition=condition,
+            )
+        condition = request.condition
         configured_condition = next(
             (configured for configured in self.conditions if configured.id == condition.id),
             None,
         )
         if configured_condition != condition:
             raise EvalError("task condition must exactly match a configured evaluation condition")
-        run_dir.mkdir(parents=True, exist_ok=True)
-        workspace_root = Path(tempfile.mkdtemp(prefix="skill-eval-task-workspace-"))
-        workspace = workspace_root / "workspace"
-        preserved_workspace = run_dir / "workspace"
-        if preserved_workspace.exists():
-            shutil.rmtree(workspace_root, ignore_errors=True)
-            raise EvalError(f"Run workspace already exists: {preserved_workspace}")
-        try:
-            if workspace_template is None:
-                workspace.mkdir()
-            else:
-                shutil.copytree(workspace_template, workspace, symlinks=False)
-            before = snapshot_workspace(workspace)
-            executed = self._execute(
-                run_dir=run_dir,
+        executed = execute_in_workspace(
+            request,
+            lambda workspace: self._execute(
+                run_dir=request.run_dir,
                 workspace=workspace,
-                prompt=prompt,
+                prompt=request.prompt,
                 condition=condition,
-                sandbox="read-only" if case_type == "trigger" else self.sandbox,
+                sandbox="read-only" if request.case_type == "trigger" else self.sandbox,
                 model=self.model,
-            )
-            after = snapshot_workspace(workspace)
-            artifacts = workspace_delta(before, after)
-            git = git_observations(workspace)
-        finally:
-            if workspace.exists():
-                shutil.move(str(workspace), preserved_workspace)
-            shutil.rmtree(workspace_root, ignore_errors=True)
-        executed.update(
-            {
-                "case_type": case_type,
-                "case_id": case_id,
-                "repeat": repeat,
-                "condition": condition.id,
-                "workspace": str(preserved_workspace),
-                "execution_workspace": str(workspace),
-                "artifact_delta": artifacts,
-                "git": git,
-                "prompt_sha256": hashlib.sha256(prompt.encode()).hexdigest(),
-            }
+            ),
         )
-        json_dump(run_dir / "run.json", executed)
+        executed["evidence"] = self._evidence_bundle(executed)
+        json_dump(request.run_dir / "run.json", executed)
         return executed
 
     def _evidence_bundle(self, run: dict[str, Any]) -> dict[str, Any]:
-        events_text = Path(run["events_path"]).read_text(encoding="utf-8", errors="replace")
+        events_path = Path(str(run.get("events_path", "")))
+        events_text = (
+            events_path.read_text(encoding="utf-8", errors="replace")
+            if events_path.is_file()
+            else ""
+        )
         events, _errors = _load_events(events_text)
-        workspace = str(Path(run["workspace"]).resolve())
-        execution_workspace = str(Path(run.get("execution_workspace", run["workspace"])).resolve())
-        run_root = str(Path(execution_workspace).parent.resolve())
-        runtime_home = str(run.get("runtime_home", "")).replace("\\", "/")
-        replacements = {
-            workspace: "<WORKSPACE>",
-            execution_workspace: "<WORKSPACE>",
-            run_root: "<RUN_ROOT>",
-        }
-        if runtime_home:
-            replacements[runtime_home] = "<CODEX_HOME>"
         commands: list[dict[str, Any]] = []
-        activation_markers = {
-            f"{runtime_home}/.agents/skills/{name}/SKILL.md"
-            for name in self.runtime_skill_names
-            if runtime_home
-        }
         for event in events:
             if event.get("type") != "item.completed" or not isinstance(event.get("item"), dict):
                 continue
             item = event["item"]
             if item.get("type") != "command_execution":
                 continue
-            command = str(item.get("command", ""))
-            scrubbed_command = _redact_skill_paths(command, activation_markers)
-            raw_output = str(item.get("aggregated_output", ""))[-5000:]
-            command_includes_instructions = _contains_instruction_excerpt(
-                command, getattr(self, "runtime_instruction_texts", ())
-            )
-            read_skill = _may_expose_skill_instructions(
-                command, raw_output, activation_markers, runtime_home
-            ) or _contains_instruction_excerpt(
-                raw_output, getattr(self, "runtime_instruction_texts", ())
-            )
             commands.append(
                 {
-                    "command": (
-                        "<REDACTED: command included skill instructions>"
-                        if command_includes_instructions
-                        else _scrub(scrubbed_command, replacements)
-                    ),
+                    "command": item.get("command", ""),
                     "exit_code": item.get("exit_code"),
                     "status": item.get("status"),
-                    "output": (
-                        "<REDACTED: command output included skill instructions>"
-                        if read_skill
-                        else _scrub(raw_output, replacements)
-                    ),
+                    "output": item.get("aggregated_output", ""),
                 }
             )
-        final = _scrub(run.get("final_response", ""), replacements)
-        if _contains_instruction_excerpt(final, getattr(self, "runtime_instruction_texts", ())):
-            final = "<REDACTED: final response included skill instructions>"
-        return {
-            "status": run["status"],
-            "final_response": final[-20_000:],
-            "commands": commands[-40:],
-            "artifact_delta": _redact_artifact_instructions(
-                run["artifact_delta"],
-                getattr(self, "runtime_instruction_texts", ()),
-            ),
-            "git": run["git"],
-            "duration_seconds": run["duration_seconds"],
-            "usage": run["usage"],
-            "tool_calls": run["tool_calls"],
-        }
+        return build_evidence_bundle(
+            run,
+            commands=commands,
+            runtime_skill_names=getattr(self, "runtime_skill_names", set()),
+            runtime_instruction_texts=getattr(self, "runtime_instruction_texts", ()),
+            runtime_home_label="<CODEX_HOME>",
+        )
 
     @staticmethod
     def _judge_schema(labels: tuple[str, ...] = ("A", "B")) -> dict[str, Any]:
-        check = {
-            "type": "object",
-            "properties": {
-                "index": {"type": "integer", "minimum": 0},
-                "result": {"type": "string", "enum": ["pass", "fail", "unknown"]},
-                "confidence": {"type": "number", "minimum": 0, "maximum": 1},
-                "evidence": {"type": "string"},
-            },
-            "required": ["index", "result", "confidence", "evidence"],
-            "additionalProperties": False,
-        }
-        candidate = {
-            "type": "object",
-            "properties": {
-                "label": {"type": "string", "enum": list(labels)},
-                "checks": {"type": "array", "items": check},
-                "summary": {"type": "string"},
-                "strengths": {"type": "array", "items": {"type": "string"}},
-                "weaknesses": {"type": "array", "items": {"type": "string"}},
-            },
-            "required": ["label", "checks", "summary", "strengths", "weaknesses"],
-            "additionalProperties": False,
-        }
-        properties: dict[str, Any] = {
-            "candidates": {
-                "type": "array",
-                "items": candidate,
-                "minItems": len(labels),
-                "maxItems": len(labels),
-            },
-        }
-        required = ["candidates"]
-        if len(labels) == 2:
-            properties["comparison"] = {
-                "type": "object",
-                "properties": {
-                    "verdict": {
-                        "type": "string",
-                        "enum": ["A_better", "B_better", "tie", "insufficient"],
-                    },
-                    "rationale": {"type": "string"},
-                    "material_differences": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                    },
-                },
-                "required": ["verdict", "rationale", "material_differences"],
-                "additionalProperties": False,
-            }
-            required.append("comparison")
-        return {
-            "type": "object",
-            "properties": properties,
-            "required": required,
-            "additionalProperties": False,
-        }
+        return judgment_schema(labels)
+
+    def execute_judgment(self, request: JudgmentRequest) -> Mapping[str, Any]:
+        """Execute the Codex-specific structured-output turn only."""
+
+        return self._execute(
+            run_dir=request.run_dir,
+            workspace=request.workspace,
+            prompt=request.prompt,
+            condition=None,
+            sandbox="read-only",
+            model=self.judge_model,
+            output_schema=request.output_schema,
+            include_peers=False,
+        )
 
     def grade_pair(
         self,
@@ -705,164 +541,19 @@ class CodexRunner:
         condition_ids = tuple(condition.id for condition in self.conditions)
         if set(runs_by_condition) != set(condition_ids):
             raise EvalError("grading runs must match the configured conditions")
-        grade_dir.mkdir(parents=True, exist_ok=True)
-        workspace_root = Path(tempfile.mkdtemp(prefix="skill-eval-judge-workspace-"))
-        workspace = workspace_root / "workspace"
-        workspace.mkdir()
-        labels = tuple(chr(ord("A") + index) for index in range(len(condition_ids)))
-        if len(condition_ids) == 2:
-            flip = int(hashlib.sha256(f"{behavior_case.id}:{repeat}".encode()).hexdigest(), 16) % 2
-            blinded_ids = tuple(reversed(condition_ids)) if flip else condition_ids
-        else:
-            blinded_ids = tuple(
-                sorted(
-                    condition_ids,
-                    key=lambda condition_id: hashlib.sha256(
-                        f"{behavior_case.id}:{repeat}:{condition_id}".encode()
-                    ).digest(),
-                )
+        evidence_by_condition = {
+            condition_id: (
+                dict(run["evidence"])
+                if isinstance(run.get("evidence"), Mapping)
+                else self._evidence_bundle(run)
             )
-        blind_map = dict(zip(labels, blinded_ids, strict=True))
-        candidates = {
-            label: self._evidence_bundle(runs_by_condition[condition_id])
-            for label, condition_id in blind_map.items()
+            for condition_id, run in runs_by_condition.items()
         }
-
-        evidence = {
-            "task": behavior_case.prompt,
-            "expected_behavior": behavior_case.expected_behavior,
-            "checks": [
-                {"index": index, **check.as_dict()}
-                for index, check in enumerate(behavior_case.checks)
-            ],
-            "candidates": candidates,
-            "grading_policy": {
-                "pass": "Concrete transcript or artifact evidence proves the check",
-                "fail": "Evidence contradicts the check or proves it was not satisfied",
-                "unknown": "Available evidence is insufficient; never assume success",
-            },
-            "integrity": {
-                "condition_identities_withheld": True,
-                "labels_randomized": True,
-            },
-        }
-        evidence_path = workspace / "evidence.json"
-        schema_path = workspace / "schema.json"
-        try:
-            json_dump(evidence_path, evidence)
-            json_dump(schema_path, self._judge_schema(labels))
-            label_text = ", ".join(labels)
-            prompt = (
-                "Act as an evidence-bound, condition-blind evaluator. Read evidence.json. "
-                f"Grade candidates {label_text} independently against every numbered check, using "
-                "the same standard. Do not reward verbosity, claims of skill use, or plausible "
-                "intent. A check passes only when the supplied transcript, Git state, or artifact "
-                "evidence proves it. Use unknown when evidence is insufficient. "
-                + (
-                    "Then compare material task quality. "
-                    if len(labels) == 2
-                    else "Do not infer or name the hidden evaluation conditions. "
-                )
-                + "Return only the required structured result."
-            )
-            executed = self._execute(
-                run_dir=grade_dir,
-                workspace=workspace,
-                prompt=prompt,
-                condition=None,
-                sandbox="read-only",
-                model=self.judge_model,
-                output_schema=schema_path,
-                include_peers=False,
-            )
-        finally:
-            shutil.rmtree(workspace_root, ignore_errors=True)
-        judgment: dict[str, Any] | None = None
-        parse_error: str | None = None
-        if executed["status"] == "completed":
-            try:
-                parsed = json.loads(executed["final_response"])
-                if not isinstance(parsed, dict):
-                    raise ValueError("judgment was not an object")
-                judgment = parsed
-            except (json.JSONDecodeError, ValueError) as exc:
-                parse_error = str(exc)
-
-        mapped_grades: dict[str, list[dict[str, Any]]] = {
-            condition.id: [] for condition in self.conditions
-        }
-        validation_errors: list[str] = []
-        if judgment is not None:
-            by_label = {
-                item.get("label"): item
-                for item in judgment.get("candidates", [])
-                if isinstance(item, dict)
-            }
-            for label, condition in blind_map.items():
-                candidate = by_label.get(label)
-                if not isinstance(candidate, dict):
-                    validation_errors.append(f"Missing candidate {label}")
-                    continue
-                raw_checks = candidate.get("checks", [])
-                indexed = {
-                    item.get("index"): item
-                    for item in raw_checks
-                    if isinstance(item, dict) and isinstance(item.get("index"), int)
-                }
-                for index, check in enumerate(behavior_case.checks):
-                    item = indexed.get(index)
-                    if item is None:
-                        validation_errors.append(f"Candidate {label} missing check {index}")
-                        mapped_grades[condition].append(
-                            {
-                                "index": index,
-                                "check_id": check.id,
-                                "check": check.text,
-                                "class": check.check_class,
-                                "gate": check.gate,
-                                "passed": None,
-                                "confidence": 0,
-                                "evidence": "Judge omitted this check",
-                            }
-                        )
-                        continue
-                    outcome = item.get("result")
-                    mapped_grades[condition].append(
-                        {
-                            "index": index,
-                            "check_id": check.id,
-                            "check": check.text,
-                            "class": check.check_class,
-                            "gate": check.gate,
-                            "passed": True
-                            if outcome == "pass"
-                            else False
-                            if outcome == "fail"
-                            else None,
-                            "confidence": item.get("confidence", 0),
-                            "evidence": item.get("evidence", ""),
-                        }
-                    )
-
-        status = (
-            "completed"
-            if executed["status"] == "completed" and judgment is not None and not validation_errors
-            else "invalid"
-            if executed["status"] == "completed"
-            else executed["status"]
+        return grade_behavior(
+            self,
+            conditions=self.conditions,
+            grade_dir=grade_dir,
+            behavior_case=behavior_case,
+            repeat=repeat,
+            evidence_by_condition=evidence_by_condition,
         )
-        result = {
-            "status": status,
-            "blind_map": blind_map,
-            "grades": mapped_grades,
-            "judgment": judgment,
-            "comparison": judgment.get("comparison") if judgment else None,
-            "parse_error": parse_error,
-            "validation_errors": validation_errors,
-            "duration_seconds": executed["duration_seconds"],
-            "usage": executed["usage"],
-            "events_path": executed["events_path"],
-            "stderr_path": executed["stderr_path"],
-        }
-        json_dump(grade_dir / "grading.json", result)
-        return result

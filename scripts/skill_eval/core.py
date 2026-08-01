@@ -1897,14 +1897,13 @@ def summarize_trigger_results(
     for case in cases:
         case_runs = [run for run in runs if run["case_id"] == case.id]
         completed = [run for run in case_runs if run["status"] == "completed"]
-        activations = sum(bool(run.get("activated")) for run in completed)
-        rate = _rate(activations, len(completed))
+        known_activation = [run for run in completed if isinstance(run.get("activated"), bool)]
+        activations = sum(run["activated"] is True for run in known_activation)
+        rate = _rate(activations, len(known_activation))
         predicted = rate is not None and rate >= threshold
         passed = predicted == case.should_trigger if rate is not None else False
-        successful_runs += sum(
-            bool(run.get("activated")) == case.should_trigger for run in completed
-        )
-        total_runs += len(completed)
+        successful_runs += sum(run["activated"] == case.should_trigger for run in known_activation)
+        total_runs += len(known_activation)
         if rate is not None:
             if case.should_trigger and predicted:
                 tp += 1
@@ -1920,8 +1919,9 @@ def summarize_trigger_results(
                 "query": case.query,
                 "expected": case.should_trigger,
                 "activation_rate": rate,
-                "activation_interval_95": wilson_interval(activations, len(completed)),
+                "activation_interval_95": wilson_interval(activations, len(known_activation)),
                 "completed_runs": len(completed),
+                "known_activation_runs": len(known_activation),
                 "total_runs": len(case_runs),
                 "predicted": predicted if rate is not None else None,
                 "passed": passed,
@@ -2111,6 +2111,15 @@ def summarize_behavior_results(
                 values.append(value)
             return values or None
 
+        def tool_call_values() -> list[int] | None:
+            values: list[int] = []
+            for run in completed:
+                value = run.get("tool_calls")
+                if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+                    return None
+                values.append(value)
+            return values or None
+
         input_values = usage_values("input_tokens")
         output_values = usage_values("output_tokens")
         total_values = (
@@ -2121,6 +2130,7 @@ def summarize_behavior_results(
             if input_values is not None and output_values is not None
             else None
         )
+        tool_calls = tool_call_values()
         return {
             "completed_runs": len(completed),
             "failed_runs": len(runs) - len(completed),
@@ -2130,11 +2140,13 @@ def summarize_behavior_results(
             "output_tokens": sum(output_values) if output_values is not None else None,
             "total_tokens": sum(total_values) if total_values is not None else None,
             "median_tokens": statistics.median(total_values) if total_values is not None else None,
-            "tool_calls": sum(int(run.get("tool_calls", 0)) for run in completed),
+            "tool_calls": sum(tool_calls) if tool_calls is not None else None,
         }
 
-    activation_completed = [
-        run for run in runs_by_condition[primary.id] if run["status"] == "completed"
+    activation_known = [
+        run
+        for run in runs_by_condition[primary.id]
+        if run["status"] == "completed" and isinstance(run.get("activated"), bool)
     ]
     summary = {
         **counts,
@@ -2154,8 +2166,8 @@ def summarize_behavior_results(
             "graded_cases": graded_cases,
         },
         "behavior_activation_rate": _rate(
-            sum(bool(run.get("activated")) for run in activation_completed),
-            len(activation_completed),
+            sum(run["activated"] is True for run in activation_known),
+            len(activation_known),
         ),
         "efficiency": {
             condition.id: efficiency(runs_by_condition[condition.id]) for condition in conditions
