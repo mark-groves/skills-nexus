@@ -25,11 +25,13 @@ from skill_eval.core import (
     stable_digest,
 )
 
-PROFILE_SCHEMA_VERSION = 1
+PROFILE_SCHEMA_VERSION = 2
+PROFILE_SCHEMA_VERSIONS = frozenset({1, 2})
 CASE_GROUP_SCHEMA_VERSION = 1
 ROUTINE_SCREEN_SCHEMA_VERSION = 1
-DURABLE_SUMMARY_SCHEMA_VERSION = 1
-ORCHESTRATOR_VERSION = "capability-review-v1"
+DURABLE_SUMMARY_SCHEMA_VERSION = 2
+CAPABILITY_REVIEW_SCHEMA_VERSION = 2
+ORCHESTRATOR_VERSION = "capability-review-v2"
 ROUTINE_ORCHESTRATOR_VERSION = "routine-screen-v1"
 HARNESS_CONTRACT_VERSION = 1
 JUDGE_PROTOCOL = "skill-eval-candidate-v3-condition-blind"
@@ -84,10 +86,17 @@ DISPOSITIONS = frozenset(
 
 EvaluationRunner = Callable[[argparse.Namespace], tuple[dict[str, Any], Path]]
 
+# Profile planning recognizes the adapters delivered by this integration stack
+# without importing or constructing their runtime implementations. The Cursor
+# runtime adapters are added by later issues; schema validation must still be
+# able to describe their cells without requiring binaries or credentials.
+PROFILE_TASK_ADAPTERS = frozenset({"codex", "cursor"})
+PROFILE_JUDGE_ADAPTERS = frozenset({"codex", "cursor"})
+
 
 @dataclass(frozen=True, order=True)
 class AdapterFingerprint:
-    """Exact task and judge adapter identity retained across review cells."""
+    """Exact task and judge adapter identity for one review cell."""
 
     task_adapter: str
     task_adapter_version: str
@@ -174,15 +183,42 @@ def _pinned_identifier(value: object, *, location: str) -> str:
     return result
 
 
+def _adapter_id(value: object, *, role: str, location: str) -> str:
+    """Validate a profile adapter without constructing a runtime harness."""
+    available = PROFILE_TASK_ADAPTERS if role == "task" else PROFILE_JUDGE_ADAPTERS
+    if not isinstance(value, str) or value not in available:
+        raise EvalError(
+            f"Unknown {role} adapter {value!r} at {location}. Available {role} "
+            f"adapters: {', '.join(sorted(available))}"
+        )
+    return value
+
+
+def _pinned_model(value: object, *, adapter: str, location: str) -> str:
+    """Reject mutable model selectors before any harness is constructed."""
+    result = _pinned_identifier(value, location=location)
+    if adapter == "cursor" and result.casefold() == "auto":
+        raise EvalError(
+            f"{location} must pin an exact identifier; mutable Cursor Auto is not allowed"
+        )
+    return result
+
+
 @dataclass(frozen=True)
 class JudgePolicy:
     id: str
+    adapter: str
     model: str
     protocol: str
 
     def as_dict(self) -> dict[str, str]:
         """Return the normalized contract representation."""
-        return {"id": self.id, "model": self.model, "protocol": self.protocol}
+        return {
+            "id": self.id,
+            "adapter": self.adapter,
+            "model": self.model,
+            "protocol": self.protocol,
+        }
 
 
 @dataclass(frozen=True)
@@ -190,7 +226,6 @@ class ModelProfile:
     id: str
     adapter: str
     model: str
-    judge_model: str
     required: bool
 
     @property
@@ -204,7 +239,6 @@ class ModelProfile:
             "id": self.id,
             "adapter": self.adapter,
             "model": self.model,
-            "judge_model": self.judge_model,
             "required": self.required,
         }
 
@@ -212,6 +246,7 @@ class ModelProfile:
 @dataclass(frozen=True)
 class ProfileContract:
     schema_version: int
+    source_schema_version: int
     judge_policy: JudgePolicy
     profiles: tuple[ModelProfile, ...]
     digest_sha256: str
@@ -226,25 +261,41 @@ class ProfileContract:
 
 
 def load_profile_contract(path: Path) -> ProfileContract:
-    """Load the versioned repository model-profile contract."""
+    """Load v2 or normalize a legacy v1 model-profile contract to canonical v2."""
     payload = _object(_load_json(path, label="model profile contract"), location=str(path))
     _exact_keys(payload, {"schema_version", "judge_policy", "profiles"}, location=str(path))
-    if payload["schema_version"] != PROFILE_SCHEMA_VERSION:
+    source_schema_version = payload["schema_version"]
+    if source_schema_version not in PROFILE_SCHEMA_VERSIONS:
         raise EvalError(
-            f"{path}.schema_version must be {PROFILE_SCHEMA_VERSION}, "
-            f"found {payload['schema_version']!r}"
+            f"{path}.schema_version must be one of {sorted(PROFILE_SCHEMA_VERSIONS)}, "
+            f"found {source_schema_version!r}"
         )
 
     policy_payload = _object(payload["judge_policy"], location=f"{path}.judge_policy")
     _exact_keys(
         policy_payload,
-        {"id", "model", "protocol"},
+        (
+            {"id", "model", "protocol"}
+            if source_schema_version == 1
+            else {"id", "adapter", "model", "protocol"}
+        ),
         location=f"{path}.judge_policy",
+    )
+    judge_adapter = (
+        "codex"
+        if source_schema_version == 1
+        else _adapter_id(
+            policy_payload["adapter"],
+            role="judge",
+            location=f"{path}.judge_policy.adapter",
+        )
     )
     policy = JudgePolicy(
         id=_safe_id(policy_payload["id"], location=f"{path}.judge_policy.id"),
-        model=_pinned_identifier(
+        adapter=judge_adapter,
+        model=_pinned_model(
             policy_payload["model"],
+            adapter=judge_adapter,
             location=f"{path}.judge_policy.model",
         ),
         protocol=_pinned_identifier(
@@ -253,9 +304,7 @@ def load_profile_contract(path: Path) -> ProfileContract:
         ),
     )
     if policy.protocol != JUDGE_PROTOCOL:
-        raise EvalError(
-            f"{path}.judge_policy.protocol must be {JUDGE_PROTOCOL!r} for profile schema v1"
-        )
+        raise EvalError(f"{path}.judge_policy.protocol must be {JUDGE_PROTOCOL!r}")
 
     supplied_profiles = payload["profiles"]
     if not isinstance(supplied_profiles, list) or not supplied_profiles:
@@ -270,34 +319,49 @@ def load_profile_contract(path: Path) -> ProfileContract:
         item = _object(supplied, location=location)
         _exact_keys(
             item,
-            {"id", "adapter", "model", "judge_model", "required"},
+            (
+                {"id", "adapter", "model", "judge_model", "required"}
+                if source_schema_version == 1
+                else {"id", "adapter", "model", "required"}
+            ),
             location=location,
         )
         profile_id = _safe_id(item["id"], location=f"{location}.id")
         if profile_id in seen:
             raise EvalError(f"Duplicate model profile id in {path}: {profile_id}")
         seen.add(profile_id)
-        if item["adapter"] != "codex":
+        if source_schema_version == 1 and item["adapter"] != "codex":
             raise EvalError(
                 f"{location}.adapter must be 'codex' in profile schema v1, "
                 f"found {item['adapter']!r}"
             )
+        task_adapter = _adapter_id(
+            item["adapter"],
+            role="task",
+            location=f"{location}.adapter",
+        )
         if not isinstance(item["required"], bool):
             raise EvalError(f"{location}.required must be boolean")
+        if source_schema_version == 1:
+            legacy_judge_model = _pinned_model(
+                item["judge_model"],
+                adapter="codex",
+                location=f"{location}.judge_model",
+            )
+            if legacy_judge_model != policy.model:
+                raise EvalError(
+                    f"{location}.judge_model must match pinned judge_policy.model {policy.model!r}"
+                )
         profile = ModelProfile(
             id=profile_id,
-            adapter="codex",
-            model=_pinned_identifier(item["model"], location=f"{location}.model"),
-            judge_model=_pinned_identifier(
-                item["judge_model"],
-                location=f"{location}.judge_model",
+            adapter=task_adapter,
+            model=_pinned_model(
+                item["model"],
+                adapter=task_adapter,
+                location=f"{location}.model",
             ),
             required=item["required"],
         )
-        if profile.judge_model != policy.model:
-            raise EvalError(
-                f"{location}.judge_model must match pinned judge_policy.model {policy.model!r}"
-            )
         profiles.append(profile)
 
     if not any(profile.required for profile in profiles):
@@ -310,6 +374,7 @@ def load_profile_contract(path: Path) -> ProfileContract:
     }
     return ProfileContract(
         schema_version=PROFILE_SCHEMA_VERSION,
+        source_schema_version=source_schema_version,
         judge_policy=policy,
         profiles=tuple(profiles),
         digest_sha256=canonical_digest(normalized),
@@ -739,6 +804,26 @@ def _case_groups_digest(groups: tuple[CaseGroup, ...]) -> str:
     )
 
 
+def _harness_manifest_digests(
+    repo_root: Path,
+    profiles: tuple[ModelProfile, ...],
+    judge_policy: JudgePolicy,
+) -> tuple[dict[str, str], str]:
+    """Pin every selected task manifest and the global judge manifest."""
+    task_digests: dict[str, str] = {}
+    for adapter in sorted({profile.adapter for profile in profiles}):
+        path = repo_root / "harnesses" / f"{adapter}.json"
+        if not path.is_file():
+            raise EvalError(f"Missing task harness manifest for adapter {adapter!r}: {path}")
+        task_digests[adapter] = stable_digest(path)
+    judge_path = repo_root / "harnesses" / f"{judge_policy.adapter}.json"
+    if not judge_path.is_file():
+        raise EvalError(
+            f"Missing judge harness manifest for adapter {judge_policy.adapter!r}: {judge_path}"
+        )
+    return task_digests, stable_digest(judge_path)
+
+
 def _safe_subset(value: object, keys: tuple[str, ...]) -> dict[str, Any]:
     """Copy only allowlisted keys from an optional mapping."""
     payload = value if isinstance(value, dict) else {}
@@ -857,8 +942,11 @@ def _cell_summary(
     result: dict[str, Any],
     *,
     profile: ModelProfile,
+    judge_policy: JudgePolicy,
     universe: str,
     adapter_fingerprint: AdapterFingerprint,
+    task_manifest_digest: str,
+    judge_manifest_digest: str,
     groups: tuple[CaseGroup, ...],
     trigger_repeats: int,
     behavior_repeats: int,
@@ -874,6 +962,8 @@ def _cell_summary(
     candidate_trigger = (
         candidate_trigger_payload if isinstance(candidate_trigger_payload, dict) else {}
     )
+    runtime_payload = result.get("runtime")
+    runtime = runtime_payload if isinstance(runtime_payload, dict) else {}
     context_payload = result.get("context_footprint")
     context = context_payload if isinstance(context_payload, dict) else {}
     comparison = result.get("candidate_comparison")
@@ -898,8 +988,19 @@ def _cell_summary(
         "profile_id": profile.id,
         "profile_role": profile.role,
         "universe": universe,
+        "task_adapter": adapter_fingerprint.task_adapter,
+        "task_model_requested": profile.model,
+        "task_model_reported": runtime.get("task_model_reported"),
+        "task_harness_version": adapter_fingerprint.task_adapter_version,
+        "task_manifest_digest_sha256": task_manifest_digest,
+        "judge_adapter": adapter_fingerprint.judge_adapter,
+        "judge_model_requested": judge_policy.model,
+        "judge_model_reported": runtime.get("judge_model_reported"),
+        "judge_harness_version": adapter_fingerprint.judge_adapter_version,
+        "judge_manifest_digest_sha256": judge_manifest_digest,
+        # Compatibility aliases for schema-v1 durable-summary readers.
         "task_model": profile.model,
-        "judge_model": profile.judge_model,
+        "judge_model": judge_policy.model,
         "adapter_fingerprint": adapter_fingerprint.as_dict(),
         "runner_version": adapter_fingerprint.task_adapter_version,
         "verdict": (
@@ -938,6 +1039,7 @@ def _validate_result(
     result: dict[str, Any],
     *,
     profile: ModelProfile,
+    judge_policy: JudgePolicy,
     universe: str,
     current_digest: str,
     candidate_digest: str,
@@ -971,9 +1073,13 @@ def _validate_result(
             eval_spec_digest,
         ),
         ("task adapter", runtime.get("task_adapter"), profile.adapter),
-        ("judge adapter", runtime.get("judge_adapter"), profile.adapter),
-        ("task model", runtime.get("model"), profile.model),
-        ("judge model", runtime.get("judge_model"), profile.judge_model),
+        ("judge adapter", runtime.get("judge_adapter"), judge_policy.adapter),
+        ("requested task model", runtime.get("task_model_requested"), profile.model),
+        ("reported task model", runtime.get("task_model_reported"), profile.model),
+        ("requested judge model", runtime.get("judge_model_requested"), judge_policy.model),
+        ("reported judge model", runtime.get("judge_model_reported"), judge_policy.model),
+        ("task model compatibility alias", runtime.get("model"), profile.model),
+        ("judge model compatibility alias", runtime.get("judge_model"), judge_policy.model),
         ("skill universe", runtime.get("skill_universe"), universe),
     )
     for label, observed, expected in checks:
@@ -1036,7 +1142,7 @@ def _validate_result(
     return AdapterFingerprint(
         task_adapter=profile.adapter,
         task_adapter_version=task_version,
-        judge_adapter=profile.adapter,
+        judge_adapter=judge_policy.adapter,
         judge_adapter_version=judge_version,
     )
 
@@ -1076,11 +1182,11 @@ def _build_eval_args(
         "--task-adapter",
         profile.adapter,
         "--judge-adapter",
-        profile.adapter,
+        config.contract.judge_policy.adapter,
         "--model",
         profile.model,
         "--judge-model",
-        profile.judge_model,
+        config.contract.judge_policy.model,
         "--codex-binary",
         config.codex_binary,
         "--skill-universe",
@@ -1200,8 +1306,8 @@ def _assert_pinned_sources(
     current_digest: str,
     candidate_digest: str,
     eval_digest: str,
-    harness_path: Path,
-    harness_digest: str,
+    task_manifest_digests: dict[str, str],
+    judge_manifest_digest: str,
     groups_digest: str,
 ) -> None:
     """Reject material input drift between matrix cells."""
@@ -1218,7 +1324,6 @@ def _assert_pinned_sources(
             spec.path.parent,
             exclude=EVAL_DIGEST_EXCLUDED_NAMES,
         ),
-        "Codex harness manifest": stable_digest(harness_path),
         "model profile contract": load_profile_contract(config.profile_source).digest_sha256,
         "case group definition": _case_groups_digest(
             load_case_groups(config.case_group_source, spec)
@@ -1228,7 +1333,6 @@ def _assert_pinned_sources(
         "Current runtime package": current_digest,
         "Candidate runtime package": candidate_digest,
         "evaluation bundle": eval_digest,
-        "Codex harness manifest": harness_digest,
         "model profile contract": config.contract.digest_sha256,
         "case group definition": groups_digest,
     }
@@ -1238,6 +1342,21 @@ def _assert_pinned_sources(
                 f"{label} changed during the capability review: "
                 f"expected {expected[label]}, observed {observed_digest}"
             )
+    observed_task_digests, observed_judge_digest = _harness_manifest_digests(
+        config.repo_root.resolve(),
+        config.profiles,
+        config.contract.judge_policy,
+    )
+    if observed_task_digests != task_manifest_digests:
+        raise EvalError(
+            "Task harness manifests changed during the capability review: "
+            f"expected {task_manifest_digests}, observed {observed_task_digests}"
+        )
+    if observed_judge_digest != judge_manifest_digest:
+        raise EvalError(
+            "Judge harness manifest changed during the capability review: "
+            f"expected {judge_manifest_digest}, observed {observed_judge_digest}"
+        )
 
 
 def run_capability_review(
@@ -1266,10 +1385,11 @@ def run_capability_review(
     groups_digest = _case_groups_digest(config.case_groups)
     judge_policy = _review_policy_payload(spec, config.contract)
     judge_policy_digest = canonical_digest(judge_policy)
-    harness_path = repo_root / "harnesses" / "codex.json"
-    if not harness_path.is_file():
-        raise EvalError(f"Missing Codex harness manifest: {harness_path}")
-    harness_digest = stable_digest(harness_path)
+    task_manifest_digests, judge_manifest_digest = _harness_manifest_digests(
+        repo_root,
+        config.profiles,
+        config.contract.judge_policy,
+    )
 
     _verify_expected(
         "--expected-current-digest",
@@ -1302,7 +1422,14 @@ def run_capability_review(
         "profiles_digest_sha256": config.contract.digest_sha256,
         "case_groups_digest_sha256": groups_digest,
         "judge_policy_digest_sha256": judge_policy_digest,
-        "harness_manifest_digest_sha256": harness_digest,
+        "task_harness_manifest_digests_sha256": task_manifest_digests,
+        "judge_harness_manifest_digest_sha256": judge_manifest_digest,
+        "harness_manifest_digest_sha256": (
+            task_manifest_digests.get("codex")
+            if set(task_manifest_digests) == {"codex"}
+            and config.contract.judge_policy.adapter == "codex"
+            else None
+        ),
         "profiles": [profile.id for profile in config.profiles],
         "universes": list(config.universes),
         "trigger_repeats": config.trigger_repeats,
@@ -1319,7 +1446,7 @@ def run_capability_review(
     local_root.mkdir(parents=True)
 
     local_manifest: dict[str, Any] = {
-        "schema_version": 1,
+        "schema_version": CAPABILITY_REVIEW_SCHEMA_VERSION,
         "orchestrator_version": ORCHESTRATOR_VERSION,
         "status": "running",
         "started_at": timestamp.isoformat(),
@@ -1340,7 +1467,8 @@ def run_capability_review(
     _write_json(local_root / "review.json", local_manifest)
 
     cells: list[dict[str, Any]] = []
-    adapter_fingerprint: AdapterFingerprint | None = None
+    task_versions: dict[str, str] = {}
+    judge_version: str | None = None
     try:
         for profile in config.profiles:
             for universe in config.universes:
@@ -1352,8 +1480,8 @@ def run_capability_review(
                     current_digest=current_digest,
                     candidate_digest=candidate_digest,
                     eval_digest=eval_digest,
-                    harness_path=harness_path,
-                    harness_digest=harness_digest,
+                    task_manifest_digests=task_manifest_digests,
+                    judge_manifest_digest=judge_manifest_digest,
                     groups_digest=groups_digest,
                 )
                 cell_root = local_root / "profiles" / profile.id / universe
@@ -1379,24 +1507,39 @@ def run_capability_review(
                 observed_fingerprint = _validate_result(
                     result,
                     profile=profile,
+                    judge_policy=config.contract.judge_policy,
                     universe=universe,
                     current_digest=current_digest,
                     candidate_digest=candidate_digest,
                     eval_spec_digest=eval_spec_digest,
                 )
-                if adapter_fingerprint is None:
-                    adapter_fingerprint = observed_fingerprint
-                elif adapter_fingerprint != observed_fingerprint:
+                observed_task_version = observed_fingerprint.task_adapter_version
+                prior_task_version = task_versions.setdefault(
+                    profile.adapter,
+                    observed_task_version,
+                )
+                if prior_task_version != observed_task_version:
                     raise EvalError(
-                        "Adapter fingerprint changed during the capability review: "
-                        f"{adapter_fingerprint.as_dict()!r} then "
-                        f"{observed_fingerprint.as_dict()!r}"
+                        f"Task harness version for {profile.adapter!r} changed during the "
+                        f"capability review: {prior_task_version!r} then "
+                        f"{observed_task_version!r}"
+                    )
+                observed_judge_version = observed_fingerprint.judge_adapter_version
+                if judge_version is None:
+                    judge_version = observed_judge_version
+                elif judge_version != observed_judge_version:
+                    raise EvalError(
+                        "Judge harness version changed during the capability review: "
+                        f"{judge_version!r} then {observed_judge_version!r}"
                     )
                 cell = _cell_summary(
                     result,
                     profile=profile,
+                    judge_policy=config.contract.judge_policy,
                     universe=universe,
                     adapter_fingerprint=observed_fingerprint,
+                    task_manifest_digest=task_manifest_digests[profile.adapter],
+                    judge_manifest_digest=judge_manifest_digest,
                     groups=config.case_groups,
                     trigger_repeats=config.trigger_repeats,
                     behavior_repeats=config.behavior_repeats,
@@ -1421,8 +1564,8 @@ def run_capability_review(
             current_digest=current_digest,
             candidate_digest=candidate_digest,
             eval_digest=eval_digest,
-            harness_path=harness_path,
-            harness_digest=harness_digest,
+            task_manifest_digests=task_manifest_digests,
+            judge_manifest_digest=judge_manifest_digest,
             groups_digest=groups_digest,
         )
     except Exception as exc:
@@ -1434,40 +1577,33 @@ def run_capability_review(
     aggregate = _aggregate_profiles(config.profiles, cells, groups=config.case_groups)
     local_manifest["status"] = "completed"
     local_manifest["completed_at"] = datetime.now(UTC).isoformat()
-    local_manifest["adapter_fingerprint"] = (
-        adapter_fingerprint.as_dict() if adapter_fingerprint is not None else None
-    )
-    local_manifest["runner_version"] = (
-        adapter_fingerprint.task_adapter_version if adapter_fingerprint is not None else None
-    )
+    local_manifest["task_harness_versions"] = task_versions
+    local_manifest["judge_harness_version"] = judge_version
     local_manifest["aggregate"] = aggregate
     _write_json(local_root / "review.json", local_manifest)
 
     review = {
-        "schema_version": 1,
+        "schema_version": CAPABILITY_REVIEW_SCHEMA_VERSION,
         "orchestrator_version": ORCHESTRATOR_VERSION,
         "local_review_id": local_root.name,
         "pinned_inputs": {
             **pinned_inputs,
             "judge_policy": judge_policy,
         },
-        "runner": {
-            "adapter": adapter_fingerprint.task_adapter
-            if adapter_fingerprint is not None
-            else None,
-            "version": (
-                adapter_fingerprint.task_adapter_version
-                if adapter_fingerprint is not None
-                else None
-            ),
-        },
-        "adapter_fingerprint": (
-            adapter_fingerprint.as_dict() if adapter_fingerprint is not None else None
-        ),
-        "harness": {
-            "id": "codex",
+        "task_harnesses": [
+            {
+                "adapter": adapter,
+                "version": task_versions.get(adapter),
+                "contract_version": HARNESS_CONTRACT_VERSION,
+                "manifest_digest_sha256": digest,
+            }
+            for adapter, digest in sorted(task_manifest_digests.items())
+        ],
+        "judge_harness": {
+            "adapter": config.contract.judge_policy.adapter,
+            "version": judge_version,
             "contract_version": HARNESS_CONTRACT_VERSION,
-            "manifest_digest_sha256": harness_digest,
+            "manifest_digest_sha256": judge_manifest_digest,
         },
         "profiles": [
             {
@@ -1475,7 +1611,8 @@ def run_capability_review(
                 "role": profile.role,
                 "adapter": profile.adapter,
                 "task_model": profile.model,
-                "judge_model": profile.judge_model,
+                "judge_adapter": config.contract.judge_policy.adapter,
+                "judge_model": config.contract.judge_policy.model,
             }
             for profile in config.profiles
         ],
@@ -1665,10 +1802,11 @@ def run_routine_screen(
     )
     groups_digest = _case_groups_digest(review_config.case_groups)
     judge_policy_digest = canonical_digest(_review_policy_payload(spec, review_config.contract))
-    harness_path = repo_root / "harnesses" / "codex.json"
-    if not harness_path.is_file():
-        raise EvalError(f"Missing Codex harness manifest: {harness_path}")
-    harness_digest = stable_digest(harness_path)
+    task_manifest_digests, judge_manifest_digest = _harness_manifest_digests(
+        repo_root,
+        review_config.profiles,
+        review_config.contract.judge_policy,
+    )
     current_discovery = canonical_discovery_inputs(skill_dir)
     candidate_discovery = canonical_discovery_inputs(candidate_dir)
     changed_fields = [
@@ -1726,7 +1864,14 @@ def run_routine_screen(
         "case_groups_digest_sha256": groups_digest,
         "routine_contract_digest_sha256": config.contract.digest_sha256,
         "judge_policy_digest_sha256": judge_policy_digest,
-        "harness_manifest_digest_sha256": harness_digest,
+        "task_harness_manifest_digests_sha256": task_manifest_digests,
+        "judge_harness_manifest_digest_sha256": judge_manifest_digest,
+        "harness_manifest_digest_sha256": (
+            task_manifest_digests.get("codex")
+            if set(task_manifest_digests) == {"codex"}
+            and review_config.contract.judge_policy.adapter == "codex"
+            else None
+        ),
         "profiles": [profile.id for profile in review_config.profiles],
         "universes": ["repository", "isolated"],
         "trigger_repeats": 1,
@@ -1772,8 +1917,8 @@ def run_routine_screen(
             current_digest=current_digest,
             candidate_digest=candidate_digest,
             eval_digest=eval_digest,
-            harness_path=harness_path,
-            harness_digest=harness_digest,
+            task_manifest_digests=task_manifest_digests,
+            judge_manifest_digest=judge_manifest_digest,
             groups_digest=groups_digest,
         )
         observed_contract = load_routine_screen_contract(
@@ -1809,6 +1954,7 @@ def run_routine_screen(
         adapter_fingerprint = _validate_result(
             result,
             profile=profile,
+            judge_policy=review_config.contract.judge_policy,
             universe=universe,
             current_digest=current_digest,
             candidate_digest=candidate_digest,
@@ -1822,8 +1968,11 @@ def run_routine_screen(
         cell = _cell_summary(
             result,
             profile=profile,
+            judge_policy=review_config.contract.judge_policy,
             universe=universe,
             adapter_fingerprint=adapter_fingerprint,
+            task_manifest_digest=task_manifest_digests[profile.adapter],
+            judge_manifest_digest=judge_manifest_digest,
             groups=routine_groups,
             trigger_repeats=1,
             behavior_repeats=1,
@@ -1840,7 +1989,8 @@ def run_routine_screen(
 
     cells: list[dict[str, Any]] = []
     cell_errors: list[dict[str, str]] = []
-    adapter_fingerprints: set[AdapterFingerprint] = set()
+    task_versions: dict[str, set[str]] = {}
+    judge_versions: set[str] = set()
     futures: dict[
         concurrent.futures.Future[tuple[dict[str, Any], dict[str, Any], AdapterFingerprint]],
         tuple[ModelProfile, str],
@@ -1869,16 +2019,31 @@ def run_routine_screen(
                     )
                     continue
                 cells.append(cell)
-                adapter_fingerprints.add(adapter_fingerprint)
+                task_versions.setdefault(profile.adapter, set()).add(
+                    adapter_fingerprint.task_adapter_version
+                )
+                judge_versions.add(adapter_fingerprint.judge_adapter_version)
                 local_manifest["cells"].append(manifest_cell)
                 _write_json(local_root / "review.json", local_manifest)
 
-        if len(adapter_fingerprints) > 1:
+        changed_task_versions = {
+            adapter: versions for adapter, versions in task_versions.items() if len(versions) > 1
+        }
+        if changed_task_versions:
             raise EvalError(
-                "Adapter fingerprint changed during the routine screen: "
-                + ", ".join(
-                    repr(fingerprint.as_dict()) for fingerprint in sorted(adapter_fingerprints)
+                "Task harness version changed during the routine screen: "
+                + json.dumps(
+                    {
+                        adapter: sorted(versions)
+                        for adapter, versions in changed_task_versions.items()
+                    },
+                    sort_keys=True,
                 )
+            )
+        if len(judge_versions) > 1:
+            raise EvalError(
+                "Judge harness version changed during the routine screen: "
+                + ", ".join(sorted(judge_versions))
             )
         _assert_pinned_sources(
             review_config,
@@ -1888,8 +2053,8 @@ def run_routine_screen(
             current_digest=current_digest,
             candidate_digest=candidate_digest,
             eval_digest=eval_digest,
-            harness_path=harness_path,
-            harness_digest=harness_digest,
+            task_manifest_digests=task_manifest_digests,
+            judge_manifest_digest=judge_manifest_digest,
             groups_digest=groups_digest,
         )
     except Exception as exc:
@@ -1906,13 +2071,10 @@ def run_routine_screen(
     )
     local_manifest["status"] = "completed"
     local_manifest["completed_at"] = datetime.now(UTC).isoformat()
-    final_fingerprint = next(iter(adapter_fingerprints), None)
-    local_manifest["adapter_fingerprint"] = (
-        final_fingerprint.as_dict() if final_fingerprint is not None else None
-    )
-    local_manifest["runner_version"] = (
-        final_fingerprint.task_adapter_version if final_fingerprint is not None else None
-    )
+    local_manifest["task_harness_versions"] = {
+        adapter: next(iter(versions), None) for adapter, versions in sorted(task_versions.items())
+    }
+    local_manifest["judge_harness_version"] = next(iter(judge_versions), None)
     local_manifest["aggregate"] = aggregate
     local_manifest["cells"].sort(key=lambda item: (item["profile_id"], item["universe"]))
     _write_json(local_root / "review.json", local_manifest)
@@ -1987,9 +2149,12 @@ def validate_routine_escalation(
     skill_dir = resolve_skill(repo_root, config.skill)
     candidate_dir = resolve_candidate_skill(repo_root, config.candidate, skill_dir.name)
     spec = load_eval_spec(skill_dir, repo_root / "evals")
-    harness_path = repo_root / "harnesses" / "codex.json"
-    if not harness_path.is_file():
-        raise EvalError(f"Missing Codex harness manifest: {harness_path}")
+    required_profiles = tuple(profile for profile in config.contract.profiles if profile.required)
+    task_manifest_digests, judge_manifest_digest = _harness_manifest_digests(
+        repo_root,
+        required_profiles,
+        config.contract.judge_policy,
+    )
     expected = {
         "skill": spec.skill_name,
         "current_digest_sha256": stable_digest(skill_dir, exclude=RUNTIME_EXCLUDED_NAMES),
@@ -2006,7 +2171,8 @@ def validate_routine_escalation(
         "judge_policy_digest_sha256": canonical_digest(
             _review_policy_payload(spec, config.contract)
         ),
-        "harness_manifest_digest_sha256": stable_digest(harness_path),
+        "task_harness_manifest_digests_sha256": task_manifest_digests,
+        "judge_harness_manifest_digest_sha256": judge_manifest_digest,
     }
     mismatches = [
         key for key, expected_value in expected.items() if pinned.get(key) != expected_value
@@ -2101,8 +2267,33 @@ def build_durable_summary(
         rationale=rationale,
     )
     for profile in config.profiles:
-        if profile.model == "runtime-default" or profile.judge_model == "runtime-default":
-            raise EvalError("Durable export rejects mutable runtime-default model identifiers")
+        _pinned_model(
+            profile.model,
+            adapter=profile.adapter,
+            location=f"profile {profile.id} task model",
+        )
+    _pinned_model(
+        config.contract.judge_policy.model,
+        adapter=config.contract.judge_policy.adapter,
+        location="judge policy model",
+    )
+    for cell in review.get("cells", []):
+        if not isinstance(cell, dict):
+            raise EvalError("Durable export requires object-valued profile cells")
+        for key in (
+            "task_adapter",
+            "task_model_requested",
+            "task_model_reported",
+            "task_harness_version",
+            "task_manifest_digest_sha256",
+            "judge_adapter",
+            "judge_model_requested",
+            "judge_model_reported",
+            "judge_harness_version",
+            "judge_manifest_digest_sha256",
+        ):
+            if not isinstance(cell.get(key), str) or not cell[key].strip():
+                raise EvalError(f"Durable export requires exact profile-cell evidence for {key}")
 
     evidence_identity = {
         "pinned_inputs": review["pinned_inputs"],
@@ -2127,12 +2318,14 @@ def build_durable_summary(
                 "profiles_digest_sha256",
                 "case_groups_digest_sha256",
                 "judge_policy_digest_sha256",
+                "task_harness_manifest_digests_sha256",
+                "judge_harness_manifest_digest_sha256",
                 "harness_manifest_digest_sha256",
             )
         },
         "judge_policy": review["pinned_inputs"]["judge_policy"],
-        "runner": review["runner"],
-        "harness": review["harness"],
+        "task_harnesses": review["task_harnesses"],
+        "judge_harness": review["judge_harness"],
         "profiles": review["profiles"],
         "unselected_observed_profiles": review["unselected_observed_profiles"],
         "coverage": review["coverage"],
@@ -2201,7 +2394,7 @@ def _confidence_limitations(review: dict[str, Any]) -> list[str]:
     limitations = [
         "Evidence applies only to the pinned eval, judge policy, runner, harness, and digests.",
         "Repeated model runs reduce but do not eliminate stochastic uncertainty.",
-        "Codex profile evidence does not establish behavior in other harnesses.",
+        "Selected profile evidence does not establish behavior in unselected harnesses.",
     ]
     coverage = review["coverage"]
     if not coverage["both_universes"]:
@@ -2279,6 +2472,10 @@ def _markdown_value(value: object) -> str:
 
 def _markdown(summary: dict[str, Any]) -> str:
     """Render the bounded durable review as human-readable Markdown."""
+    task_harnesses = ", ".join(
+        f"`{item['adapter']}` `{item['version']}`" for item in summary["task_harnesses"]
+    )
+    judge_harness = summary["judge_harness"]
     lines = [
         f"# Capability review: {summary['skill']}",
         "",
@@ -2286,13 +2483,11 @@ def _markdown(summary: dict[str, Any]) -> str:
         f"- Evidence verdict: **{summary['aggregate']['verdict']}**",
         f"- Human disposition: **{summary['human_review']['disposition']}**",
         f"- Reviewer: {summary['human_review']['reviewer']}",
-        (f"- Runner: `{summary['runner']['adapter']}` `{summary['runner']['version']}`"),
-        (
-            f"- Harness: `{summary['harness']['id']}` contract "
-            f"v{summary['harness']['contract_version']}"
-        ),
+        f"- Task harnesses: {task_harnesses}",
+        f"- Judge harness: `{judge_harness['adapter']}` `{judge_harness['version']}`",
         (
             f"- Judge policy: `{summary['judge_policy']['judge_policy']['id']}` using "
+            f"`{summary['judge_policy']['judge_policy']['adapter']}` / "
             f"`{summary['judge_policy']['judge_policy']['model']}` and "
             f"`{summary['judge_policy']['judge_policy']['protocol']}`"
         ),
@@ -2304,7 +2499,12 @@ def _markdown(summary: dict[str, Any]) -> str:
         "| --- | --- |",
     ]
     for key, value in summary["inputs"].items():
-        lines.append(f"| {key.removesuffix('_sha256').replace('_', ' ')} | `{value}` |")
+        rendered = (
+            json.dumps(value, ensure_ascii=False, sort_keys=True)
+            if isinstance(value, (dict, list))
+            else str(value)
+        )
+        lines.append(f"| {key.removesuffix('_sha256').replace('_', ' ')} | `{rendered}` |")
     lines.extend(
         [
             "",
@@ -2343,14 +2543,19 @@ def _markdown(summary: dict[str, Any]) -> str:
             "",
             "## Matrix",
             "",
-            "| Profile | Role | Universe | Task model | Judge model | Verdict |",
-            "| --- | --- | --- | --- | --- | --- |",
+            "| Profile | Role | Universe | Task harness | Requested / reported task model | "
+            "Judge harness | Requested / reported judge model | Verdict |",
+            "| --- | --- | --- | --- | --- | --- | --- | --- |",
         ]
     )
     for cell in summary["matrix"]:
         lines.append(
             f"| {cell['profile_id']} | {cell['profile_role']} | {cell['universe']} | "
-            f"`{cell['task_model']}` | `{cell['judge_model']}` | {cell['verdict']} |"
+            f"`{cell['task_adapter']}` `{cell['task_harness_version']}` | "
+            f"`{cell['task_model_requested']}` / `{cell['task_model_reported']}` | "
+            f"`{cell['judge_adapter']}` `{cell['judge_harness_version']}` | "
+            f"`{cell['judge_model_requested']}` / `{cell['judge_model_reported']}` | "
+            f"{cell['verdict']} |"
         )
     lines.extend(
         [

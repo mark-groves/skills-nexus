@@ -953,8 +953,12 @@ def _run_evaluation(
         "runtime": {
             "task_adapter": task_harness.id,
             "task_adapter_version": task_harness.version,
+            "task_model_requested": args.model or "runtime-default",
+            "task_model_reported": getattr(task_harness, "model", None) or "runtime-default",
             "judge_adapter": judge_harness.id,
             "judge_adapter_version": judge_harness.version,
+            "judge_model_requested": args.judge_model or args.model or "runtime-default",
+            "judge_model_reported": getattr(judge_harness, "model", None) or "runtime-default",
             "adapter": task_harness.id,
             "codex_version": task_harness.version,
             "model": args.model or "runtime-default",

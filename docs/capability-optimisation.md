@@ -8,8 +8,8 @@ known failure into proof that instructions are redundant.
 This guide defines the repository contract for capability-review tooling. The
 current evaluator compares baseline, current, and candidate packages, reports
 context metrics, enforces repository-owned optimisation gates, and orchestrates
-required and selected observed Codex model profiles across pinned review
-inputs. `scripts/ablate_skill_components.py` uses that evidence to perform
+required and selected observed task-harness profiles under one pinned judge
+policy. `scripts/ablate_skill_components.py` uses that evidence to perform
 component ablation through greedy backward elimination and a final combined
 candidate rerun.
 
@@ -86,9 +86,11 @@ integrity failure.
 
 ## Model profiles and evidence scope
 
-A **model profile** identifies the task model, judge model, runner, harness, and
-their relevant versions. The comparison record adds the evaluation digest and
-review policy. Reviews distinguish:
+A **model profile** identifies a task adapter and exact task model. One global
+judge policy identifies the judge adapter, exact judge model, and grading
+protocol for every profile cell. The comparison record adds requested and
+harness-reported models, separate task and judge versions and manifests, the
+evaluation digest, and review policy. Reviews distinguish:
 
 - **Required profiles**, which define the supported model floor and gate a
   change. Every required profile must pass; optimising only for the most capable
@@ -104,24 +106,27 @@ review policy. Reviews distinguish:
   visible but observational for body-only Candidates with unchanged discovery
   inputs.
 
-Durable comparisons pin exact model and judge identifiers. A mutable runtime
-default is not sufficient evidence, and results produced with different suites
-or judge policies are not treated as directly comparable.
+Durable comparisons pin exact task and judge identifiers. A mutable runtime
+default or Cursor `Auto` selection is not sufficient evidence, and results
+produced with different adapters, versions, manifests, suites, or judge
+policies are not treated as directly comparable.
 
 The executable profile contract lives at
 [`eval-profiles.json`](../eval-profiles.json). Every required profile runs;
-observed profiles are opt-in. Schema v1 requires every profile to use the same
-top-level pinned judge model and protocol. The review command verifies the
-Current, Candidate, eval, profile, case-group, judge-policy, harness-manifest,
-and runner inputs across every profile/universe cell before aggregating gates.
-Its eval digest covers the suite definition and fixture bytes, not prior
-durable review exports.
+observed profiles are opt-in. Schema v2 permits Codex and Cursor task profiles
+under the same top-level pinned judge adapter, model, and protocol. Legacy v1
+Codex contracts normalize to the equivalent canonical v2 contract. The review
+command verifies the Current, Candidate, eval, profile, case-group,
+judge-policy, task/judge manifest, adapter, model, and version inputs across
+every profile/universe cell before aggregating gates. Its eval digest covers
+the suite definition and fixture bytes, not prior durable review exports.
 
-Skills Nexus packages skills for several harnesses, but the initial executable
-capability evidence is **Codex model-profile evidence**. The repository does not
-yet have equivalent runner adapters for other harnesses. Packaging
-compatibility, or a successful Codex run using a model also exposed elsewhere,
-is not cross-harness behavioral evidence.
+Skills Nexus packages skills for several harnesses. Profile planning can now
+describe Codex and Cursor cells without constructing either runtime, but this
+layer still has only the Codex production adapter. Until the separate Cursor
+adapter layer is present, packaging compatibility, a planned Cursor cell, or a
+successful Codex run using a model also exposed elsewhere is not Cursor
+behavioral evidence.
 
 ## Skill universes
 

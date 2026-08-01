@@ -104,6 +104,10 @@ class CapabilityReviewFixture:
             '{"project_install_root": ".codex/skills", "user_install_root": "~/.codex/skills"}\n',
             encoding="utf-8",
         )
+        (harness_dir / "cursor.json").write_text(
+            '{"project_install_root": ".cursor/skills", "user_install_root": "~/.cursor/skills"}\n',
+            encoding="utf-8",
+        )
         self.profiles = self.repo / "eval-profiles.json"
         self.profiles.write_text(
             json.dumps(
@@ -294,12 +298,16 @@ class FakeEvaluationRunner:
                 ),
             },
             "runtime": {
-                "task_adapter": "codex",
-                "task_adapter_version": "fake-codex 1.0",
-                "judge_adapter": "codex",
-                "judge_adapter_version": "fake-codex 1.0",
-                "adapter": "codex",
-                "codex_version": "fake-codex 1.0",
+                "task_adapter": args.task_adapter,
+                "task_adapter_version": f"fake-{args.task_adapter} 1.0",
+                "task_model_requested": args.model,
+                "task_model_reported": args.model,
+                "judge_adapter": args.judge_adapter,
+                "judge_adapter_version": f"fake-{args.judge_adapter} 1.0",
+                "judge_model_requested": args.judge_model,
+                "judge_model_reported": args.judge_model,
+                "adapter": args.task_adapter,
+                "codex_version": f"fake-{args.task_adapter} 1.0",
                 "model": args.model,
                 "judge_model": args.judge_model,
                 "skill_universe": args.skill_universe,
@@ -574,10 +582,104 @@ class ProfileContractTests(unittest.TestCase):
 
             contract = load_profile_contract(fixture.profiles)
 
-        self.assertEqual(contract.schema_version, 1)
+        self.assertEqual(contract.schema_version, 2)
+        self.assertEqual(contract.source_schema_version, 1)
         self.assertEqual([profile.role for profile in contract.profiles], ["required", "observed"])
+        self.assertEqual(contract.judge_policy.adapter, "codex")
         self.assertEqual(contract.judge_policy.model, "fake-judge-v1")
         self.assertEqual(len(contract.digest_sha256), 64)
+
+    def test_v1_normalizes_to_the_same_canonical_v2_digest(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fixture = CapabilityReviewFixture(Path(temp_dir))
+            v1 = load_profile_contract(fixture.profiles)
+            payload = json.loads(fixture.profiles.read_text(encoding="utf-8"))
+            payload["schema_version"] = 2
+            payload["judge_policy"]["adapter"] = "codex"
+            for profile in payload["profiles"]:
+                profile.pop("judge_model")
+            fixture.profiles.write_text(json.dumps(payload), encoding="utf-8")
+
+            v2 = load_profile_contract(fixture.profiles)
+
+        self.assertEqual(v2.source_schema_version, 2)
+        self.assertEqual(v1.as_dict(), v2.as_dict())
+        self.assertEqual(v1.digest_sha256, v2.digest_sha256)
+
+    def test_v2_accepts_mixed_task_harnesses_under_one_judge_policy(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fixture = CapabilityReviewFixture(Path(temp_dir))
+            fixture.profiles.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 2,
+                        "judge_policy": {
+                            "id": "cross-harness-review-v1",
+                            "adapter": "codex",
+                            "model": "fake-judge-v1",
+                            "protocol": "skill-eval-candidate-v3-condition-blind",
+                        },
+                        "profiles": [
+                            {
+                                "id": "codex-required",
+                                "adapter": "codex",
+                                "model": "fake-codex-task-v1",
+                                "required": True,
+                            },
+                            {
+                                "id": "cursor-observed",
+                                "adapter": "cursor",
+                                "model": "fake-cursor-task-v1",
+                                "required": False,
+                            },
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            contract = load_profile_contract(fixture.profiles)
+
+        self.assertEqual([profile.adapter for profile in contract.profiles], ["codex", "cursor"])
+        self.assertEqual(contract.judge_policy.adapter, "codex")
+
+    def test_v2_rejects_unknown_adapters_and_mutable_cursor_auto(self) -> None:
+        base = {
+            "schema_version": 2,
+            "judge_policy": {
+                "id": "cross-harness-review-v1",
+                "adapter": "codex",
+                "model": "fake-judge-v1",
+                "protocol": "skill-eval-candidate-v3-condition-blind",
+            },
+            "profiles": [
+                {
+                    "id": "required",
+                    "adapter": "codex",
+                    "model": "fake-task-v1",
+                    "required": True,
+                }
+            ],
+        }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "profiles.json"
+            cases = (
+                (("profiles", 0, "adapter"), "unknown", "Unknown task adapter"),
+                (("judge_policy", "adapter"), "unknown", "Unknown judge adapter"),
+                (("profiles", 0, "adapter"), "cursor", "Cursor Auto"),
+            )
+            for location, value, message in cases:
+                with self.subTest(location=location, value=value):
+                    payload = json.loads(json.dumps(base))
+                    target: Any = payload
+                    for key in location[:-1]:
+                        target = target[key]
+                    target[location[-1]] = value
+                    if location == ("profiles", 0, "adapter") and value == "cursor":
+                        target["model"] = "Auto"
+                    path.write_text(json.dumps(payload), encoding="utf-8")
+                    with self.assertRaisesRegex(EvalError, message):
+                        load_profile_contract(path)
 
     def test_rejects_runtime_default_with_actionable_error(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -670,43 +772,96 @@ class CaseGroupAndUniverseTests(unittest.TestCase):
 
 
 class CapabilityReviewOrchestrationTests(unittest.TestCase):
-    def test_adapter_identity_drift_is_rejected(self) -> None:
+    def test_cross_harness_cells_remain_distinct_with_one_pinned_judge(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             fixture = CapabilityReviewFixture(Path(temp_dir))
-            fake = FakeEvaluationRunner()
+            fixture.profiles.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 2,
+                        "judge_policy": {
+                            "id": "cross-harness-review-v1",
+                            "adapter": "codex",
+                            "model": "fake-judge-v1",
+                            "protocol": "skill-eval-candidate-v3-condition-blind",
+                        },
+                        "profiles": [
+                            {
+                                "id": "fake-required",
+                                "adapter": "codex",
+                                "model": "fake-task-v1",
+                                "required": True,
+                            },
+                            {
+                                "id": "fake-observed",
+                                "adapter": "cursor",
+                                "model": "fake-task-v2",
+                                "required": False,
+                            },
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
 
-            def drifting_runner(args: Any) -> tuple[dict[str, Any], Path]:
-                result, run_dir = fake(args)
-                result["runtime"]["judge_adapter"] = "unexpected-judge"
-                (run_dir / "results.json").write_text(json.dumps(result) + "\n", encoding="utf-8")
-                return result, run_dir
+            review, _local_root = run_capability_review(
+                fixture.config(),
+                FakeEvaluationRunner(),
+            )
 
-            with self.assertRaisesRegex(EvalError, "changed pinned judge adapter"):
-                run_capability_review(
-                    fixture.config(include_observed=False),
-                    drifting_runner,
+        self.assertEqual(len(review["cells"]), 4)
+        self.assertEqual(
+            {(cell["profile_id"], cell["task_adapter"]) for cell in review["cells"]},
+            {("fake-required", "codex"), ("fake-observed", "cursor")},
+        )
+        self.assertEqual({cell["judge_adapter"] for cell in review["cells"]}, {"codex"})
+        self.assertEqual(
+            {cell["judge_model_reported"] for cell in review["cells"]},
+            {"fake-judge-v1"},
+        )
+        self.assertEqual(
+            {
+                (
+                    cell["adapter_fingerprint"]["task_adapter"],
+                    cell["adapter_fingerprint"]["judge_adapter"],
                 )
+                for cell in review["cells"]
+            },
+            {("codex", "codex"), ("cursor", "codex")},
+        )
+        self.assertEqual(review["aggregate"]["observed_failures"], ["fake-observed"])
 
-    def test_adapter_version_drift_is_rejected(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            fixture = CapabilityReviewFixture(Path(temp_dir))
-            fake = FakeEvaluationRunner()
+    def test_runtime_identity_drift_fails_closed(self) -> None:
+        cases = (
+            ("task_adapter", "cursor", "changed pinned task adapter"),
+            ("judge_adapter", "cursor", "changed pinned judge adapter"),
+            ("task_model_reported", "other-task", "changed pinned reported task model"),
+            ("judge_model_reported", "other-judge", "changed pinned reported judge model"),
+            ("task_adapter_version", "fake-codex 2.0", "Task harness version"),
+            ("judge_adapter_version", "fake-codex 2.0", "Judge harness version"),
+        )
+        for field, value, message in cases:
+            with self.subTest(field=field), tempfile.TemporaryDirectory() as temp_dir:
+                fixture = CapabilityReviewFixture(Path(temp_dir))
 
-            def drifting_runner(args: Any) -> tuple[dict[str, Any], Path]:
-                result, run_dir = fake(args)
-                if len(fake.calls) == 2:
-                    result["runtime"]["judge_adapter_version"] = "fake-codex 2.0"
-                    (run_dir / "results.json").write_text(
-                        json.dumps(result) + "\n",
-                        encoding="utf-8",
-                    )
-                return result, run_dir
+                class DriftRunner(FakeEvaluationRunner):
+                    def __init__(self, drift_field: str, drift_value: str) -> None:
+                        super().__init__()
+                        self.drift_field = drift_field
+                        self.drift_value = drift_value
 
-            with self.assertRaisesRegex(EvalError, "Adapter fingerprint changed"):
-                run_capability_review(
-                    fixture.config(include_observed=False),
-                    drifting_runner,
-                )
+                    def __call__(self, args: Any) -> tuple[dict[str, Any], Path]:
+                        result, run_dir = super().__call__(args)
+                        if len(self.calls) == 2:
+                            result["runtime"][self.drift_field] = self.drift_value
+                            (run_dir / "results.json").write_text(
+                                json.dumps(result) + "\n",
+                                encoding="utf-8",
+                            )
+                        return result, run_dir
+
+                with self.assertRaisesRegex(EvalError, message):
+                    run_capability_review(fixture.config(), DriftRunner(field, value))
 
     def test_legacy_codex_version_falls_back_for_task_version_only(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -716,14 +871,16 @@ class CapabilityReviewOrchestrationTests(unittest.TestCase):
             def legacy_runner(args: Any) -> tuple[dict[str, Any], Path]:
                 result, run_dir = fake(args)
                 result["runtime"].pop("task_adapter_version")
-                (run_dir / "results.json").write_text(json.dumps(result) + "\n", encoding="utf-8")
+                (run_dir / "results.json").write_text(
+                    json.dumps(result) + "\n",
+                    encoding="utf-8",
+                )
                 return result, run_dir
 
-            review, local_root = run_capability_review(
+            review, _local_root = run_capability_review(
                 fixture.config(include_observed=False),
                 legacy_runner,
             )
-            manifest = json.loads((local_root / "review.json").read_text(encoding="utf-8"))
 
         expected = {
             "task_adapter": "codex",
@@ -731,8 +888,6 @@ class CapabilityReviewOrchestrationTests(unittest.TestCase):
             "judge_adapter": "codex",
             "judge_adapter_version": "fake-codex 1.0",
         }
-        self.assertEqual(review["adapter_fingerprint"], expected)
-        self.assertEqual(manifest["adapter_fingerprint"], expected)
         self.assertTrue(all(cell["adapter_fingerprint"] == expected for cell in review["cells"]))
 
     def test_legacy_codex_version_does_not_replace_judge_version(self) -> None:
@@ -743,7 +898,10 @@ class CapabilityReviewOrchestrationTests(unittest.TestCase):
             def incomplete_runner(args: Any) -> tuple[dict[str, Any], Path]:
                 result, run_dir = fake(args)
                 result["runtime"].pop("judge_adapter_version")
-                (run_dir / "results.json").write_text(json.dumps(result) + "\n", encoding="utf-8")
+                (run_dir / "results.json").write_text(
+                    json.dumps(result) + "\n",
+                    encoding="utf-8",
+                )
                 return result, run_dir
 
             with self.assertRaisesRegex(EvalError, "exact judge adapter version"):
@@ -751,6 +909,46 @@ class CapabilityReviewOrchestrationTests(unittest.TestCase):
                     fixture.config(include_observed=False),
                     incomplete_runner,
                 )
+
+    def test_manifest_and_judge_policy_drift_fail_closed(self) -> None:
+        for drift, message in (
+            ("manifest", "Task harness manifests changed"),
+            ("judge-policy", "model profile contract changed"),
+        ):
+            with self.subTest(drift=drift), tempfile.TemporaryDirectory() as temp_dir:
+                fixture = CapabilityReviewFixture(Path(temp_dir))
+
+                class SourceDriftRunner(FakeEvaluationRunner):
+                    def __init__(self, source_fixture: CapabilityReviewFixture, kind: str) -> None:
+                        super().__init__()
+                        self.fixture = source_fixture
+                        self.kind = kind
+
+                    def __call__(self, args: Any) -> tuple[dict[str, Any], Path]:
+                        result, run_dir = super().__call__(args)
+                        if len(self.calls) == 1:
+                            if self.kind == "manifest":
+                                (self.fixture.repo / "harnesses" / "codex.json").write_text(
+                                    '{"project_install_root": ".changed/skills", '
+                                    '"user_install_root": "~/.changed/skills"}\n',
+                                    encoding="utf-8",
+                                )
+                            else:
+                                payload = json.loads(
+                                    self.fixture.profiles.read_text(encoding="utf-8")
+                                )
+                                payload["judge_policy"]["id"] = "changed-policy-v1"
+                                self.fixture.profiles.write_text(
+                                    json.dumps(payload),
+                                    encoding="utf-8",
+                                )
+                        return result, run_dir
+
+                with self.assertRaisesRegex(EvalError, message):
+                    run_capability_review(
+                        fixture.config(),
+                        SourceDriftRunner(fixture, drift),
+                    )
 
     def test_observed_failure_is_visible_but_does_not_block(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -927,6 +1125,48 @@ class RoutineScreenTests(unittest.TestCase):
             with self.assertRaisesRegex(EvalError, "candidate_digest_sha256"):
                 validate_routine_escalation(local_root / "review.json", full_config)
 
+    def test_full_escalation_does_not_require_observed_profile_manifest_pins(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fixture = CapabilityReviewFixture(Path(temp_dir))
+            fixture.profiles.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 2,
+                        "judge_policy": {
+                            "id": "fake-policy-v1",
+                            "adapter": "codex",
+                            "model": "fake-judge-v1",
+                            "protocol": "skill-eval-candidate-v3-condition-blind",
+                        },
+                        "profiles": [
+                            {
+                                "id": "fake-required",
+                                "adapter": "codex",
+                                "model": "fake-task-v1",
+                                "required": True,
+                            },
+                            {
+                                "id": "fake-observed",
+                                "adapter": "cursor",
+                                "model": "cursor-task-v1",
+                                "required": False,
+                            },
+                        ],
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            _review, local_root = run_routine_screen(
+                fixture.routine_config(),
+                RoutineEvaluationRunner(),
+            )
+
+            validate_routine_escalation(
+                local_root / "review.json",
+                fixture.config(include_observed=True),
+            )
+
     def test_contract_rejects_held_back_cases_and_invalid_budget(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             fixture = CapabilityReviewFixture(Path(temp_dir))
@@ -983,6 +1223,22 @@ class RoutineScreenTests(unittest.TestCase):
 
 
 class DurableExportTests(unittest.TestCase):
+    def test_durable_summary_rejects_missing_reported_harness_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fixture = CapabilityReviewFixture(Path(temp_dir))
+            config = fixture.config()
+            review, _local_root = run_capability_review(config, FakeEvaluationRunner())
+            review["cells"][0]["task_model_reported"] = None
+
+            with self.assertRaisesRegex(EvalError, "task_model_reported"):
+                build_durable_summary(
+                    review,
+                    config,
+                    disposition="retain",
+                    reviewer="Test Reviewer",
+                    rationale="Missing evidence must fail closed.",
+                )
+
     def test_summary_is_deterministic_bounded_and_omits_raw_evidence_and_paths(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             fixture = CapabilityReviewFixture(Path(temp_dir))
@@ -1026,6 +1282,15 @@ class DurableExportTests(unittest.TestCase):
                 self.assertNotIn("RAW COMMAND OUTPUT MUST NOT EXPORT", artifact)
                 self.assertNotIn("DEVELOPMENT PROMPT MUST NOT EXPORT", artifact)
             self.assertLess(len(json_bytes), 256_000)
+            self.assertEqual(first["schema_version"], 2)
+            self.assertIn("task_harnesses", first)
+            self.assertIn("judge_harness", first)
+            self.assertNotIn("runner", first)
+            self.assertNotIn("harness", first)
+            self.assertEqual(first["matrix"][0]["task_model_requested"], "fake-task-v1")
+            self.assertEqual(first["matrix"][0]["task_model_reported"], "fake-task-v1")
+            self.assertEqual(first["matrix"][0]["judge_model_requested"], "fake-judge-v1")
+            self.assertEqual(first["matrix"][0]["judge_model_reported"], "fake-judge-v1")
             self.assertFalse(first["human_review"]["automatic_promotion"])
             self.assertIn("${CANDIDATE_DIR}", first["reproduction"]["argv"])
             self.assertTrue(
@@ -1038,6 +1303,8 @@ class DurableExportTests(unittest.TestCase):
             self.assertIn("## Baseline, Current, and Candidate metrics", markdown)
             self.assertIn("## Context footprint", markdown)
             self.assertIn("## Gate results", markdown)
+            self.assertIn("Task harnesses", markdown)
+            self.assertIn("Requested / reported task model", markdown)
 
     def test_export_refuses_different_payload_for_existing_review_id(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1290,6 +1557,62 @@ class DurableExportTests(unittest.TestCase):
             self.assertIn("--trigger-repeats must be greater than zero", stderr.getvalue())
             self.assertEqual(valid_exit, 0)
             self.assertEqual(fake.calls, [])
+
+    def test_v2_plan_accepts_cursor_profile_without_harness_binary_or_credentials(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fixture = CapabilityReviewFixture(Path(temp_dir))
+            payload = {
+                "schema_version": 2,
+                "judge_policy": {
+                    "id": "cross-harness-review-v1",
+                    "adapter": "codex",
+                    "model": "fake-judge-v1",
+                    "protocol": "skill-eval-candidate-v3-condition-blind",
+                },
+                "profiles": [
+                    {
+                        "id": "fake-required",
+                        "adapter": "codex",
+                        "model": "fake-task-v1",
+                        "required": True,
+                    },
+                    {
+                        "id": "cursor-observed",
+                        "adapter": "cursor",
+                        "model": "cursor-task-v1",
+                        "required": False,
+                    },
+                ],
+            }
+            fixture.profiles.write_text(json.dumps(payload), encoding="utf-8")
+            stdout = io.StringIO()
+            fake = FakeEvaluationRunner()
+
+            with contextlib.redirect_stdout(stdout):
+                exit_code = review_skill_capability.main(
+                    [
+                        "--repo-root",
+                        str(fixture.repo),
+                        "--skill",
+                        "demo",
+                        "--candidate",
+                        str(fixture.candidate),
+                        "--profiles",
+                        str(fixture.profiles),
+                        "--case-groups",
+                        str(fixture.case_groups),
+                        "--observed-profile",
+                        "cursor-observed",
+                        "--codex-binary",
+                        "/definitely/missing/codex",
+                        "--plan",
+                    ],
+                    evaluation_runner=fake,
+                )
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn("cursor-observed (observed, cursor/cursor-task-v1)", stdout.getvalue())
+        self.assertEqual(fake.calls, [])
 
     def test_cli_end_to_end_uses_fake_profiles_without_external_services(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

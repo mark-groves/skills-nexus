@@ -26,6 +26,7 @@ class CodexTaskHarness:
     def __init__(self, runner: CodexRunner) -> None:
         self._runner = runner
         self.version = runner.version
+        self.model = runner.model
         self.conditions = runner.conditions
         self.peer_skills = runner.peer_skills
 
@@ -48,6 +49,7 @@ class CodexJudgeHarness:
     def __init__(self, runner: CodexRunner) -> None:
         self._runner = runner
         self.version = runner.version
+        self.model = runner.judge_model
 
     def execute_judgment(self, request: JudgmentRequest) -> Mapping[str, Any]:
         return self._runner.execute_judgment(request)

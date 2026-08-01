@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run candidate capability reviews across pinned Codex model profiles."""
+"""Run candidate capability reviews across pinned task and judge harness profiles."""
 
 from __future__ import annotations
 
@@ -41,7 +41,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
             "Run a bounded routine screen or full candidate evaluation matrix "
-            "across pinned Codex model profiles."
+            "across pinned multi-harness model profiles."
         )
     )
     parser.add_argument(
@@ -312,7 +312,18 @@ def main(
                 print("Behavior cases: " + ", ".join(routine.contract.behavior_cases))
                 print("Trigger policy: " + discovery)
                 print(f"Budget: {routine.budget_seconds}s; hard stop: {routine.deadline_seconds}s")
-            print("Profiles: " + ", ".join(f"{item.id} ({item.role})" for item in config.profiles))
+            print(
+                "Judge policy: "
+                f"{config.contract.judge_policy.adapter}/"
+                f"{config.contract.judge_policy.model}"
+            )
+            print(
+                "Profiles: "
+                + ", ".join(
+                    f"{item.id} ({item.role}, {item.adapter}/{item.model})"
+                    for item in config.profiles
+                )
+            )
             print("Universes: " + ", ".join(config.universes))
             print(
                 "Case groups: "
