@@ -2269,6 +2269,29 @@ class EvalCoreTests(unittest.TestCase):
         self.assertEqual(summary["balanced_accuracy"], 1.0)
         self.assertEqual(summary["run_accuracy"], 0.75)
 
+    def test_trigger_summary_keeps_unavailable_activation_metrics_unknown(self) -> None:
+        cases = (
+            TriggerCase("p", "positive", True),
+            TriggerCase("n", "negative", False),
+        )
+        runs: list[dict[str, Any]] = [
+            {"case_id": "p", "status": "completed", "activated": None},
+            {"case_id": "n", "status": "completed", "activated": False},
+        ]
+
+        summary = summarize_trigger_results(cases, runs, threshold=0.5)
+
+        self.assertEqual(
+            summary["confusion_matrix"],
+            {"tp": 0, "fp": 0, "tn": 1, "fn": 0, "unscored": 1},
+        )
+        self.assertIsNone(summary["recall"])
+        self.assertEqual(summary["specificity"], 1.0)
+        self.assertIsNone(summary["case_accuracy"])
+        self.assertIsNone(summary["case_accuracy_interval_95"])
+        self.assertIsNone(summary["balanced_accuracy"])
+        self.assertEqual(summary["evidence_coverage"], 0.5)
+
 
 class EvalCliIntegrationTests(unittest.TestCase):
     def _write_fake_codex(self, root: Path) -> Path:

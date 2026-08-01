@@ -1930,10 +1930,13 @@ def summarize_trigger_results(
 
     positive_total = sum(case.should_trigger for case in cases)
     negative_total = sum(not case.should_trigger for case in cases)
-    recall = _rate(tp, positive_total)
-    specificity = _rate(tn, negative_total)
+    scored_positive = tp + fn
+    scored_negative = tn + fp
+    scored_cases = scored_positive + scored_negative
+    recall = _rate(tp, positive_total) if scored_positive == positive_total else None
+    specificity = _rate(tn, negative_total) if scored_negative == negative_total else None
     precision = _rate(tp, tp + fp)
-    accuracy = _rate(tp + tn, len(cases))
+    accuracy = _rate(tp + tn, len(cases)) if scored_cases == len(cases) else None
     f1 = (
         2 * precision * recall / (precision + recall)
         if precision is not None and recall is not None and precision + recall
@@ -1941,10 +1944,12 @@ def summarize_trigger_results(
     )
     balanced = (
         (recall + specificity) / 2
-        if recall is not None and specificity is not None
+        if positive_total and negative_total and recall is not None and specificity is not None
         else recall
-        if recall is not None
+        if positive_total and not negative_total
         else specificity
+        if negative_total and not positive_total
+        else None
     )
     return {
         "threshold": threshold,
@@ -1953,11 +1958,13 @@ def summarize_trigger_results(
             "fp": fp,
             "tn": tn,
             "fn": fn,
-            "unscored": len(cases) - tp - fp - tn - fn,
+            "unscored": len(cases) - scored_cases,
         },
         "case_accuracy": accuracy,
-        "case_accuracy_interval_95": wilson_interval(tp + tn, len(cases)),
-        "evidence_coverage": _rate(tp + fp + tn + fn, len(cases)),
+        "case_accuracy_interval_95": (
+            wilson_interval(tp + tn, len(cases)) if scored_cases == len(cases) else None
+        ),
+        "evidence_coverage": _rate(scored_cases, len(cases)),
         "run_accuracy": _rate(successful_runs, total_runs),
         "precision": precision,
         "recall": recall,
