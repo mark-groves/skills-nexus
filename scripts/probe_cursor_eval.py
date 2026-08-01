@@ -667,16 +667,26 @@ workflow to related or near-miss requests.
 
 
 def _write_permissions(home: Path) -> None:
-    config = {
-        "version": 1,
-        "permissions": {
-            "allow": ["Read(**)", "Write(**)", "Shell(python3)"],
-            "deny": ["Shell(echo)", "Shell(env)", "Shell(printenv)"],
-        },
-    }
     path = home / ".cursor" / "cli-config.json"
+    config: dict[str, Any] = {}
+    if path.is_file():
+        try:
+            config = _json_object(
+                json.loads(path.read_text(encoding="utf-8")),
+                location="copied Cursor CLI configuration",
+            )
+        except json.JSONDecodeError as exc:
+            raise ProbeError("copied Cursor CLI configuration is not valid JSON") from exc
+    if config.get("version", 1) != 1:
+        raise ProbeError("copied Cursor CLI configuration has an unsupported version")
+    config.setdefault("version", 1)
+    config["permissions"] = {
+        "allow": ["Read(**)", "Write(**)", "Shell(python3)"],
+        "deny": ["Shell(echo)", "Shell(env)", "Shell(printenv)"],
+    }
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
+    path.chmod(0o600)
 
 
 def _snapshot(root: Path) -> dict[str, str]:

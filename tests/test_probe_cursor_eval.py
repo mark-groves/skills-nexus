@@ -376,6 +376,27 @@ class CursorProcessBoundaryTests(unittest.TestCase):
             with self.assertRaises(probe.ProbeError):
                 probe._copy_auth_template(template, root / "home")
 
+    def test_probe_permissions_preserve_copied_cli_configuration(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            template = root / "template"
+            config_path = template / ".cursor" / "cli-config.json"
+            config_path.parent.mkdir(parents=True)
+            config_path.write_text(
+                json.dumps({"version": 1, "existing_setting": "preserved"}),
+                encoding="utf-8",
+            )
+            home = root / "home"
+            home.mkdir()
+
+            probe._copy_auth_template(template, home)
+            probe._write_permissions(home)
+            merged = json.loads((home / ".cursor" / "cli-config.json").read_text())
+
+        self.assertEqual(merged["existing_setting"], "preserved")
+        self.assertEqual(merged["version"], 1)
+        self.assertIn("Shell(echo)", merged["permissions"]["deny"])
+
     def test_plaintext_auth_material_is_redacted(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             template = Path(temp_dir)
