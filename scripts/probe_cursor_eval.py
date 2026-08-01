@@ -179,10 +179,19 @@ def parse_cursor_stream(
     )
 
     expected = str(expected_skill_path.resolve()) if expected_skill_path is not None else None
-    observed_reads = [path for event in events if (path := _read_tool_path(event)) is not None]
-    if expected is not None and any(
-        str(Path(path).resolve()) == expected for path in observed_reads
-    ):
+    init_cwd = init.get("cwd") if isinstance(init.get("cwd"), str) else None
+    observed_reads: list[str] = []
+    for event in events:
+        path = _read_tool_path(event)
+        if path is None:
+            continue
+        candidate = Path(path)
+        if not candidate.is_absolute():
+            if init_cwd is None:
+                continue
+            candidate = Path(init_cwd) / candidate
+        observed_reads.append(str(candidate.resolve()))
+    if expected is not None and expected in observed_reads:
         activation: bool | None = True
         activation_evidence = "completed readToolCall for the exact installed SKILL.md"
     else:
@@ -748,8 +757,24 @@ def _event_paths(events: Sequence[Mapping[str, object]]) -> tuple[str, ...]:
     return tuple(sorted(paths))
 
 
+def _tool_call_succeeded(value: object) -> bool | None:
+    if not isinstance(value, dict):
+        return None
+    success = value.get("success")
+    if isinstance(success, bool):
+        return success
+    if success is not None:
+        return True
+    if value.get("error") is not None or value.get("failure") is not None:
+        return False
+    for key in ("result", "outcome"):
+        nested = _tool_call_succeeded(value.get(key))
+        if nested is not None:
+            return nested
+    return None
+
+
 def _permission_echo_denied(events: Sequence[Mapping[str, object]]) -> bool | None:
-    observed = False
     for event in events:
         if event.get("type") != "tool_call" or event.get("subtype") != "completed":
             continue
@@ -759,11 +784,11 @@ def _permission_echo_denied(events: Sequence[Mapping[str, object]]) -> bool | No
         text = json.dumps(tool_call, sort_keys=True)
         if "permission-precedence-probe" not in text:
             continue
-        observed = True
-        if '"success"' in text:
-            return False
-        return True
-    return None if not observed else True
+        for call in tool_call.values():
+            succeeded = _tool_call_succeeded(call)
+            if succeeded is not None:
+                return not succeeded
+    return None
 
 
 def _copy_auth_template(auth_template: Path, home: Path) -> tuple[Path, ...]:
@@ -829,7 +854,7 @@ def _run_live_case(
         workspace / "mcp.json",
     )
     workspace_context_clean = not any(path.exists() for path in forbidden_workspace_context)
-    before = _snapshot(workspace)
+    before_mcp = _snapshot(workspace)
     prompt_path = run_dir / "prompt.txt"
     prompt_path.write_text(prompt, encoding="utf-8")
     env = _clean_environment(home, include_canary=True)
@@ -843,6 +868,9 @@ def _run_live_case(
         mcp_configuration_absent: bool | None = None
     else:
         mcp_configuration_absent = "No MCP servers configured" in mcp_status
+    after_mcp = _snapshot(workspace)
+    mcp_workspace_mutated = before_mcp != after_mcp
+    before = after_mcp
     command = [
         executable,
         "--print",
@@ -913,6 +941,7 @@ def _run_live_case(
         "path_contamination_detected": bool(path_contamination),
         "workspace_context_clean": workspace_context_clean,
         "mcp_configuration_absent": mcp_configuration_absent,
+        "mcp_workspace_mutated": mcp_workspace_mutated,
     }
     if behavior:
         observation_path = workspace / "probe-observation.json"
@@ -1077,6 +1106,9 @@ def run_live_probe(
         ),
         "mcp_configuration_absent": all(
             summary["mcp_configuration_absent"] is True for summary in run_summaries
+        ),
+        "mcp_workspace_read_only": all(
+            summary["mcp_workspace_mutated"] is False for summary in run_summaries
         ),
     }
     eligible = all(gates.values())

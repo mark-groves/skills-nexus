@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -74,6 +75,44 @@ class CursorStreamTests(unittest.TestCase):
                     "subtype": "completed",
                     "session_id": "activation-session",
                     "tool_call": {"readToolCall": {"args": {"path": str(skill)}}},
+                },
+                {
+                    "type": "result",
+                    "subtype": "success",
+                    "is_error": False,
+                    "result": "done",
+                    "session_id": "activation-session",
+                },
+            ]
+            parsed = probe.parse_cursor_stream(
+                "\n".join(json.dumps(event) for event in events),
+                expected_skill_path=skill,
+            )
+
+        self.assertTrue(parsed.activation)
+
+    def test_relative_activation_read_resolves_from_reported_cli_cwd(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            skill = root / "home" / ".cursor" / "skills" / "demo" / "SKILL.md"
+            skill.parent.mkdir(parents=True)
+            skill.write_text("probe\n", encoding="utf-8")
+            relative_skill = os.path.relpath(skill, workspace)
+            events = [
+                {
+                    "type": "system",
+                    "subtype": "init",
+                    "session_id": "activation-session",
+                    "model": "gpt-5",
+                    "cwd": str(workspace),
+                },
+                {
+                    "type": "tool_call",
+                    "subtype": "completed",
+                    "session_id": "activation-session",
+                    "tool_call": {"readToolCall": {"args": {"path": relative_skill}}},
                 },
                 {
                     "type": "result",
@@ -264,13 +303,87 @@ class CursorProcessBoundaryTests(unittest.TestCase):
     def test_plaintext_auth_material_is_redacted(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             template = Path(temp_dir)
-            secret = "plain-token-value-123456"
-            (template / "credentials.env").write_text(f"CURSOR_TOKEN={secret}\n", encoding="utf-8")
+            marker = "fixture-redaction-marker-" + "x" * 16
+            (template / "auth-data.txt").write_text(f"VALUE={marker}\n", encoding="utf-8")
 
             redactions = probe._credential_redactions(template)
-            sanitized = probe._redact(f"value={secret}\n".encode(), redactions)
+            sanitized = probe._redact(f"value={marker}\n".encode(), redactions)
 
-        self.assertNotIn(secret.encode(), sanitized)
+        self.assertNotIn(marker.encode(), sanitized)
+
+    def test_permission_echo_uses_structured_tool_outcome(self) -> None:
+        def event(result):
+            return {
+                "type": "tool_call",
+                "subtype": "completed",
+                "tool_call": {
+                    "shellToolCall": {
+                        "args": {"command": "echo permission-precedence-probe"},
+                        "result": result,
+                    }
+                },
+            }
+
+        self.assertTrue(probe._permission_echo_denied([event({"success": False})]))
+        self.assertFalse(probe._permission_echo_denied([event({"success": {"output": "probe"}})]))
+        self.assertTrue(probe._permission_echo_denied([event({"error": "denied"})]))
+
+    def test_mcp_side_effect_is_not_attributed_to_agent_run(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_root = Path(temp_dir)
+            auth_template = output_root / "auth-template"
+            auth_template.mkdir()
+            (auth_template / "auth-data.txt").write_text("fixture\n", encoding="utf-8")
+
+            def fake_run_text(_command, *, cwd, **_kwargs):
+                (cwd / "mcp-side-effect.txt").write_text("mcp\n", encoding="utf-8")
+                return "No MCP servers configured"
+
+            def fake_stream(_command, *, cwd, events_path, **_kwargs):
+                self.assertTrue((cwd / "mcp-side-effect.txt").is_file())
+                events = [
+                    {
+                        "type": "system",
+                        "subtype": "init",
+                        "session_id": "mcp-snapshot-session",
+                        "model": "gpt-5",
+                        "cwd": str(cwd),
+                    },
+                    {
+                        "type": "result",
+                        "subtype": "success",
+                        "is_error": False,
+                        "result": "done",
+                        "session_id": "mcp-snapshot-session",
+                    },
+                ]
+                events_path.write_text(
+                    "\n".join(json.dumps(event) for event in events) + "\n",
+                    encoding="utf-8",
+                )
+                return probe.ProcessResult("completed", 0, 0.1, True)
+
+            with mock.patch.object(probe, "_run_text", side_effect=fake_run_text):
+                with mock.patch.object(
+                    probe,
+                    "_run_streaming_process",
+                    side_effect=fake_stream,
+                ):
+                    summary, _parsed = probe._run_live_case(
+                        executable="/tmp/agent",
+                        auth_template=auth_template,
+                        output_root=output_root,
+                        case_id="snapshot-boundary",
+                        prompt="probe",
+                        model="gpt-5",
+                        mode="plan",
+                        force=False,
+                        behavior=False,
+                        timeout_seconds=1,
+                    )
+
+        self.assertTrue(summary["mcp_workspace_mutated"])
+        self.assertFalse(summary["workspace_mutated"])
 
     def test_generated_behavior_action_is_valid_python(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
