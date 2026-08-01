@@ -1,4 +1,4 @@
-"""Harness-neutral contracts and the compatibility factory for skill evaluation."""
+"""Harness-neutral contracts and the registry-backed compatibility factory."""
 
 from __future__ import annotations
 
@@ -75,6 +75,8 @@ class HarnessFactory(Protocol):
     def __call__(
         self,
         *,
+        task_adapter: str,
+        judge_adapter: str,
         conditions: tuple[EvaluationCondition, ...],
         codex_binary: str,
         model: str | None,
@@ -88,6 +90,8 @@ class HarnessFactory(Protocol):
 
 def default_harness_factory(
     *,
+    task_adapter: str,
+    judge_adapter: str,
     conditions: tuple[EvaluationCondition, ...],
     codex_binary: str,
     model: str | None,
@@ -97,15 +101,13 @@ def default_harness_factory(
     peer_skills: tuple[Path, ...],
     deadline_seconds: int | None,
 ) -> Harnesses:
-    """Build the existing Codex task and judge path behind neutral contracts.
+    """Build selected task and judge paths through the production registries."""
 
-    The lazy import keeps evaluator orchestration independent of the Codex
-    implementation. An explicit adapter registry remains follow-up work.
-    """
+    from .adapters.registry import registered_harness_factory
 
-    from .codex_runner import CodexRunner
-
-    runner = CodexRunner(
+    return registered_harness_factory(
+        task_adapter=task_adapter,
+        judge_adapter=judge_adapter,
         conditions=conditions,
         codex_binary=codex_binary,
         model=model,
@@ -115,4 +117,3 @@ def default_harness_factory(
         peer_skills=peer_skills,
         deadline_seconds=deadline_seconds,
     )
-    return Harnesses(task=runner, judge=runner)

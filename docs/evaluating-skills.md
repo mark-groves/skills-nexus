@@ -61,6 +61,7 @@ Useful controls include:
 - `--suite trigger` or `--suite behavior` to run one evaluation type
 - `--trigger-repeats` and `--behavior-repeats` to measure variance
 - `--jobs` to limit concurrent agent turns
+- `--task-adapter` and `--judge-adapter` to select registered harnesses
 - `--model` and `--judge-model` to select task and grading models
 - `--skill-universe isolated` to evaluate without repository peer skills
 - `--fail-under <percent>` to enforce an absolute efficacy threshold
@@ -85,10 +86,19 @@ unavailable evidence and serialized as `null` with an explicit reason; it is
 never converted to zero or `false`. An unknown hard-check result maps to an
 unknown grade and cannot pass an optimisation gate.
 
-Codex remains the only production evaluator and the unchanged default in this
-refactor. The compatibility factory creates the existing Codex task and judge
-path behind the contracts. Adapter selection and a production registry are
-separate follow-up work; the Cursor probe is not wired into evaluation.
+Codex remains the only production evaluator and the unchanged default. Task
+and judge adapters are selected independently through explicit registries;
+omitting `--task-adapter` or `--judge-adapter` selects `codex`. Unknown adapter
+identifiers fail locally before any model turn, including in plan mode. The
+Codex adapter keeps event parsing, execution, and judging behind role-specific
+harnesses built by a shared Codex factory. The Cursor probe is not wired into
+evaluation.
+
+`--codex-binary` remains a documented compatibility override for either Codex
+role. Results expose neutral `task_adapter`, `task_adapter_version`,
+`judge_adapter`, and `judge_adapter_version` runtime fields. The older
+`adapter` and `codex_version` fields remain compatibility aliases for the task
+adapter and task adapter version.
 
 ## Model-profile capability reviews
 
@@ -596,6 +606,7 @@ the target skill's value from sibling-skill coverage. Repository-mode coverage
 by a peer is not evidence that the raw model provides the behavior. A complete
 capability review inspects both universes or records the limitation.
 
-The current task runner is Codex. Model selection through `--model` and
-`--judge-model` therefore produces Codex model-profile evidence, not behavioral
-evidence for every harness supported by the packaging system.
+The registered production task and judge adapters are currently Codex. Model
+selection through `--model` and `--judge-model` therefore produces Codex
+model-profile evidence, not behavioral evidence for every harness supported by
+the packaging system.

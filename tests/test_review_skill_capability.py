@@ -294,6 +294,10 @@ class FakeEvaluationRunner:
                 ),
             },
             "runtime": {
+                "task_adapter": "codex",
+                "task_adapter_version": "fake-codex 1.0",
+                "judge_adapter": "codex",
+                "judge_adapter_version": "fake-codex 1.0",
                 "adapter": "codex",
                 "codex_version": "fake-codex 1.0",
                 "model": args.model,
@@ -781,6 +785,8 @@ class RoutineScreenTests(unittest.TestCase):
             {("1", "3")},
         )
         self.assertTrue(all(args.deadline_seconds == 3300 for args in runner.arguments))
+        self.assertTrue(all(args.task_adapter == "codex" for args in runner.arguments))
+        self.assertTrue(all(args.judge_adapter == "codex" for args in runner.arguments))
         self.assertEqual(manifest["aggregate"]["outcome"], "eligible-for-escalation")
 
     def test_unchanged_discovery_omits_observational_triggers(self) -> None:

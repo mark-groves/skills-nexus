@@ -883,7 +883,7 @@ def _cell_summary(
         "universe": universe,
         "task_model": profile.model,
         "judge_model": profile.judge_model,
-        "runner_version": runtime.get("codex_version"),
+        "runner_version": runtime.get("task_adapter_version") or runtime.get("codex_version"),
         "verdict": (
             result.get("optimisation_review", {}).get("verdict")
             if isinstance(result.get("optimisation_review"), dict)
@@ -993,7 +993,7 @@ def _validate_result(
                     f"Profile {profile.id} in {universe} changed pinned {control_label}: "
                     f"expected {normalized_expected!r}, observed {observed_control!r}"
                 )
-    runner_version = runtime.get("codex_version")
+    runner_version = runtime.get("task_adapter_version") or runtime.get("codex_version")
     if not isinstance(runner_version, str) or not runner_version.strip():
         raise EvalError(
             f"Profile {profile.id} in {universe} did not report an exact runner version"
@@ -1033,6 +1033,10 @@ def _build_eval_args(
         str(config.jobs),
         "--timeout",
         str(config.timeout),
+        "--task-adapter",
+        profile.adapter,
+        "--judge-adapter",
+        profile.adapter,
         "--model",
         profile.model,
         "--judge-model",
