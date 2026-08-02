@@ -50,6 +50,7 @@ class JudgmentRequest:
 class TaskHarness(Protocol):
     id: str
     version: str
+    reported_model: str | UnavailableEvidence
     capabilities: HarnessCapabilities
     conditions: tuple[EvaluationCondition, ...]
     peer_skills: tuple[Path, ...]
@@ -60,6 +61,7 @@ class TaskHarness(Protocol):
 class JudgeHarness(Protocol):
     id: str
     version: str
+    reported_model: str | UnavailableEvidence
     capabilities: HarnessCapabilities
 
     def execute_judgment(self, request: JudgmentRequest) -> Mapping[str, Any]: ...

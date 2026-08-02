@@ -52,6 +52,7 @@ from skill_eval.judging import grade_behavior, validate_judgment  # noqa: E402
 class FakeThirdHarness:
     id = "third-harness"
     version = "third-harness 1.0"
+    reported_model: str | UnavailableEvidence = "third-native-model"
     capabilities = HarnessCapabilities(
         task_execution=True,
         judgment_execution=True,
@@ -206,6 +207,9 @@ class HarnessBoundaryTests(unittest.TestCase):
         self.assertEqual(result["runtime"]["task_adapter_version"], "third-harness 1.0")
         self.assertEqual(result["runtime"]["judge_adapter"], "third-harness")
         self.assertEqual(result["runtime"]["judge_adapter_version"], "third-harness 1.0")
+        self.assertEqual(result["runtime"]["task_model_reported"], "third-native-model")
+        self.assertEqual(result["runtime"]["judge_model_reported"], "third-native-model")
+        self.assertNotIn("unavailable_evidence", result["runtime"])
         behavior = result["behavior"]["results"][0]
         self.assertEqual(behavior["judge"]["status"], "completed")
         self.assertTrue(behavior["grades"]["skill"][0]["passed"])
@@ -334,6 +338,8 @@ class HarnessBoundaryTests(unittest.TestCase):
         )
         self.assertEqual(harnesses.task.id, "codex")
         self.assertEqual(harnesses.judge.id, "codex")
+        self.assertIsInstance(harnesses.task.reported_model, UnavailableEvidence)
+        self.assertIsInstance(harnesses.judge.reported_model, UnavailableEvidence)
         self.assertIs(cast(CodexTaskHarness, harnesses.task)._runner, runner)
         self.assertIs(cast(CodexJudgeHarness, harnesses.judge)._runner, runner)
 
@@ -409,6 +415,9 @@ class HarnessBoundaryTests(unittest.TestCase):
         class UnknownJudge:
             id = "unknown-judge"
             version = "1"
+            reported_model: str | UnavailableEvidence = UnavailableEvidence(
+                "unknown judge does not expose its model"
+            )
             capabilities = FakeThirdHarness.capabilities
 
             def execute_judgment(self, request: JudgmentRequest) -> dict[str, Any]:

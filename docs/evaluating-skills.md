@@ -99,7 +99,12 @@ role. Results expose neutral `task_adapter`, `task_adapter_version`,
 `task_model_requested`, `task_model_reported`, `judge_adapter`,
 `judge_adapter_version`, `judge_model_requested`, and `judge_model_reported`
 runtime fields. The older `adapter`, `codex_version`, `model`, and `judge_model`
-fields remain compatibility aliases for existing result readers.
+fields remain compatibility aliases for existing result readers. Reported
+models come only from adapter-native execution evidence; they are never copied
+from the requested CLI values. When an adapter cannot prove the resolved model,
+the reported field is `null` and `runtime.unavailable_evidence` records the
+reason. Codex JSON events currently omit resolved task and judge model IDs, so a
+model-pinned capability review fails closed until that native evidence exists.
 
 ## Model-profile capability reviews
 

@@ -836,6 +836,7 @@ class CapabilityReviewOrchestrationTests(unittest.TestCase):
             ("task_adapter", "cursor", "changed pinned task adapter"),
             ("judge_adapter", "cursor", "changed pinned judge adapter"),
             ("task_model_reported", "other-task", "changed pinned reported task model"),
+            ("task_model_reported", None, "changed pinned reported task model"),
             ("judge_model_reported", "other-judge", "changed pinned reported judge model"),
             ("task_adapter_version", "fake-codex 2.0", "Task harness version"),
             ("judge_adapter_version", "fake-codex 2.0", "Judge harness version"),
@@ -845,7 +846,7 @@ class CapabilityReviewOrchestrationTests(unittest.TestCase):
                 fixture = CapabilityReviewFixture(Path(temp_dir))
 
                 class DriftRunner(FakeEvaluationRunner):
-                    def __init__(self, drift_field: str, drift_value: str) -> None:
+                    def __init__(self, drift_field: str, drift_value: object) -> None:
                         super().__init__()
                         self.drift_field = drift_field
                         self.drift_value = drift_value

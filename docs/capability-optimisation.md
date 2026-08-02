@@ -111,6 +111,11 @@ default or Cursor `Auto` selection is not sufficient evidence, and results
 produced with different adapters, versions, manifests, suites, or judge
 policies are not treated as directly comparable.
 
+Requested model flags are not execution evidence. An adapter must report the
+resolved task and judge model identifiers from its native runtime output;
+otherwise the fields remain explicitly unavailable and the capability review
+fails closed. Codex JSON events do not currently expose those identifiers.
+
 The executable profile contract lives at
 [`eval-profiles.json`](../eval-profiles.json). Every required profile runs;
 observed profiles are opt-in. Schema v2 permits Codex and Cursor task profiles
