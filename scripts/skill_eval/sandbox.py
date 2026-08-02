@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import shutil
@@ -26,6 +27,7 @@ _ENVIRONMENT_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _CONTAINER_HOME = "/sandbox-home"
 _CONTAINER_WORKSPACE = "/workspace"
 _REDACTION = "[REDACTED]"
+_TRUNCATED_SECRET_OUTPUT = "[REDACTED: SECRET-BEARING OUTPUT TRUNCATED]"
 _SAFE_HOST_ENVIRONMENT = (
     "DBUS_SESSION_BUS_ADDRESS",
     "HOME",
@@ -67,7 +69,7 @@ class SandboxPolicy:
             (self.max_output_bytes, "max_output_bytes"),
         )
         for value, name in positive_values:
-            if isinstance(value, bool) or value <= 0:
+            if isinstance(value, bool) or not math.isfinite(value) or value <= 0:
                 raise EvalError(f"sandbox {name} must be positive")
         if self.network not in {"none", "private"}:
             raise EvalError("sandbox network must be 'none' or 'private'")
@@ -239,7 +241,6 @@ class PodmanSandboxRunner:
             "--image-volume=ignore",
             "--cap-drop=ALL",
             "--security-opt=no-new-privileges",
-            "--security-opt=label=disable",
             "--userns=keep-id",
             f"--user={os.getuid()}:{os.getgid()}",
             "--ipc=private",
@@ -267,7 +268,7 @@ class PodmanSandboxRunner:
             ),
             f"--tmpfs=/tmp:rw,nodev,nosuid,noexec,size={temporary_storage},mode=1777",
             f"--tmpfs=/run:rw,nodev,nosuid,noexec,size={temporary_storage},mode=755",
-            f"--mount=type=bind,src={workspace},target={_CONTAINER_WORKSPACE},rw",
+            (f"--mount=type=bind,src={workspace},target={_CONTAINER_WORKSPACE},rw,relabel=private"),
             f"--workdir={_CONTAINER_WORKSPACE}",
         ]
         result.extend(f"--env={name}" for name in secret_names)
@@ -309,6 +310,14 @@ class PodmanSandboxRunner:
         return cleanup.returncode == 0, error
 
     @staticmethod
+    def _cleanup_target(name: str, cidfile: Path) -> str:
+        try:
+            container_id = cidfile.read_text(encoding="utf-8").strip()
+        except OSError:
+            return name
+        return container_id if re.fullmatch(r"[0-9a-f]{64}", container_id) else name
+
+    @staticmethod
     def _redact(text: str, secrets: Mapping[str, str]) -> str:
         for value in sorted(set(secrets.values()), key=len, reverse=True):
             text = text.replace(value, _REDACTION)
@@ -320,7 +329,15 @@ class PodmanSandboxRunner:
         capture: _BoundedCapture,
         secrets: Mapping[str, str],
         exposed_limit: int,
+        *,
+        incomplete: bool = False,
     ) -> tuple[str, bool]:
+        if incomplete:
+            bounded, _ = cls._bounded_text("[INCOMPLETE OUTPUT CAPTURE]", exposed_limit)
+            return bounded, True
+        if capture.truncated and secrets:
+            bounded, _ = cls._bounded_text(_TRUNCATED_SECRET_OUTPUT, exposed_limit)
+            return bounded, True
         redacted = cls._redact(capture.text(), secrets)
         encoded = redacted.encode("utf-8")
         truncated = capture.truncated or len(encoded) > exposed_limit
@@ -367,6 +384,7 @@ class PodmanSandboxRunner:
         stderr_capture = _BoundedCapture(internal_output_limit)
         capture_threads: list[threading.Thread] = []
         startup_error = ""
+        capture_incomplete = False
 
         with tempfile.TemporaryDirectory(prefix="skill-eval-podman-") as temporary:
             temporary_root = Path(temporary)
@@ -425,7 +443,10 @@ class PodmanSandboxRunner:
                             exit_code = process.wait(timeout=min(0.1, remaining))
                         except subprocess.TimeoutExpired:
                             continue
-                        status = "completed" if exit_code == 0 else "failed"
+                        if cancel_event is not None and cancel_event.is_set():
+                            status = "cancelled"
+                        else:
+                            status = "completed" if exit_code == 0 else "failed"
                         break
                 except (OSError, subprocess.SubprocessError, EvalError) as exc:
                     startup_error = f"Podman process could not start: {exc}"
@@ -443,9 +464,11 @@ class PodmanSandboxRunner:
                             exit_code = process.returncode
                     for thread in capture_threads:
                         thread.join(timeout=2)
-                if not cleanup_completed:
+                        capture_incomplete = capture_incomplete or thread.is_alive()
+                if process is not None:
+                    cleanup_target = self._cleanup_target(name, cidfile)
                     retry_completed, retry_error = self._force_remove(
-                        name,
+                        cleanup_target,
                         config_home=config_home,
                     )
                     cleanup_completed = retry_completed
@@ -453,15 +476,21 @@ class PodmanSandboxRunner:
                         error for error in (cleanup_error, retry_error) if error
                     )
 
+        if capture_incomplete and status == "completed":
+            status = "failed"
+            startup_error = "Podman output capture did not finish after process termination"
+
         stdout, stdout_truncated = self._redacted_capture(
             stdout_capture,
             normalized_secrets,
             selected_policy.max_output_bytes,
+            incomplete=capture_incomplete,
         )
         stderr, stderr_truncated = self._redacted_capture(
             stderr_capture,
             normalized_secrets,
             selected_policy.max_output_bytes,
+            incomplete=capture_incomplete,
         )
         if startup_error:
             redacted_startup_error = self._redact(startup_error, normalized_secrets)

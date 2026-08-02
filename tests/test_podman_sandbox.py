@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import io
 import json
 import os
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -84,9 +86,11 @@ class PodmanSandboxContractTests(unittest.TestCase):
             "--unsetenv-all",
             "--env=HOME=/sandbox-home",
             f"src={workspace},target=/workspace,rw",
+            "relabel=private",
             "--workdir=/workspace",
         ):
             self.assertIn(expected, rendered)
+        self.assertNotIn("--security-opt=label=disable", command)
 
     def test_private_network_never_uses_host_networking(self) -> None:
         runner = self._runner()
@@ -125,6 +129,12 @@ class PodmanSandboxContractTests(unittest.TestCase):
                     command=("true",),
                     secrets={"HOME": "host-home"},
                 )
+        for value in (float("nan"), float("inf"), float("-inf")):
+            with (
+                self.subTest(non_finite=value),
+                self.assertRaisesRegex(EvalError, "must be positive"),
+            ):
+                SandboxPolicy(timeout_seconds=value)
 
     def test_cleanup_timeout_is_reported_without_raising(self) -> None:
         runner = self._runner()
@@ -155,6 +165,39 @@ class PodmanSandboxContractTests(unittest.TestCase):
         self.assertIn("could not start", result.stderr)
         self.assertTrue(result.cleanup_completed)
 
+    def test_cancellation_set_during_final_wait_wins_over_process_exit(self) -> None:
+        runner = self._runner()
+        cancel = threading.Event()
+
+        class ExitingProcess:
+            pid = 999_999
+            returncode = 0
+            stdout = io.BytesIO()
+            stderr = io.BytesIO()
+
+            def wait(self, timeout: float | None = None) -> int:
+                cancel.set()
+                return 0
+
+            def poll(self) -> int:
+                return 0
+
+        process = ExitingProcess()
+        with (
+            tempfile.TemporaryDirectory() as temporary,
+            mock.patch("skill_eval.sandbox.subprocess.Popen", return_value=process),
+            mock.patch.object(runner, "_force_remove", return_value=(True, "")) as remove,
+        ):
+            result = runner.run(
+                image="image-id",
+                workspace=Path(temporary),
+                command=("true",),
+                cancel_event=cancel,
+            )
+
+        self.assertEqual(result.status, "cancelled")
+        self.assertEqual(remove.call_count, 2)
+
 
 @unittest.skipUnless(
     PODMAN_TEST_IMAGE,
@@ -182,6 +225,7 @@ class PodmanSandboxAdversarialTests(unittest.TestCase):
             capture_output=True,
             check=False,
             text=True,
+            timeout=15,
         )
         self.assertEqual(probe.returncode, 0, probe.stderr)
         self.assertEqual(probe.stdout.strip(), "")
@@ -212,11 +256,11 @@ class PodmanSandboxAdversarialTests(unittest.TestCase):
             script = "\n".join(
                 (
                     "set -eu",
-                    f"test ! -e {str(host_canary)!r}",
-                    f"! cat {str(host_canary)!r}",
-                    f"! printf compromised > {str(host_target)!r}",
+                    f"test ! -e {shlex.quote(str(host_canary))}",
+                    f"! cat {shlex.quote(str(host_canary))}",
+                    f"! printf compromised > {shlex.quote(str(host_target))}",
                     "! printf escaped > /workspace/escape",
-                    f"test ! -e {str(personal_sentinel)!r}",
+                    f"test ! -e {shlex.quote(str(personal_sentinel))}",
                     "test ! -e /sandbox-home/.cursor",
                     "test ! -e /sandbox-home/.ssh",
                     "test ! -e /inherited-host-mount",
@@ -289,6 +333,47 @@ class PodmanSandboxAdversarialTests(unittest.TestCase):
         self.assertEqual(result.status, "completed", result.stderr)
         self.assertEqual(result.stdout, "123456789[")
         self.assertNotIn(secret[:2], result.stdout)
+        self.assertTrue(result.output_truncated)
+        self._assert_container_removed(result.run_id)
+
+    def test_repeated_secret_beyond_capture_limit_discards_stream(self) -> None:
+        secret_value = "repeated-runtime-secret-value"
+        with tempfile.TemporaryDirectory() as temporary:
+            result = self.runner.run(
+                image=self.image,
+                workspace=Path(temporary),
+                command=(
+                    "/bin/sh",
+                    "-c",
+                    'printf "%s%s%s%s%s%s" "$API_KEY" "$API_KEY" "$API_KEY" '
+                    '"$API_KEY" "$API_KEY" "$API_KEY"',
+                ),
+                policy=SandboxPolicy(timeout_seconds=10, max_output_bytes=32),
+                secrets={"API_KEY": secret_value},
+            )
+
+        self.assertEqual(result.status, "completed", result.stderr)
+        self.assertTrue(result.stdout.startswith("[REDACTED:"))
+        self.assertNotIn(secret_value[:5], result.stdout)
+        self.assertTrue(result.output_truncated)
+        self._assert_container_removed(result.run_id)
+
+    def test_multiple_secrets_beyond_capture_limit_discard_stream(self) -> None:
+        first_value = "first-runtime-secret-value-12345"
+        second_value = "second-runtime-secret-value-67890"
+        with tempfile.TemporaryDirectory() as temporary:
+            result = self.runner.run(
+                image=self.image,
+                workspace=Path(temporary),
+                command=("/bin/sh", "-c", 'printf "%s%s" "$FIRST_KEY" "$SECOND_KEY"'),
+                policy=SandboxPolicy(timeout_seconds=10, max_output_bytes=20),
+                secrets={"FIRST_KEY": first_value, "SECOND_KEY": second_value},
+            )
+
+        self.assertEqual(result.status, "completed", result.stderr)
+        self.assertTrue(result.stdout.startswith("[REDACTED:"))
+        self.assertNotIn(first_value[:5], result.stdout)
+        self.assertNotIn(second_value[:5], result.stdout)
         self.assertTrue(result.output_truncated)
         self._assert_container_removed(result.run_id)
 

@@ -10,6 +10,8 @@ evaluation workspace. The runner refuses non-rootless Podman, disables implicit
 image pulls, and starts a disposable container with:
 
 - only the resolved workspace bind-mounted at `/workspace`;
+- a private SELinux relabel on that disposable workspace mount, retaining host
+  MAC enforcement without exposing any other host directory;
 - a read-only root filesystem plus bounded tmpfs mounts for an empty home,
   `/tmp`, and `/run`;
 - no inherited host environment, home, SSH files, Cursor profile, rules, skills,
@@ -27,10 +29,12 @@ image pulls, and starts a disposable container with:
 Secrets are accepted only as an in-memory mapping. Podman receives `--env NAME`
 rather than `--env NAME=value`, so secret values are absent from the command
 line. The runner exposes only those named variables to the container, removes
-the disposable container and its tmpfs home, and replaces every supplied value
-in bounded stdout, stderr, and cleanup diagnostics before returning a normalized
-result. Harnesses must treat `timed-out`, `cancelled`, `cleanup-failed`, non-zero
-exit, or truncated output as non-success evidence.
+the disposable container and its tmpfs home, and redacts direct occurrences of
+every supplied value in bounded stdout, stderr, and cleanup diagnostics. If a
+secret-bearing stream crosses the internal capture bound, the runner discards
+that entire captured stream instead of risking disclosure of a partial value.
+Harnesses must treat `timed-out`, `cancelled`, `cleanup-failed`, non-zero exit,
+or truncated output as non-success evidence.
 
 Typical adapter use:
 
@@ -50,6 +54,10 @@ result = PodmanSandboxRunner().run(
 
 The image must be provisioned and reviewed separately. `--pull=never` prevents a
 run from silently changing its executable substrate or contacting a registry.
+User `containers.conf` and `storage.conf` are deliberately not inherited because
+they can widen execution policy; images must therefore be present in the default
+rootless store visible under the isolated client configuration. A custom-only
+graph root fails closed as an unavailable image.
 The `private` network mode permits outbound network access and is not a domain
 allowlist; adapters should retain the default `none` unless an authenticated API
 turn requires egress. No mode exposes the host network namespace or host
@@ -61,8 +69,8 @@ Fast contract tests always verify rootless refusal, the exact resource/isolation
 flags, runtime-only secret argument construction, and network selection. Live
 adversarial tests are opt-in because CI hosts do not necessarily provide
 rootless Podman. From the repository root, point them at a preloaded local image
-containing `/bin/sh` plus `cat`, `ls`, and `printf` (BusyBox applets are
-sufficient):
+containing `/bin/sh` plus `cat`, `ls`, `printf`, `sleep`, and `test` (BusyBox
+applets are sufficient):
 
 ```bash
 SKILLS_NEXUS_PODMAN_TEST_IMAGE=<local-image-id-or-digest> \
