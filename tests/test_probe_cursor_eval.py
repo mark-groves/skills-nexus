@@ -272,6 +272,41 @@ class CursorProcessBoundaryTests(unittest.TestCase):
             self.assertEqual(run_case.call_count, 1)
             self.assertFalse(auth_template.exists())
 
+    def test_live_case_purges_copied_state_when_setup_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_root = Path(temp_dir)
+            auth_template = output_root / "auth-template"
+            config_path = auth_template / ".cursor" / "cli-config.json"
+            config_path.parent.mkdir(parents=True)
+            config_path.write_text(
+                json.dumps({"version": 1, "existing_setting": "fixture"}),
+                encoding="utf-8",
+            )
+            (auth_template / "state.dat").write_text("fixture\n", encoding="utf-8")
+
+            with mock.patch.object(
+                probe,
+                "_prepare_workspace",
+                side_effect=probe.ProbeError("setup failed"),
+            ):
+                with mock.patch.object(probe, "_run_streaming_process") as run_stream:
+                    with self.assertRaisesRegex(probe.ProbeError, "setup failed"):
+                        probe._run_live_case(
+                            executable="/tmp/agent",
+                            auth_template=auth_template,
+                            output_root=output_root,
+                            case_id="setup-failure",
+                            prompt="probe",
+                            model="gpt-5",
+                            mode="plan",
+                            force=False,
+                            behavior=False,
+                            timeout_seconds=1,
+                        )
+
+            run_stream.assert_not_called()
+            self.assertFalse((output_root / "setup-failure" / "home").exists())
+
     def test_timeout_terminates_process_group_and_records_timeout(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

@@ -888,72 +888,76 @@ def _run_live_case(
     run_dir.mkdir(parents=True, mode=0o700)
     home = run_dir / "home"
     home.mkdir(mode=0o700)
-    credential_paths = _copy_auth_template(auth_template, home)
-    (home / ".cursor-credential-canary").write_text("not-a-secret\n", encoding="utf-8")
-    credential_paths += (Path(".cursor-credential-canary"),)
-    skill_path = _write_probe_skill(home)
-    _write_permissions(home)
-    credential_paths = tuple(
-        path for path in credential_paths if path != Path(".cursor/cli-config.json")
-    )
-    workspace = _prepare_workspace(run_dir, behavior=behavior)
-    forbidden_workspace_context = (
-        workspace / ".cursor" / "rules",
-        workspace / ".cursor" / "mcp.json",
-        workspace / "AGENTS.md",
-        workspace / "CLAUDE.md",
-        workspace / "mcp.json",
-    )
-    workspace_context_clean = not any(path.exists() for path in forbidden_workspace_context)
-    before_mcp = _snapshot(workspace)
-    prompt_path = run_dir / "prompt.txt"
-    prompt_path.write_text(prompt, encoding="utf-8")
-    env = _clean_environment(home, include_canary=True)
     try:
-        mcp_status = _run_text(
-            [executable, "mcp", "list"],
-            env=env,
-            cwd=workspace,
+        credential_paths = _copy_auth_template(auth_template, home)
+        (home / ".cursor-credential-canary").write_text("not-a-secret\n", encoding="utf-8")
+        credential_paths += (Path(".cursor-credential-canary"),)
+        skill_path = _write_probe_skill(home)
+        _write_permissions(home)
+        process_credential_paths = tuple(
+            path for path in credential_paths if path != Path(".cursor/cli-config.json")
         )
-    except ProbeError:
-        mcp_configuration_absent: bool | None = None
-    else:
-        mcp_configuration_absent = "No MCP servers configured" in mcp_status
-    after_mcp = _snapshot(workspace)
-    mcp_workspace_mutated = before_mcp != after_mcp
-    before = after_mcp
-    behavior_script_digest = before_mcp.get("probe_action.py") if behavior else None
-    command = [
-        executable,
-        "--print",
-        "--output-format",
-        "stream-json",
-        "--sandbox",
-        "enabled",
-        "--trust",
-        "--workspace",
-        str(workspace),
-        "--model",
-        model,
-        "--mode",
-        mode,
-    ]
-    if force:
-        command.append("--force")
-    command.append(prompt)
-    events_path = run_dir / "events.jsonl"
-    stderr_path = run_dir / "stderr.log"
-    process = _run_streaming_process(
-        command,
-        cwd=workspace,
-        env=env,
-        timeout_seconds=timeout_seconds,
-        events_path=events_path,
-        stderr_path=stderr_path,
-        secrets=_credential_redactions(auth_template),
-        credential_home=home,
-        credential_paths=credential_paths,
-    )
+        workspace = _prepare_workspace(run_dir, behavior=behavior)
+        forbidden_workspace_context = (
+            workspace / ".cursor" / "rules",
+            workspace / ".cursor" / "mcp.json",
+            workspace / "AGENTS.md",
+            workspace / "CLAUDE.md",
+            workspace / "mcp.json",
+        )
+        workspace_context_clean = not any(path.exists() for path in forbidden_workspace_context)
+        before_mcp = _snapshot(workspace)
+        prompt_path = run_dir / "prompt.txt"
+        prompt_path.write_text(prompt, encoding="utf-8")
+        env = _clean_environment(home, include_canary=True)
+        try:
+            mcp_status = _run_text(
+                [executable, "mcp", "list"],
+                env=env,
+                cwd=workspace,
+            )
+        except ProbeError:
+            mcp_configuration_absent: bool | None = None
+        else:
+            mcp_configuration_absent = "No MCP servers configured" in mcp_status
+        after_mcp = _snapshot(workspace)
+        mcp_workspace_mutated = before_mcp != after_mcp
+        before = after_mcp
+        behavior_script_digest = before_mcp.get("probe_action.py") if behavior else None
+        command = [
+            executable,
+            "--print",
+            "--output-format",
+            "stream-json",
+            "--sandbox",
+            "enabled",
+            "--trust",
+            "--workspace",
+            str(workspace),
+            "--model",
+            model,
+            "--mode",
+            mode,
+        ]
+        if force:
+            command.append("--force")
+        command.append(prompt)
+        events_path = run_dir / "events.jsonl"
+        stderr_path = run_dir / "stderr.log"
+        process = _run_streaming_process(
+            command,
+            cwd=workspace,
+            env=env,
+            timeout_seconds=timeout_seconds,
+            events_path=events_path,
+            stderr_path=stderr_path,
+            secrets=_credential_redactions(auth_template),
+            credential_home=home,
+            credential_paths=process_credential_paths,
+        )
+    except BaseException:
+        shutil.rmtree(home, ignore_errors=True)
+        raise
     after = _snapshot(workspace)
     parsed: ParsedStream | None = None
     parse_error: str | None = None
