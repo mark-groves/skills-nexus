@@ -169,7 +169,7 @@ class PodmanSandboxRunner:
             payload = json.loads(probe.stdout)
             rootless = payload["host"]["security"]["rootless"]
             version = payload["version"]["Version"]
-        except (KeyError, TypeError, json.JSONDecodeError) as exc:
+        except (KeyError, TypeError, ValueError) as exc:
             raise EvalError("Podman runtime preflight returned malformed metadata") from exc
         if rootless is not True:
             raise EvalError("Podman sandbox runner requires a rootless runtime")
@@ -209,6 +209,8 @@ class PodmanSandboxRunner:
             raise EvalError(f"sandbox workspace could not be resolved: {exc}") from exc
         if not resolved.is_dir():
             raise EvalError(f"sandbox workspace is not a directory: {resolved}")
+        if "," in str(resolved):
+            raise EvalError("sandbox workspace path cannot contain ','")
         return resolved
 
     def _build_command(

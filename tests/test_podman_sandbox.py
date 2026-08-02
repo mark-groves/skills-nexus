@@ -48,6 +48,15 @@ class PodmanSandboxContractTests(unittest.TestCase):
         ):
             PodmanSandboxRunner()
 
+    def test_runtime_metadata_must_be_utf8_json(self) -> None:
+        probe = subprocess.CompletedProcess(args=[], returncode=0, stdout=b"\xff", stderr=b"")
+        with (
+            mock.patch("skill_eval.sandbox.shutil.which", return_value="/usr/bin/podman"),
+            mock.patch("skill_eval.sandbox.subprocess.run", return_value=probe),
+            self.assertRaisesRegex(EvalError, "returned malformed metadata"),
+        ):
+            PodmanSandboxRunner()
+
     def test_command_enforces_disposable_boundary_and_contains_no_secret_values(self) -> None:
         runner = self._runner()
         with tempfile.TemporaryDirectory() as temporary:
@@ -135,6 +144,17 @@ class PodmanSandboxContractTests(unittest.TestCase):
                 self.assertRaisesRegex(EvalError, "must be positive"),
             ):
                 SandboxPolicy(timeout_seconds=value)
+
+    def test_workspace_mount_delimiter_fails_before_execution(self) -> None:
+        runner = self._runner()
+        with (
+            tempfile.TemporaryDirectory(prefix="sandbox,workspace-") as temporary,
+            mock.patch("skill_eval.sandbox.subprocess.Popen") as popen,
+            self.assertRaisesRegex(EvalError, "workspace path cannot contain ','"),
+        ):
+            runner.run(image="image-id", workspace=Path(temporary), command=("true",))
+
+        popen.assert_not_called()
 
     def test_cleanup_timeout_is_reported_without_raising(self) -> None:
         runner = self._runner()
