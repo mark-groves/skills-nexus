@@ -383,7 +383,7 @@ class EvalCoreTests(unittest.TestCase):
             )
 
             with (
-                mock.patch.object(eval_skills, "CodexRunner") as runner,
+                mock.patch.object(eval_skills, "_run_evaluation") as evaluate,
                 contextlib.redirect_stderr(io.StringIO()) as stderr,
             ):
                 status = eval_skills.main(
@@ -400,7 +400,7 @@ class EvalCoreTests(unittest.TestCase):
 
             self.assertEqual(status, 1)
             self.assertIn("must not be nested", stderr.getvalue())
-            runner.assert_not_called()
+            evaluate.assert_not_called()
 
     def test_candidate_mode_snapshots_current_and_candidate_for_the_whole_run(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -432,7 +432,10 @@ class EvalCoreTests(unittest.TestCase):
                 current_runtime,
                 source_candidate,
                 candidate_runtime,
+                *,
+                harness_factory,
             ):
+                self.assertIs(harness_factory, eval_skills.default_harness_factory)
                 self.assertNotEqual(current_runtime, source_current)
                 self.assertNotEqual(candidate_runtime, source_candidate)
                 (source_current / "SKILL.md").write_text("changed current\n", encoding="utf-8")
@@ -493,7 +496,7 @@ class EvalCoreTests(unittest.TestCase):
             )
 
             with (
-                mock.patch.object(eval_skills, "CodexRunner") as runner,
+                mock.patch.object(eval_skills, "_run_evaluation") as evaluate,
                 contextlib.redirect_stderr(io.StringIO()) as stderr,
             ):
                 status = eval_skills.main(
@@ -511,7 +514,7 @@ class EvalCoreTests(unittest.TestCase):
 
             self.assertEqual(status, 1)
             self.assertIn("logical skill identity mismatch", stderr.getvalue())
-            runner.assert_not_called()
+            evaluate.assert_not_called()
 
     def test_plan_does_not_measure_runtime_footprints(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -2265,6 +2268,29 @@ class EvalCoreTests(unittest.TestCase):
         )
         self.assertEqual(summary["balanced_accuracy"], 1.0)
         self.assertEqual(summary["run_accuracy"], 0.75)
+
+    def test_trigger_summary_keeps_unavailable_activation_metrics_unknown(self) -> None:
+        cases = (
+            TriggerCase("p", "positive", True),
+            TriggerCase("n", "negative", False),
+        )
+        runs: list[dict[str, Any]] = [
+            {"case_id": "p", "status": "completed", "activated": None},
+            {"case_id": "n", "status": "completed", "activated": False},
+        ]
+
+        summary = summarize_trigger_results(cases, runs, threshold=0.5)
+
+        self.assertEqual(
+            summary["confusion_matrix"],
+            {"tp": 0, "fp": 0, "tn": 1, "fn": 0, "unscored": 1},
+        )
+        self.assertIsNone(summary["recall"])
+        self.assertEqual(summary["specificity"], 1.0)
+        self.assertIsNone(summary["case_accuracy"])
+        self.assertIsNone(summary["case_accuracy_interval_95"])
+        self.assertIsNone(summary["balanced_accuracy"])
+        self.assertEqual(summary["evidence_coverage"], 0.5)
 
 
 class EvalCliIntegrationTests(unittest.TestCase):

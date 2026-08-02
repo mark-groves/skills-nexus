@@ -67,6 +67,29 @@ Useful controls include:
 
 Run `python3 scripts/eval_skills.py --help` for the complete interface.
 
+## Harness boundaries
+
+The evaluator orchestrates task and judge turns through harness-neutral
+contracts. Task harnesses receive a validated condition and task request, while
+judge harnesses receive only a randomized, condition-blind normalized evidence
+bundle and the canonical local schema. Common code owns fresh task workspaces,
+before/after and Git observations, bounded evidence construction, path and
+instruction redaction, label randomization, strict local judgment validation,
+and grade mapping.
+
+Adapters retain authentication, temporary harness configuration, skill
+installation, process construction, raw event parsing, activation signals,
+usage/model extraction, version discovery, and native structured-output
+invocation. Missing adapter evidence is represented internally as typed
+unavailable evidence and serialized as `null` with an explicit reason; it is
+never converted to zero or `false`. An unknown hard-check result maps to an
+unknown grade and cannot pass an optimisation gate.
+
+Codex remains the only production evaluator and the unchanged default in this
+refactor. The compatibility factory creates the existing Codex task and judge
+path behind the contracts. Adapter selection and a production registry are
+separate follow-up work; the Cursor probe is not wired into evaluation.
+
 ## Model-profile capability reviews
 
 `scripts/review_skill_capability.py` orchestrates the unchanged candidate

@@ -17,7 +17,6 @@ from functools import partial
 from pathlib import Path
 from typing import Any, TypeVar
 
-from skill_eval.codex_runner import CodexRunner
 from skill_eval.core import (
     BehaviorCase,
     EvalError,
@@ -46,6 +45,13 @@ from skill_eval.core import (
     summarize_trigger_results,
     validate_candidate_separation,
 )
+from skill_eval.engine import run_task
+from skill_eval.harness import (
+    HarnessFactory,
+    TaskRequest,
+    default_harness_factory,
+)
+from skill_eval.judging import grade_behavior
 from skill_eval.report import write_reports
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -266,9 +272,9 @@ def _fixture_error_run(
         "status": "fixture_error",
         "exit_code": None,
         "duration_seconds": 0.0,
-        "usage": {},
-        "tool_calls": 0,
-        "activated": False,
+        "usage": None,
+        "tool_calls": None,
+        "activated": None,
         "final_response": "",
         "case_type": "behavior",
         "case_id": case_id,
@@ -277,6 +283,11 @@ def _fixture_error_run(
         "workspace": "",
         "artifact_delta": {"created": [], "modified": [], "deleted": []},
         "git": {"available": False},
+        "unavailable_evidence": {
+            "usage": "task run was withheld because fixture preparation failed",
+            "tool_calls": "task run was withheld because fixture preparation failed",
+            "activated": "task run was withheld because fixture preparation failed",
+        },
         "error": f"Fixture fidelity is {fidelity}; task run was withheld",
     }
     json_dump(run_dir / "run.json", result)
@@ -321,9 +332,9 @@ def _safe_call(
             "status": "framework_error",
             "exit_code": None,
             "duration_seconds": 0.0,
-            "usage": {},
-            "tool_calls": 0,
-            "activated": False,
+            "usage": None,
+            "tool_calls": None,
+            "activated": None,
             "final_response": "",
             "case_type": case_type,
             "case_id": case_id,
@@ -332,6 +343,11 @@ def _safe_call(
             "workspace": "",
             "artifact_delta": {"created": [], "modified": [], "deleted": []},
             "git": {"available": False},
+            "unavailable_evidence": {
+                "usage": "task harness failed before telemetry was available",
+                "tool_calls": "task harness failed before telemetry was available",
+                "activated": "task harness failed before activation evidence was available",
+            },
             "error": f"{type(exc).__name__}: {exc}",
         }
         json_dump(run_dir / "run.json", result)
@@ -392,7 +408,11 @@ def _print_plan(
             print(f"  {case.id}: {details}")
 
 
-def run_evaluation(args: argparse.Namespace) -> tuple[dict[str, Any], Path]:
+def run_evaluation(
+    args: argparse.Namespace,
+    *,
+    harness_factory: HarnessFactory = default_harness_factory,
+) -> tuple[dict[str, Any], Path]:
     repo_root = args.repo_root.resolve()
     skill_dir = resolve_skill(repo_root, args.skill)
     candidate_dir = (
@@ -401,7 +421,15 @@ def run_evaluation(args: argparse.Namespace) -> tuple[dict[str, Any], Path]:
         else None
     )
     if candidate_dir is None:
-        return _run_evaluation(args, repo_root, skill_dir, None, None, None)
+        return _run_evaluation(
+            args,
+            repo_root,
+            skill_dir,
+            None,
+            None,
+            None,
+            harness_factory=harness_factory,
+        )
     validate_candidate_separation(skill_dir, candidate_dir)
     for peer_dir in discover_repository_skills(repo_root):
         if peer_dir not in {skill_dir, candidate_dir}:
@@ -422,6 +450,7 @@ def run_evaluation(args: argparse.Namespace) -> tuple[dict[str, Any], Path]:
             current_runtime_dir,
             candidate_dir,
             candidate_runtime_dir,
+            harness_factory=harness_factory,
         )
 
 
@@ -432,6 +461,8 @@ def _run_evaluation(
     current_runtime_dir: Path | None,
     candidate_dir: Path | None,
     candidate_runtime_dir: Path | None,
+    *,
+    harness_factory: HarnessFactory = default_harness_factory,
 ) -> tuple[dict[str, Any], Path]:
     conditions = (
         candidate_evaluation_conditions(current_runtime_dir, candidate_runtime_dir)
@@ -497,24 +528,27 @@ def _run_evaluation(
     run_id = output_dir.name
     output_dir.mkdir(parents=True)
 
-    runner = CodexRunner(
+    peer_skills = (
+        tuple(
+            path
+            for path in discover_repository_skills(repo_root)
+            if path not in {skill_dir, candidate_dir}
+        )
+        if args.skill_universe == "repository"
+        else ()
+    )
+    harnesses = harness_factory(
         conditions=conditions,
         codex_binary=args.codex_binary,
         model=args.model,
         judge_model=args.judge_model,
         timeout_seconds=args.timeout,
         sandbox=args.sandbox,
-        peer_skills=(
-            tuple(
-                path
-                for path in discover_repository_skills(repo_root)
-                if path not in {skill_dir, candidate_dir}
-            )
-            if args.skill_universe == "repository"
-            else ()
-        ),
+        peer_skills=peer_skills,
         deadline_seconds=args.deadline_seconds,
     )
+    task_harness = harnesses.task
+    judge_harness = harnesses.judge
     print(f"Run {run_id}: {output_dir}", flush=True)
 
     trigger_conditions = tuple(
@@ -542,14 +576,17 @@ def _run_evaluation(
                     future = executor.submit(
                         _safe_call,
                         partial(
-                            runner.run_task,
-                            run_dir=run_dir,
-                            workspace_template=None,
-                            prompt=trigger_case.query,
-                            case_type="trigger",
-                            case_id=trigger_case.id,
-                            repeat=repeat,
-                            condition=condition,
+                            run_task,
+                            task_harness,
+                            TaskRequest(
+                                run_dir=run_dir,
+                                workspace_template=None,
+                                prompt=trigger_case.query,
+                                case_type="trigger",
+                                case_id=trigger_case.id,
+                                repeat=repeat,
+                                condition=condition,
+                            ),
                         ),
                         case_type="trigger",
                         case_id=trigger_case.id,
@@ -648,14 +685,17 @@ def _run_evaluation(
                 future = executor.submit(
                     _safe_call,
                     partial(
-                        runner.run_task,
-                        run_dir=run_dir,
-                        workspace_template=job["template"],
-                        prompt=_behavior_prompt(behavior_case),
-                        case_type="behavior",
-                        case_id=behavior_case.id,
-                        repeat=repeat,
-                        condition=condition,
+                        run_task,
+                        task_harness,
+                        TaskRequest(
+                            run_dir=run_dir,
+                            workspace_template=job["template"],
+                            prompt=_behavior_prompt(behavior_case),
+                            case_type="behavior",
+                            case_id=behavior_case.id,
+                            repeat=repeat,
+                            condition=condition,
+                        ),
                     ),
                     case_type="behavior",
                     case_id=behavior_case.id,
@@ -703,12 +743,27 @@ def _run_evaluation(
                 behavior_results.append(behavior_result)
                 continue
             grade_dir = job["root"] / "judge"
+            evidence_by_condition = {
+                condition.id: (
+                    dict(runs_by_condition[condition.id]["evidence"])
+                    if isinstance(runs_by_condition[condition.id].get("evidence"), dict)
+                    else {
+                        "status": runs_by_condition[condition.id].get("status", "invalid"),
+                        "unavailable_evidence": {
+                            "normalized_evidence": "task harness did not provide normalized evidence"
+                        },
+                    }
+                )
+                for condition in conditions
+            }
             future = executor.submit(
-                runner.grade_pair,
+                grade_behavior,
+                judge_harness,
+                conditions=conditions,
                 grade_dir=grade_dir,
                 behavior_case=behavior_case,
                 repeat=job["repeat"],
-                runs_by_condition=runs_by_condition,
+                evidence_by_condition=evidence_by_condition,
             )
             judge_futures[future] = job
         for future in concurrent.futures.as_completed(judge_futures):
@@ -882,8 +937,8 @@ def _run_evaluation(
         },
         "context_footprint": static_footprints,
         "runtime": {
-            "adapter": "codex",
-            "codex_version": runner.version,
+            "adapter": task_harness.id,
+            "codex_version": task_harness.version,
             "model": args.model or "runtime-default",
             "judge_model": args.judge_model or args.model or "runtime-default",
             "sandbox": args.sandbox,
@@ -891,7 +946,7 @@ def _run_evaluation(
             "deadline_seconds": args.deadline_seconds,
             "jobs": args.jobs,
             "skill_universe": args.skill_universe,
-            "peer_skills": [path.name for path in runner.peer_skills],
+            "peer_skills": [path.name for path in task_harness.peer_skills],
         },
         "config": {
             "suite": args.suite,
