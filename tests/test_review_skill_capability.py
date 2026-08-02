@@ -670,6 +670,88 @@ class CaseGroupAndUniverseTests(unittest.TestCase):
 
 
 class CapabilityReviewOrchestrationTests(unittest.TestCase):
+    def test_adapter_identity_drift_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fixture = CapabilityReviewFixture(Path(temp_dir))
+            fake = FakeEvaluationRunner()
+
+            def drifting_runner(args: Any) -> tuple[dict[str, Any], Path]:
+                result, run_dir = fake(args)
+                result["runtime"]["judge_adapter"] = "unexpected-judge"
+                (run_dir / "results.json").write_text(json.dumps(result) + "\n", encoding="utf-8")
+                return result, run_dir
+
+            with self.assertRaisesRegex(EvalError, "changed pinned judge adapter"):
+                run_capability_review(
+                    fixture.config(include_observed=False),
+                    drifting_runner,
+                )
+
+    def test_adapter_version_drift_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fixture = CapabilityReviewFixture(Path(temp_dir))
+            fake = FakeEvaluationRunner()
+
+            def drifting_runner(args: Any) -> tuple[dict[str, Any], Path]:
+                result, run_dir = fake(args)
+                if len(fake.calls) == 2:
+                    result["runtime"]["judge_adapter_version"] = "fake-codex 2.0"
+                    (run_dir / "results.json").write_text(
+                        json.dumps(result) + "\n",
+                        encoding="utf-8",
+                    )
+                return result, run_dir
+
+            with self.assertRaisesRegex(EvalError, "Adapter fingerprint changed"):
+                run_capability_review(
+                    fixture.config(include_observed=False),
+                    drifting_runner,
+                )
+
+    def test_legacy_codex_version_falls_back_for_task_version_only(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fixture = CapabilityReviewFixture(Path(temp_dir))
+            fake = FakeEvaluationRunner()
+
+            def legacy_runner(args: Any) -> tuple[dict[str, Any], Path]:
+                result, run_dir = fake(args)
+                result["runtime"].pop("task_adapter_version")
+                (run_dir / "results.json").write_text(json.dumps(result) + "\n", encoding="utf-8")
+                return result, run_dir
+
+            review, local_root = run_capability_review(
+                fixture.config(include_observed=False),
+                legacy_runner,
+            )
+            manifest = json.loads((local_root / "review.json").read_text(encoding="utf-8"))
+
+        expected = {
+            "task_adapter": "codex",
+            "task_adapter_version": "fake-codex 1.0",
+            "judge_adapter": "codex",
+            "judge_adapter_version": "fake-codex 1.0",
+        }
+        self.assertEqual(review["adapter_fingerprint"], expected)
+        self.assertEqual(manifest["adapter_fingerprint"], expected)
+        self.assertTrue(all(cell["adapter_fingerprint"] == expected for cell in review["cells"]))
+
+    def test_legacy_codex_version_does_not_replace_judge_version(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fixture = CapabilityReviewFixture(Path(temp_dir))
+            fake = FakeEvaluationRunner()
+
+            def incomplete_runner(args: Any) -> tuple[dict[str, Any], Path]:
+                result, run_dir = fake(args)
+                result["runtime"].pop("judge_adapter_version")
+                (run_dir / "results.json").write_text(json.dumps(result) + "\n", encoding="utf-8")
+                return result, run_dir
+
+            with self.assertRaisesRegex(EvalError, "exact judge adapter version"):
+                run_capability_review(
+                    fixture.config(include_observed=False),
+                    incomplete_runner,
+                )
+
     def test_observed_failure_is_visible_but_does_not_block(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             fixture = CapabilityReviewFixture(Path(temp_dir))

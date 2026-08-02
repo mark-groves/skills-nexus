@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -70,16 +71,18 @@ class HarnessAdapterRegistry(Generic[HarnessT]):
 TASK_ADAPTER_REGISTRY = HarnessAdapterRegistry[TaskHarness]("task")
 JUDGE_ADAPTER_REGISTRY = HarnessAdapterRegistry[JudgeHarness]("judge")
 _BUILTINS_REGISTERED = False
+_BUILTINS_LOCK = threading.Lock()
 
 
 def _ensure_builtin_adapters() -> None:
     global _BUILTINS_REGISTERED
-    if _BUILTINS_REGISTERED:
-        return
-    from .codex import register_codex_adapters
+    with _BUILTINS_LOCK:
+        if _BUILTINS_REGISTERED:
+            return
+        from .codex import register_codex_adapters
 
-    register_codex_adapters(TASK_ADAPTER_REGISTRY, JUDGE_ADAPTER_REGISTRY)
-    _BUILTINS_REGISTERED = True
+        register_codex_adapters(TASK_ADAPTER_REGISTRY, JUDGE_ADAPTER_REGISTRY)
+        _BUILTINS_REGISTERED = True
 
 
 def validate_adapter_selection(task_adapter: str, judge_adapter: str) -> None:

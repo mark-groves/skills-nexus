@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import concurrent.futures
 import contextlib
 import importlib.util
 import io
 import json
 import sys
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
 from typing import Any, cast
@@ -19,6 +22,8 @@ assert SPEC is not None and SPEC.loader is not None
 eval_skills = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(eval_skills)
 
+from skill_eval.adapters import codex as codex_adapter  # noqa: E402
+from skill_eval.adapters import registry as adapter_registry  # noqa: E402
 from skill_eval.adapters.codex import (  # noqa: E402
     CodexEventParser,
     CodexJudgeHarness,
@@ -27,6 +32,7 @@ from skill_eval.adapters.codex import (  # noqa: E402
 from skill_eval.adapters.registry import (  # noqa: E402
     JUDGE_ADAPTER_REGISTRY,
     TASK_ADAPTER_REGISTRY,
+    HarnessAdapterRegistry,
     validate_adapter_selection,
 )
 from skill_eval.core import BehaviorCase, BehaviorCheck, EvaluationCondition  # noqa: E402
@@ -229,6 +235,40 @@ class HarnessBoundaryTests(unittest.TestCase):
         validate_adapter_selection(args.task_adapter, args.judge_adapter)
         self.assertEqual(TASK_ADAPTER_REGISTRY.ids, ("codex",))
         self.assertEqual(JUDGE_ADAPTER_REGISTRY.ids, ("codex",))
+
+    def test_builtin_registration_serializes_concurrent_first_use(self) -> None:
+        task_registry = HarnessAdapterRegistry("task")
+        judge_registry = HarnessAdapterRegistry("judge")
+        barrier = threading.Barrier(8)
+        call_lock = threading.Lock()
+        calls = 0
+        original_register = codex_adapter.register_codex_adapters
+
+        def slow_register(*args: Any) -> None:
+            nonlocal calls
+            with call_lock:
+                calls += 1
+            time.sleep(0.02)
+            original_register(*args)
+
+        def validate() -> None:
+            barrier.wait()
+            adapter_registry.validate_adapter_selection("codex", "codex")
+
+        with (
+            mock.patch.object(adapter_registry, "TASK_ADAPTER_REGISTRY", task_registry),
+            mock.patch.object(adapter_registry, "JUDGE_ADAPTER_REGISTRY", judge_registry),
+            mock.patch.object(adapter_registry, "_BUILTINS_REGISTERED", False),
+            mock.patch.object(codex_adapter, "register_codex_adapters", side_effect=slow_register),
+            concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor,
+        ):
+            futures = [executor.submit(validate) for _ in range(8)]
+            for future in futures:
+                future.result()
+
+        self.assertEqual(calls, 1)
+        self.assertEqual(task_registry.ids, ("codex",))
+        self.assertEqual(judge_registry.ids, ("codex",))
 
     def test_unknown_adapter_fails_in_plan_mode_before_harness_construction(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

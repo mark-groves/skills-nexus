@@ -241,9 +241,12 @@ development for diagnostic use, but the aggregate verdict remains
 Complete runs, including raw evaluator evidence, stay under
 `.skill-evals/<skill>/capability-reviews/`. The orchestrator verifies that
 Current, Candidate, eval, judge-policy, harness, profile, and case-group inputs
-remain pinned across the matrix. It also rejects a runner-version change during
-one review. The capability-review eval digest covers `evals.json` and fixture
-bytes while excluding prior durable `reviews/`; the evaluator's narrower
+remain pinned across the matrix. It also retains and compares the separate task
+and judge adapter identities and versions, rejecting any adapter-fingerprint
+change during one review. The legacy `codex_version` field can substitute only
+for a missing Codex task-adapter version; judge versions remain explicit. The
+capability-review eval digest covers `evals.json` and fixture bytes while
+excluding prior durable `reviews/`; the evaluator's narrower
 `eval_spec_digest_sha256` is retained and checked separately.
 
 Durable export is explicit and human-reviewed:
