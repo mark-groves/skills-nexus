@@ -679,3 +679,7 @@ The registered production task and judge adapters are currently Codex. Model
 selection through `--model` and `--judge-model` therefore produces Codex
 model-profile evidence, not behavioral evidence for every harness supported by
 the packaging system.
+
+Execution boundaries for future adapters can use the reusable
+[rootless Podman sandbox runner](sandbox-runner.md). The runner is not itself an
+adapter and does not change existing Codex execution.
