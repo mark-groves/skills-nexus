@@ -69,6 +69,9 @@ human-opted escalation.
       boundaries and combined-candidate verification (#28).
 - [x] Add a one-hour routine screen before the complete escalation matrix
       (#42).
+- [x] Spike the Cursor Agent CLI as a hermetic evaluation harness and retain a
+      fail-closed production block where activation, credential, permission,
+      and live containment evidence remains unavailable (#46).
 - [ ] Pilot both useful reduction and protected-regression rejection before
       declaring Capability Optimisation v1 verified (#29).
 
