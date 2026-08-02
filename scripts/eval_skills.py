@@ -17,6 +17,7 @@ from functools import partial
 from pathlib import Path
 from typing import Any, TypeVar
 
+from skill_eval.adapters.registry import validate_adapter_selection
 from skill_eval.core import (
     BehaviorCase,
     EvalError,
@@ -62,7 +63,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
             "Measure skill activation, behavior, incremental lift, and execution cost in "
-            "fresh isolated Codex contexts."
+            "fresh isolated agent contexts."
         )
     )
     parser.add_argument("--skill", required=True, help="Short name, full skill id, or directory")
@@ -92,9 +93,15 @@ def build_parser() -> argparse.ArgumentParser:
             "agent turns fail closed when the deadline is reached"
         ),
     )
-    parser.add_argument("--model", help="Codex model for task runs")
-    parser.add_argument("--judge-model", help="Codex model for grading; defaults to --model")
-    parser.add_argument("--codex-binary", default="codex")
+    parser.add_argument("--task-adapter", default="codex", help="Task harness adapter")
+    parser.add_argument("--judge-adapter", default="codex", help="Judge harness adapter")
+    parser.add_argument("--model", help="Model for task runs")
+    parser.add_argument("--judge-model", help="Model for grading; defaults to --model")
+    parser.add_argument(
+        "--codex-binary",
+        default="codex",
+        help="Codex executable compatibility override for Codex adapters",
+    )
     parser.add_argument(
         "--skill-universe",
         choices=("repository", "isolated"),
@@ -498,6 +505,7 @@ def _run_evaluation(
     )
     if not trigger_cases and not behavior_cases:
         raise EvalError("The selected suite and filters contain no cases")
+    validate_adapter_selection(args.task_adapter, args.judge_adapter)
     if args.plan:
         _print_plan(skill_dir, eval_dir, trigger_cases, behavior_cases, conditions, args)
         return {}, Path()
@@ -538,6 +546,8 @@ def _run_evaluation(
         else ()
     )
     harnesses = harness_factory(
+        task_adapter=args.task_adapter,
+        judge_adapter=args.judge_adapter,
         conditions=conditions,
         codex_binary=args.codex_binary,
         model=args.model,
@@ -892,6 +902,10 @@ def _run_evaluation(
         str(args.jobs),
         "--timeout",
         str(args.timeout),
+        "--task-adapter",
+        args.task_adapter,
+        "--judge-adapter",
+        args.judge_adapter,
         "--codex-binary",
         args.codex_binary,
         "--skill-universe",
@@ -937,6 +951,10 @@ def _run_evaluation(
         },
         "context_footprint": static_footprints,
         "runtime": {
+            "task_adapter": task_harness.id,
+            "task_adapter_version": task_harness.version,
+            "judge_adapter": judge_harness.id,
+            "judge_adapter_version": judge_harness.version,
             "adapter": task_harness.id,
             "codex_version": task_harness.version,
             "model": args.model or "runtime-default",

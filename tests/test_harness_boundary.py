@@ -1,14 +1,17 @@
 from __future__ import annotations
 
+import concurrent.futures
 import contextlib
 import importlib.util
 import io
 import json
 import sys
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from unittest import mock
 
 REPO_DIR = Path(__file__).resolve().parents[1]
@@ -19,6 +22,19 @@ assert SPEC is not None and SPEC.loader is not None
 eval_skills = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(eval_skills)
 
+from skill_eval.adapters import codex as codex_adapter  # noqa: E402
+from skill_eval.adapters import registry as adapter_registry  # noqa: E402
+from skill_eval.adapters.codex import (  # noqa: E402
+    CodexEventParser,
+    CodexJudgeHarness,
+    CodexTaskHarness,
+)
+from skill_eval.adapters.registry import (  # noqa: E402
+    JUDGE_ADAPTER_REGISTRY,
+    TASK_ADAPTER_REGISTRY,
+    HarnessAdapterRegistry,
+    validate_adapter_selection,
+)
 from skill_eval.core import BehaviorCase, BehaviorCheck, EvaluationCondition  # noqa: E402
 from skill_eval.engine import execute_in_workspace, materialize_unavailable  # noqa: E402
 from skill_eval.evidence import build_evidence_bundle  # noqa: E402
@@ -28,6 +44,7 @@ from skill_eval.harness import (  # noqa: E402
     JudgmentRequest,
     TaskRequest,
     UnavailableEvidence,
+    default_harness_factory,
 )
 from skill_eval.judging import grade_behavior, validate_judgment  # noqa: E402
 
@@ -185,6 +202,10 @@ class HarnessBoundaryTests(unittest.TestCase):
 
         self.assertEqual(len(created), 1)
         self.assertEqual(result["runtime"]["adapter"], "third-harness")
+        self.assertEqual(result["runtime"]["task_adapter"], "third-harness")
+        self.assertEqual(result["runtime"]["task_adapter_version"], "third-harness 1.0")
+        self.assertEqual(result["runtime"]["judge_adapter"], "third-harness")
+        self.assertEqual(result["runtime"]["judge_adapter_version"], "third-harness 1.0")
         behavior = result["behavior"]["results"][0]
         self.assertEqual(behavior["judge"]["status"], "completed")
         self.assertTrue(behavior["grades"]["skill"][0]["passed"])
@@ -205,6 +226,132 @@ class HarnessBoundaryTests(unittest.TestCase):
         self.assertEqual(result, {})
         self.assertEqual(output, Path())
         factory.assert_not_called()
+
+    def test_codex_is_the_default_for_both_adapter_roles(self) -> None:
+        args = eval_skills.build_parser().parse_args(["--skill", "demo"])
+
+        self.assertEqual(args.task_adapter, "codex")
+        self.assertEqual(args.judge_adapter, "codex")
+        validate_adapter_selection(args.task_adapter, args.judge_adapter)
+        self.assertEqual(TASK_ADAPTER_REGISTRY.ids, ("codex",))
+        self.assertEqual(JUDGE_ADAPTER_REGISTRY.ids, ("codex",))
+
+    def test_builtin_registration_serializes_concurrent_first_use(self) -> None:
+        task_registry = HarnessAdapterRegistry("task")
+        judge_registry = HarnessAdapterRegistry("judge")
+        barrier = threading.Barrier(8)
+        call_lock = threading.Lock()
+        calls = 0
+        original_register = codex_adapter.register_codex_adapters
+
+        def slow_register(*args: Any) -> None:
+            nonlocal calls
+            with call_lock:
+                calls += 1
+            time.sleep(0.02)
+            original_register(*args)
+
+        def validate() -> None:
+            barrier.wait()
+            adapter_registry.validate_adapter_selection("codex", "codex")
+
+        with (
+            mock.patch.object(adapter_registry, "TASK_ADAPTER_REGISTRY", task_registry),
+            mock.patch.object(adapter_registry, "JUDGE_ADAPTER_REGISTRY", judge_registry),
+            mock.patch.object(adapter_registry, "_BUILTINS_REGISTERED", False),
+            mock.patch.object(codex_adapter, "register_codex_adapters", side_effect=slow_register),
+            concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor,
+        ):
+            futures = [executor.submit(validate) for _ in range(8)]
+            for future in futures:
+                future.result()
+
+        self.assertEqual(calls, 1)
+        self.assertEqual(task_registry.ids, ("codex",))
+        self.assertEqual(judge_registry.ids, ("codex",))
+
+    def test_unknown_adapter_fails_in_plan_mode_before_harness_construction(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo = self._write_repo(Path(temp_dir))
+            factory = mock.Mock()
+            for flag, role in (
+                ("--task-adapter", "task"),
+                ("--judge-adapter", "judge"),
+            ):
+                with self.subTest(role=role):
+                    args = eval_skills.build_parser().parse_args(
+                        [
+                            "--repo-root",
+                            str(repo),
+                            "--skill",
+                            "demo",
+                            "--plan",
+                            flag,
+                            "missing",
+                        ]
+                    )
+                    with self.assertRaisesRegex(
+                        eval_skills.EvalError,
+                        rf"Unknown {role} adapter 'missing'.*codex",
+                    ):
+                        eval_skills.run_evaluation(args, harness_factory=factory)
+
+        factory.assert_not_called()
+
+    def test_codex_factory_builds_role_harnesses_around_one_runner(self) -> None:
+        conditions = (
+            EvaluationCondition("skill", None, None, "demo", "Skill"),
+            EvaluationCondition("baseline", None, None, "demo", "Baseline"),
+        )
+        runner = mock.Mock(
+            version="codex 1.0",
+            conditions=conditions,
+            peer_skills=(),
+        )
+        with mock.patch("skill_eval.adapters.codex.CodexRunner", return_value=runner) as create:
+            harnesses = default_harness_factory(
+                task_adapter="codex",
+                judge_adapter="codex",
+                conditions=conditions,
+                codex_binary="custom-codex",
+                model="task-model",
+                judge_model="judge-model",
+                timeout_seconds=30,
+                sandbox="workspace-write",
+                peer_skills=(),
+                deadline_seconds=60,
+            )
+
+        create.assert_called_once_with(
+            conditions=conditions,
+            codex_binary="custom-codex",
+            model="task-model",
+            judge_model="judge-model",
+            timeout_seconds=30,
+            sandbox="workspace-write",
+            peer_skills=(),
+            deadline_seconds=60,
+        )
+        self.assertEqual(harnesses.task.id, "codex")
+        self.assertEqual(harnesses.judge.id, "codex")
+        self.assertIs(cast(CodexTaskHarness, harnesses.task)._runner, runner)
+        self.assertIs(cast(CodexJudgeHarness, harnesses.judge)._runner, runner)
+
+    def test_codex_event_parser_keeps_malformed_evidence_explicit(self) -> None:
+        events, errors = CodexEventParser.load(
+            '{"type":"item.completed","item":{"type":"agent_message","text":"done"}}\nnot-json\n'
+        )
+
+        self.assertEqual(len(events), 1)
+        self.assertEqual(len(errors), 1)
+        self.assertIn("line 2", errors[0])
+        summary = CodexEventParser.summarize(
+            events,
+            activation_marker=None,
+            activation_name=None,
+        )
+        self.assertEqual(summary["final_response"], "done")
+        self.assertEqual(summary["tool_calls"], 0)
 
     def test_unavailable_evidence_is_null_with_an_explicit_reason(self) -> None:
         value, reasons = materialize_unavailable(

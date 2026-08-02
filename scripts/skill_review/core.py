@@ -85,6 +85,24 @@ DISPOSITIONS = frozenset(
 EvaluationRunner = Callable[[argparse.Namespace], tuple[dict[str, Any], Path]]
 
 
+@dataclass(frozen=True, order=True)
+class AdapterFingerprint:
+    """Exact task and judge adapter identity retained across review cells."""
+
+    task_adapter: str
+    task_adapter_version: str
+    judge_adapter: str
+    judge_adapter_version: str
+
+    def as_dict(self) -> dict[str, str]:
+        return {
+            "task_adapter": self.task_adapter,
+            "task_adapter_version": self.task_adapter_version,
+            "judge_adapter": self.judge_adapter,
+            "judge_adapter_version": self.judge_adapter_version,
+        }
+
+
 def canonical_digest(value: object) -> str:
     """Hash JSON-compatible data without depending on a source path."""
     encoded = json.dumps(
@@ -840,6 +858,7 @@ def _cell_summary(
     *,
     profile: ModelProfile,
     universe: str,
+    adapter_fingerprint: AdapterFingerprint,
     groups: tuple[CaseGroup, ...],
     trigger_repeats: int,
     behavior_repeats: int,
@@ -855,8 +874,6 @@ def _cell_summary(
     candidate_trigger = (
         candidate_trigger_payload if isinstance(candidate_trigger_payload, dict) else {}
     )
-    runtime_payload = result.get("runtime")
-    runtime = runtime_payload if isinstance(runtime_payload, dict) else {}
     context_payload = result.get("context_footprint")
     context = context_payload if isinstance(context_payload, dict) else {}
     comparison = result.get("candidate_comparison")
@@ -883,7 +900,8 @@ def _cell_summary(
         "universe": universe,
         "task_model": profile.model,
         "judge_model": profile.judge_model,
-        "runner_version": runtime.get("codex_version"),
+        "adapter_fingerprint": adapter_fingerprint.as_dict(),
+        "runner_version": adapter_fingerprint.task_adapter_version,
         "verdict": (
             result.get("optimisation_review", {}).get("verdict")
             if isinstance(result.get("optimisation_review"), dict)
@@ -929,7 +947,7 @@ def _validate_result(
     expected_trigger_repeats: int | None = None,
     expected_behavior_repeats: int | None = None,
     expected_deadline_seconds: int | None = None,
-) -> str:
+) -> AdapterFingerprint:
     """Verify a cell used the pinned models, digests, universe, and schema."""
     if result.get("schema_version") != 3:
         raise EvalError(
@@ -952,6 +970,8 @@ def _validate_result(
             skill.get("eval_spec_digest_sha256"),
             eval_spec_digest,
         ),
+        ("task adapter", runtime.get("task_adapter"), profile.adapter),
+        ("judge adapter", runtime.get("judge_adapter"), profile.adapter),
         ("task model", runtime.get("model"), profile.model),
         ("judge model", runtime.get("judge_model"), profile.judge_model),
         ("skill universe", runtime.get("skill_universe"), universe),
@@ -993,12 +1013,32 @@ def _validate_result(
                     f"Profile {profile.id} in {universe} changed pinned {control_label}: "
                     f"expected {normalized_expected!r}, observed {observed_control!r}"
                 )
-    runner_version = runtime.get("codex_version")
-    if not isinstance(runner_version, str) or not runner_version.strip():
-        raise EvalError(
-            f"Profile {profile.id} in {universe} did not report an exact runner version"
+    task_adapter = runtime.get("task_adapter")
+    task_version = runtime.get("task_adapter_version")
+    if not isinstance(task_version, str) or not task_version.strip():
+        legacy_version = runtime.get("codex_version")
+        task_version = (
+            legacy_version
+            if task_adapter == "codex"
+            and isinstance(legacy_version, str)
+            and legacy_version.strip()
+            else None
         )
-    return runner_version
+    if not isinstance(task_version, str) or not task_version.strip():
+        raise EvalError(
+            f"Profile {profile.id} in {universe} did not report an exact task adapter version"
+        )
+    judge_version = runtime.get("judge_adapter_version")
+    if not isinstance(judge_version, str) or not judge_version.strip():
+        raise EvalError(
+            f"Profile {profile.id} in {universe} did not report an exact judge adapter version"
+        )
+    return AdapterFingerprint(
+        task_adapter=profile.adapter,
+        task_adapter_version=task_version,
+        judge_adapter=profile.adapter,
+        judge_adapter_version=judge_version,
+    )
 
 
 def _build_eval_args(
@@ -1033,6 +1073,10 @@ def _build_eval_args(
         str(config.jobs),
         "--timeout",
         str(config.timeout),
+        "--task-adapter",
+        profile.adapter,
+        "--judge-adapter",
+        profile.adapter,
         "--model",
         profile.model,
         "--judge-model",
@@ -1296,7 +1340,7 @@ def run_capability_review(
     _write_json(local_root / "review.json", local_manifest)
 
     cells: list[dict[str, Any]] = []
-    runner_version: str | None = None
+    adapter_fingerprint: AdapterFingerprint | None = None
     try:
         for profile in config.profiles:
             for universe in config.universes:
@@ -1332,7 +1376,7 @@ def run_capability_review(
                         f"Profile {profile.id} in {universe} did not retain results.json "
                         "under the local review root"
                     )
-                observed_runner = _validate_result(
+                observed_fingerprint = _validate_result(
                     result,
                     profile=profile,
                     universe=universe,
@@ -1340,17 +1384,19 @@ def run_capability_review(
                     candidate_digest=candidate_digest,
                     eval_spec_digest=eval_spec_digest,
                 )
-                if runner_version is None:
-                    runner_version = observed_runner
-                elif runner_version != observed_runner:
+                if adapter_fingerprint is None:
+                    adapter_fingerprint = observed_fingerprint
+                elif adapter_fingerprint != observed_fingerprint:
                     raise EvalError(
-                        "Runner version changed during the capability review: "
-                        f"{runner_version!r} then {observed_runner!r}"
+                        "Adapter fingerprint changed during the capability review: "
+                        f"{adapter_fingerprint.as_dict()!r} then "
+                        f"{observed_fingerprint.as_dict()!r}"
                     )
                 cell = _cell_summary(
                     result,
                     profile=profile,
                     universe=universe,
+                    adapter_fingerprint=observed_fingerprint,
                     groups=config.case_groups,
                     trigger_repeats=config.trigger_repeats,
                     behavior_repeats=config.behavior_repeats,
@@ -1388,7 +1434,12 @@ def run_capability_review(
     aggregate = _aggregate_profiles(config.profiles, cells, groups=config.case_groups)
     local_manifest["status"] = "completed"
     local_manifest["completed_at"] = datetime.now(UTC).isoformat()
-    local_manifest["runner_version"] = runner_version
+    local_manifest["adapter_fingerprint"] = (
+        adapter_fingerprint.as_dict() if adapter_fingerprint is not None else None
+    )
+    local_manifest["runner_version"] = (
+        adapter_fingerprint.task_adapter_version if adapter_fingerprint is not None else None
+    )
     local_manifest["aggregate"] = aggregate
     _write_json(local_root / "review.json", local_manifest)
 
@@ -1401,9 +1452,18 @@ def run_capability_review(
             "judge_policy": judge_policy,
         },
         "runner": {
-            "adapter": "codex",
-            "version": runner_version,
+            "adapter": adapter_fingerprint.task_adapter
+            if adapter_fingerprint is not None
+            else None,
+            "version": (
+                adapter_fingerprint.task_adapter_version
+                if adapter_fingerprint is not None
+                else None
+            ),
         },
+        "adapter_fingerprint": (
+            adapter_fingerprint.as_dict() if adapter_fingerprint is not None else None
+        ),
         "harness": {
             "id": "codex",
             "contract_version": HARNESS_CONTRACT_VERSION,
@@ -1703,7 +1763,7 @@ def run_routine_screen(
 
     def run_cell(
         profile: ModelProfile, universe: str
-    ) -> tuple[dict[str, Any], dict[str, Any], str]:
+    ) -> tuple[dict[str, Any], dict[str, Any], AdapterFingerprint]:
         _assert_pinned_sources(
             review_config,
             skill_dir=skill_dir,
@@ -1746,7 +1806,7 @@ def run_routine_screen(
                 f"Profile {profile.id} in {universe} did not retain results.json "
                 "under the local routine root"
             )
-        runner_version = _validate_result(
+        adapter_fingerprint = _validate_result(
             result,
             profile=profile,
             universe=universe,
@@ -1763,6 +1823,7 @@ def run_routine_screen(
             result,
             profile=profile,
             universe=universe,
+            adapter_fingerprint=adapter_fingerprint,
             groups=routine_groups,
             trigger_repeats=1,
             behavior_repeats=1,
@@ -1775,13 +1836,13 @@ def run_routine_screen(
             "run_directory": str(run_dir.resolve()),
             "results_file": str((run_dir / "results.json").resolve()),
         }
-        return cell, manifest_cell, runner_version
+        return cell, manifest_cell, adapter_fingerprint
 
     cells: list[dict[str, Any]] = []
     cell_errors: list[dict[str, str]] = []
-    runner_versions: set[str] = set()
+    adapter_fingerprints: set[AdapterFingerprint] = set()
     futures: dict[
-        concurrent.futures.Future[tuple[dict[str, Any], dict[str, Any], str]],
+        concurrent.futures.Future[tuple[dict[str, Any], dict[str, Any], AdapterFingerprint]],
         tuple[ModelProfile, str],
     ] = {}
     matrix_workers = len(review_config.profiles) * 2
@@ -1793,7 +1854,7 @@ def run_routine_screen(
             for future in concurrent.futures.as_completed(futures):
                 profile, universe = futures[future]
                 try:
-                    cell, manifest_cell, runner_version = future.result()
+                    cell, manifest_cell, adapter_fingerprint = future.result()
                 except EvalError:
                     for outstanding in futures:
                         outstanding.cancel()
@@ -1808,14 +1869,16 @@ def run_routine_screen(
                     )
                     continue
                 cells.append(cell)
-                runner_versions.add(runner_version)
+                adapter_fingerprints.add(adapter_fingerprint)
                 local_manifest["cells"].append(manifest_cell)
                 _write_json(local_root / "review.json", local_manifest)
 
-        if len(runner_versions) > 1:
+        if len(adapter_fingerprints) > 1:
             raise EvalError(
-                "Runner version changed during the routine screen: "
-                + ", ".join(sorted(runner_versions))
+                "Adapter fingerprint changed during the routine screen: "
+                + ", ".join(
+                    repr(fingerprint.as_dict()) for fingerprint in sorted(adapter_fingerprints)
+                )
             )
         _assert_pinned_sources(
             review_config,
@@ -1843,7 +1906,13 @@ def run_routine_screen(
     )
     local_manifest["status"] = "completed"
     local_manifest["completed_at"] = datetime.now(UTC).isoformat()
-    local_manifest["runner_version"] = next(iter(runner_versions), None)
+    final_fingerprint = next(iter(adapter_fingerprints), None)
+    local_manifest["adapter_fingerprint"] = (
+        final_fingerprint.as_dict() if final_fingerprint is not None else None
+    )
+    local_manifest["runner_version"] = (
+        final_fingerprint.task_adapter_version if final_fingerprint is not None else None
+    )
     local_manifest["aggregate"] = aggregate
     local_manifest["cells"].sort(key=lambda item: (item["profile_id"], item["universe"]))
     _write_json(local_root / "review.json", local_manifest)
