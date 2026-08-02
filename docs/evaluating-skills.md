@@ -96,26 +96,80 @@ evaluation.
 
 `--codex-binary` remains a documented compatibility override for either Codex
 role. Results expose neutral `task_adapter`, `task_adapter_version`,
-`judge_adapter`, and `judge_adapter_version` runtime fields. The older
-`adapter` and `codex_version` fields remain compatibility aliases for the task
-adapter and task adapter version.
+`task_model_requested`, `task_model_reported`, `judge_adapter`,
+`judge_adapter_version`, `judge_model_requested`, and `judge_model_reported`
+runtime fields. The older `adapter`, `codex_version`, `model`, and `judge_model`
+fields remain compatibility aliases for existing result readers. Reported
+models come only from adapter-native execution evidence; they are never copied
+from the requested CLI values. When an adapter cannot prove the resolved model,
+the reported field is `null` and `runtime.unavailable_evidence` records the
+reason. Codex JSON events currently omit resolved task and judge model IDs, so a
+model-pinned capability review fails closed until that native evidence exists.
 
 ## Model-profile capability reviews
 
 `scripts/review_skill_capability.py` orchestrates the unchanged candidate
-evaluator across a repository-level, versioned Codex profile contract. The
-checked-in [`eval-profiles.json`](../eval-profiles.json) pins an exact task
-model and judge model for every profile. `required: true` profiles always run
-and gate the review; `required: false` profiles run only when selected and
-remain visible without blocking.
+evaluator across a repository-level, versioned multi-harness profile contract.
+The checked-in [`eval-profiles.json`](../eval-profiles.json) uses schema v2:
+each profile pins one task `adapter` and task `model`, while the single global
+`judge_policy` pins the judge adapter, model, and condition-blind protocol used
+for every cell. `required: true` profiles always run and gate the review;
+`required: false` profiles run only when selected and remain visible without
+blocking. Cross-harness cells remain separate profile/universe records and are
+never averaged into one score.
 
-Profile schema v1 supports only the Codex adapter. Every profile's
-`judge_model` must match the contract's pinned `judge_policy.model`, so
-historical task-model comparisons use one grading model and protocol. Empty
-identifiers, unknown keys, unsupported adapters, duplicate IDs, and
-`runtime-default` receive actionable validation errors. The declarative shape
-is also published as
-[`schemas/eval-profiles-v1.schema.json`](../schemas/eval-profiles-v1.schema.json).
+```json
+{
+  "schema_version": 2,
+  "judge_policy": {
+    "id": "cross-harness-capability-review-v1",
+    "adapter": "codex",
+    "model": "gpt-5.6-sol",
+    "protocol": "skill-eval-candidate-v3-condition-blind"
+  },
+  "profiles": [
+    {
+      "id": "codex-supported-floor",
+      "adapter": "codex",
+      "model": "gpt-5.4",
+      "required": true
+    },
+    {
+      "id": "cursor-frontier-observed",
+      "adapter": "cursor",
+      "model": "explicit-cursor-model",
+      "required": false
+    }
+  ]
+}
+```
+
+Planning recognizes the `codex` and `cursor` profile adapter IDs without
+constructing a harness, locating a binary, or reading credentials. This layer
+does not add the Cursor runtime adapter: an attempted Cursor cell still fails
+through the runtime registry before any model turn until that adapter is
+installed by its own implementation layer. Unknown adapters, empty or padded
+identifiers, duplicate IDs, `runtime-default`, and Cursor's mutable `Auto`
+selection fail during contract/configuration validation. The v2 declarative
+shape is published as
+[`schemas/eval-profiles-v2.schema.json`](../schemas/eval-profiles-v2.schema.json).
+
+### Schema v1 normalization
+
+Existing schema-v1 files continue to load. They are normalized before hashing
+or execution as follows:
+
+- `judge_policy.adapter` becomes `codex`;
+- every task profile remains `adapter: codex`;
+- each legacy `profiles[].judge_model` must exactly match
+  `judge_policy.model`, then is removed from the normalized profile because the
+  judge policy is global; and
+- the normalized in-memory contract has `schema_version: 2`.
+
+An equivalent v1 and v2 source therefore produce the same canonical profile
+digest. The source schema version remains available locally for migration
+diagnostics. [`schemas/eval-profiles-v1.schema.json`](../schemas/eval-profiles-v1.schema.json)
+remains the historical source shape; new or edited contracts should use v2.
 
 ### Routine screen
 
@@ -240,11 +294,14 @@ development for diagnostic use, but the aggregate verdict remains
 
 Complete runs, including raw evaluator evidence, stay under
 `.skill-evals/<skill>/capability-reviews/`. The orchestrator verifies that
-Current, Candidate, eval, judge-policy, harness, profile, and case-group inputs
-remain pinned across the matrix. It also retains and compares the separate task
-and judge adapter identities and versions, rejecting any adapter-fingerprint
-change during one review. The legacy `codex_version` field can substitute only
-for a missing Codex task-adapter version; judge versions remain explicit. The
+Current, Candidate, eval, judge-policy, task and judge harness manifests,
+profile, and case-group inputs remain pinned across the matrix. Every cell must
+report the requested and harness-reported task and judge model identifiers plus
+separate task and judge adapter versions. Missing metadata, adapter/model
+mismatch, per-adapter task-version drift, global judge-version drift, or
+manifest drift fails closed. Each cell retains the four-field task/judge adapter
+fingerprint; the legacy `codex_version` alias can substitute only for a missing
+Codex task-adapter version, while judge versions remain explicit. The
 capability-review eval digest covers `evals.json` and fixture bytes while
 excluding prior durable `reviews/`; the evaluator's narrower
 `eval_spec_digest_sha256` is retained and checked separately.
@@ -264,12 +321,21 @@ python3 scripts/review_skill_capability.py \
 
 This writes deterministic, size-bounded JSON and Markdown to
 `evals/<skill>/reviews/`. Export uses an allowlist: it includes pinned digests,
-exact models and versions, required/observed status, coverage, aggregate
-metrics, context footprints, gates, reproducible digest assertions,
-limitations, and the human disposition. It excludes prompts, transcripts,
-command output, generated artifacts, local run directories, and workspace
-paths. Reproduction uses `CANDIDATE_DIR` plus expected digest flags instead of
-persisting a machine-specific candidate path.
+separate task and judge adapters, manifests, versions, and requested/reported
+models, required/observed status, coverage, aggregate metrics, context
+footprints, gates, reproducible digest assertions, limitations, and the human
+disposition. It excludes prompts, transcripts, command output, generated
+artifacts, local run directories, and workspace paths. Reproduction uses
+`CANDIDATE_DIR` plus expected digest flags instead of persisting a
+machine-specific candidate path.
+
+New durable summaries use schema v2 and neutral `task_harnesses` /
+`judge_harness` metadata. Existing schema-v1 Codex summaries remain readable as
+historical evidence: their `runner` and `harness` objects describe the Codex
+task path, their per-profile `judge_model` reflects the then-global judge model,
+and their singular `harness_manifest_digest_sha256` applies to the shared Codex
+task/judge manifest. They are not rewritten or silently promoted to v2; rerun a
+review to create v2 evidence with separate role metadata.
 
 A required-profile `rejected` cell rejects the aggregate review; required
 `insufficient-evidence` blocks approval. Observed failures are listed but never

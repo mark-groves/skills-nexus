@@ -46,7 +46,7 @@ from skill_eval.core import (
     summarize_trigger_results,
     validate_candidate_separation,
 )
-from skill_eval.engine import run_task
+from skill_eval.engine import materialize_unavailable, run_task
 from skill_eval.harness import (
     HarnessFactory,
     TaskRequest,
@@ -937,6 +937,36 @@ def _run_evaluation(
     if args.deadline_seconds is not None:
         reproduce.extend(["--deadline-seconds", str(args.deadline_seconds)])
 
+    reported_models, unavailable_models = materialize_unavailable(
+        {
+            "task_model_reported": task_harness.reported_model,
+            "judge_model_reported": judge_harness.reported_model,
+        }
+    )
+    if not isinstance(reported_models, dict):
+        raise EvalError("Harness-reported model evidence must be an object")
+    runtime_metadata: dict[str, Any] = {
+        "task_adapter": task_harness.id,
+        "task_adapter_version": task_harness.version,
+        "task_model_requested": args.model or "runtime-default",
+        "judge_adapter": judge_harness.id,
+        "judge_adapter_version": judge_harness.version,
+        "judge_model_requested": args.judge_model or args.model or "runtime-default",
+        **reported_models,
+        "adapter": task_harness.id,
+        "codex_version": task_harness.version,
+        "model": args.model or "runtime-default",
+        "judge_model": args.judge_model or args.model or "runtime-default",
+        "sandbox": args.sandbox,
+        "timeout_seconds": args.timeout,
+        "deadline_seconds": args.deadline_seconds,
+        "jobs": args.jobs,
+        "skill_universe": args.skill_universe,
+        "peer_skills": [path.name for path in task_harness.peer_skills],
+    }
+    if unavailable_models:
+        runtime_metadata["unavailable_evidence"] = unavailable_models
+
     result: dict[str, Any] = {
         "schema_version": 3 if candidate_condition is not None else 1,
         "run_id": run_id,
@@ -950,22 +980,7 @@ def _run_evaluation(
             "eval_spec_digest_sha256": spec_digest,
         },
         "context_footprint": static_footprints,
-        "runtime": {
-            "task_adapter": task_harness.id,
-            "task_adapter_version": task_harness.version,
-            "judge_adapter": judge_harness.id,
-            "judge_adapter_version": judge_harness.version,
-            "adapter": task_harness.id,
-            "codex_version": task_harness.version,
-            "model": args.model or "runtime-default",
-            "judge_model": args.judge_model or args.model or "runtime-default",
-            "sandbox": args.sandbox,
-            "timeout_seconds": args.timeout,
-            "deadline_seconds": args.deadline_seconds,
-            "jobs": args.jobs,
-            "skill_universe": args.skill_universe,
-            "peer_skills": [path.name for path in task_harness.peer_skills],
-        },
+        "runtime": runtime_metadata,
         "config": {
             "suite": args.suite,
             "trigger_case_ids": [case.id for case in trigger_cases],

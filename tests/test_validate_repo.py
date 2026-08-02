@@ -785,9 +785,10 @@ class ValidateModelProfileTests(unittest.TestCase):
             profiles.write_text(
                 json.dumps(
                     {
-                        "schema_version": 1,
+                        "schema_version": 2,
                         "judge_policy": {
                             "id": "review-v1",
+                            "adapter": "codex",
                             "model": "judge-v1",
                             "protocol": "skill-eval-candidate-v3-condition-blind",
                         },
@@ -796,14 +797,12 @@ class ValidateModelProfileTests(unittest.TestCase):
                                 "id": "required-model",
                                 "adapter": "codex",
                                 "model": "task-v1",
-                                "judge_model": "judge-v1",
                                 "required": True,
                             },
                             {
                                 "id": "observed-model",
-                                "adapter": "codex",
+                                "adapter": "cursor",
                                 "model": "task-v2",
-                                "judge_model": "judge-v1",
                                 "required": False,
                             },
                         ],

@@ -27,7 +27,12 @@ from .evidence import (
     _scrub as _scrub,
 )
 from .evidence import build_evidence_bundle
-from .harness import HarnessCapabilities, JudgmentRequest, TaskRequest
+from .harness import (
+    HarnessCapabilities,
+    JudgmentRequest,
+    TaskRequest,
+    UnavailableEvidence,
+)
 from .judging import grade_behavior, judgment_schema
 
 
@@ -83,6 +88,9 @@ class CodexRunner:
         self.codex_binary = resolved_binary
         self.model = model
         self.judge_model = judge_model or model
+        self.reported_model: str | UnavailableEvidence = UnavailableEvidence(
+            "Codex JSON events do not expose the resolved judge model identifier"
+        )
         self.timeout_seconds = timeout_seconds
         self.deadline_monotonic = (
             time.monotonic() + deadline_seconds if deadline_seconds is not None else None

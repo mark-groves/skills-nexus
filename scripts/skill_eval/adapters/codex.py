@@ -6,7 +6,12 @@ from collections.abc import Mapping
 from typing import Any, cast
 
 from ..codex_runner import CodexRunner
-from ..harness import HarnessCapabilities, JudgmentRequest, TaskRequest
+from ..harness import (
+    HarnessCapabilities,
+    JudgmentRequest,
+    TaskRequest,
+    UnavailableEvidence,
+)
 from .events import CodexEventParser
 from .registry import HarnessAdapterRegistry, HarnessBuildContext
 
@@ -26,6 +31,9 @@ class CodexTaskHarness:
     def __init__(self, runner: CodexRunner) -> None:
         self._runner = runner
         self.version = runner.version
+        self.reported_model = UnavailableEvidence(
+            "Codex JSON events do not expose the resolved task model identifier"
+        )
         self.conditions = runner.conditions
         self.peer_skills = runner.peer_skills
 
@@ -48,6 +56,9 @@ class CodexJudgeHarness:
     def __init__(self, runner: CodexRunner) -> None:
         self._runner = runner
         self.version = runner.version
+        self.reported_model = UnavailableEvidence(
+            "Codex JSON events do not expose the resolved judge model identifier"
+        )
 
     def execute_judgment(self, request: JudgmentRequest) -> Mapping[str, Any]:
         return self._runner.execute_judgment(request)

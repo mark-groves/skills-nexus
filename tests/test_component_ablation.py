@@ -115,6 +115,7 @@ Never remove this protected safety section.
         )
         judge = JudgePolicy(
             id="judge-v1",
+            adapter="codex",
             model="fake-judge-v1",
             protocol="skill-eval-candidate-v3-condition-blind",
         )
@@ -122,16 +123,16 @@ Never remove this protected safety section.
             id="required-v1",
             adapter="codex",
             model="fake-task-v1",
-            judge_model="fake-judge-v1",
             required=True,
         )
         contract_payload = {
-            "schema_version": 1,
+            "schema_version": 2,
             "judge_policy": judge.as_dict(),
             "profiles": [profile.as_dict()],
         }
         profile_contract = ProfileContract(
-            schema_version=1,
+            schema_version=2,
+            source_schema_version=2,
             judge_policy=judge,
             profiles=(profile,),
             digest_sha256=canonical_digest(contract_payload),

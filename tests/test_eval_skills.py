@@ -2516,6 +2516,10 @@ class EvalCliIntegrationTests(unittest.TestCase):
                             "all",
                             "--codex-binary",
                             str(fake_codex),
+                            "--model",
+                            "requested-task-alias",
+                            "--judge-model",
+                            "requested-judge-alias",
                             "--output-root",
                             str(output_root),
                         ]
@@ -2574,8 +2578,30 @@ class EvalCliIntegrationTests(unittest.TestCase):
             self.assertTrue(result["integrity"]["peer_skill_parity"])
             self.assertEqual(result["runtime"]["task_adapter"], "codex")
             self.assertEqual(result["runtime"]["task_adapter_version"], "fake-codex 1.0")
+            self.assertEqual(
+                result["runtime"]["task_model_requested"],
+                "requested-task-alias",
+            )
+            self.assertIsNone(result["runtime"]["task_model_reported"])
             self.assertEqual(result["runtime"]["judge_adapter"], "codex")
             self.assertEqual(result["runtime"]["judge_adapter_version"], "fake-codex 1.0")
+            self.assertEqual(
+                result["runtime"]["judge_model_requested"],
+                "requested-judge-alias",
+            )
+            self.assertIsNone(result["runtime"]["judge_model_reported"])
+            self.assertEqual(
+                set(result["runtime"]["unavailable_evidence"]),
+                {"task_model_reported", "judge_model_reported"},
+            )
+            self.assertIn(
+                "resolved task model",
+                result["runtime"]["unavailable_evidence"]["task_model_reported"],
+            )
+            self.assertIn(
+                "resolved judge model",
+                result["runtime"]["unavailable_evidence"]["judge_model_reported"],
+            )
             self.assertEqual(result["runtime"]["adapter"], result["runtime"]["task_adapter"])
             self.assertEqual(result["runtime"]["codex_version"], "fake-codex 1.0")
             reproduce = shlex.split(result["reproduce_command"])

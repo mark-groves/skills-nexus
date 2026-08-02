@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/mark-groves/skills-nexus/schemas/eval-profiles-v2.schema.json",
+  "title": "Skills Nexus multi-harness model profile contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "judge_policy",
+    "profiles"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 2
+    },
+    "judge_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "adapter",
+        "model",
+        "protocol"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/stableId"
+        },
+        "adapter": {
+          "enum": [
+            "codex",
+            "cursor"
+          ]
+        },
+        "model": {
+          "$ref": "#/$defs/pinnedIdentifier"
+        },
+        "protocol": {
+          "const": "skill-eval-candidate-v3-condition-blind"
+        }
+      }
+    },
+    "profiles": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 16,
+      "contains": {
+        "type": "object",
+        "properties": {
+          "required": {
+            "const": true
+          }
+        },
+        "required": [
+          "required"
+        ]
+      },
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "adapter",
+          "model",
+          "required"
+        ],
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/stableId"
+          },
+          "adapter": {
+            "enum": [
+              "codex",
+              "cursor"
+            ]
+          },
+          "model": {
+            "$ref": "#/$defs/pinnedIdentifier"
+          },
+          "required": {
+            "type": "boolean"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "stableId": {
+      "type": "string",
+      "pattern": "^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$"
+    },
+    "pinnedIdentifier": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,159}$",
+      "not": {
+        "enum": [
+          "runtime-default",
+          "Auto",
+          "auto",
+          "AUTO"
+        ]
+      }
+    }
+  }
+}
