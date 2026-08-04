@@ -6,7 +6,7 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, TypedDict
 
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 REFERENCES_ROOT = SKILL_ROOT / "references"
@@ -23,15 +23,26 @@ COMMON_SHAPES_SEED_PATH = REFERENCES_ROOT / "common-shapes.seed.json"
 _STYLE_RE = re.compile(r"- \*\*Style:\*\* `(.+)`\s*$")
 _SIZE_RE = re.compile(r"- \*\*Size:\*\* (\S+)\s*$")
 _TYPE_RE = re.compile(r"- \*\*Type:\*\* (.+)\s*$")
+_AWS_RES_ICON_RE = re.compile(r"resIcon=mxgraph\.aws4\.[A-Za-z0-9_]+")
+_AWS_SHAPE_RE = re.compile(r"shape=mxgraph\.aws4\.[A-Za-z0-9_]+")
+_AZURE_IMAGE_RE = re.compile(r"image=img/lib/azure2/[^;]+")
+_GCP_IMAGE_RE = re.compile(r"image=data:image/svg\+xml,[^;]+")
+_GCP_SHAPE_RE = re.compile(r"(?:shape=)?mxgraph\.gcp2\.[A-Za-z0-9_]+")
+
+
+class CatalogEntry(TypedDict):
+    style: str | None
+    size: str | None
+    type: str | None
 
 
 def normalize_query(value: str) -> str:
     return " ".join(value.strip().lower().split())
 
 
-def parse_catalog(path: Path) -> dict[str, dict[str, str | None]]:
+def parse_catalog(path: Path) -> dict[str, CatalogEntry]:
     text = path.read_text(encoding="utf-8")
-    entries: dict[str, dict[str, str | None]] = {}
+    entries: dict[str, CatalogEntry] = {}
     parts = re.split(r"^### ", text, flags=re.M)
     for part in parts[1:]:
         lines = part.splitlines()
@@ -65,22 +76,30 @@ def parse_catalog(path: Path) -> dict[str, dict[str, str | None]]:
 def extract_tokens(provider: str, title: str, style: str | None) -> list[str]:
     if not style:
         return []
-    tokens: list[str] = []
     if provider == "aws":
-        for match in re.finditer(r"resIcon=mxgraph\.aws4\.[A-Za-z0-9_]+", style):
-            tokens.append(match.group(0))
-        if not tokens:
-            for match in re.finditer(r"shape=mxgraph\.aws4\.[A-Za-z0-9_]+", style):
-                tokens.append(match.group(0))
-    elif provider == "azure":
-        for match in re.finditer(r"image=img/lib/azure2/[^;]+", style):
-            tokens.append(match.group(0))
-    elif provider == "gcp":
+        tokens = _AWS_RES_ICON_RE.findall(style)
+        return tokens or _AWS_SHAPE_RE.findall(style)
+    if provider == "azure":
+        return _AZURE_IMAGE_RE.findall(style)
+    if provider == "gcp":
         if "data:image/svg+xml" in style:
-            tokens.extend(["data:image/svg+xml", title])
-        for match in re.finditer(r"mxgraph\.gcp2\.[A-Za-z0-9_]+", style):
-            tokens.append(match.group(0))
-    return tokens
+            return ["data:image/svg+xml", title]
+        return _GCP_SHAPE_RE.findall(style)
+    raise ValueError(f"Unsupported provider: {provider}")
+
+
+def extract_identity_tokens(provider: str, style: str | None) -> list[str]:
+    if not style:
+        return []
+    if provider == "aws":
+        tokens = _AWS_RES_ICON_RE.findall(style)
+        return tokens or _AWS_SHAPE_RE.findall(style)
+    if provider == "azure":
+        return _AZURE_IMAGE_RE.findall(style)
+    if provider == "gcp":
+        images = _GCP_IMAGE_RE.findall(style)
+        return images or _GCP_SHAPE_RE.findall(style)
+    raise ValueError(f"Unsupported provider: {provider}")
 
 
 def load_common_shapes(path: Path = COMMON_SHAPES_PATH) -> dict[str, Any]:

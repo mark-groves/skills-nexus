@@ -4,8 +4,11 @@
 from __future__ import annotations
 
 import argparse
+import html
+import re
 import sys
 import xml.etree.ElementTree as ET
+import xml.parsers.expat as expat
 from collections import defaultdict
 from pathlib import Path
 
@@ -13,13 +16,42 @@ _SCRIPTS_DIR = Path(__file__).resolve().parent
 if str(_SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS_DIR))
 
-from shape_catalog import PROVIDER_FILES, load_common_shapes, resolve_shape  # noqa: E402
+from shape_catalog import (  # noqa: E402
+    PROVIDER_FILES,
+    extract_identity_tokens,
+    load_common_shapes,
+    normalize_query,
+    resolve_shape,
+)
 
 PROVIDER_TOKENS = {
     "aws": ("mxgraph.aws4",),
     "azure": ("img/lib/azure2",),
     "gcp": ("data:image/svg+xml", "mxgraph.gcp2"),
 }
+
+
+def _parse_xml(path: Path) -> ET.Element:
+    builder = ET.TreeBuilder()
+    parser = expat.ParserCreate(namespace_separator="}")
+    parser.StartElementHandler = builder.start
+    parser.EndElementHandler = builder.end
+    parser.CharacterDataHandler = builder.data
+
+    def reject_declaration(*_args: object) -> None:
+        raise ValueError("DTD and entity declarations are not allowed")
+
+    def reject_external_entity(*_args: object) -> int:
+        raise ValueError("External entities are not allowed")
+
+    parser.StartDoctypeDeclHandler = reject_declaration
+    parser.EntityDeclHandler = reject_declaration
+    parser.ExternalEntityRefHandler = reject_external_entity
+    with path.open("rb") as stream:
+        while chunk := stream.read(64 * 1024):
+            parser.Parse(chunk, False)
+    parser.Parse(b"", True)
+    return builder.close()
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -86,24 +118,51 @@ def _overlap_issues(cells: list[ET.Element]) -> list[str]:
     return issues
 
 
-def _generic_shape_issues(cells: list[ET.Element], provider: str) -> list[str]:
-    provider_tokens = PROVIDER_TOKENS[provider]
-    issues = []
+def _provider_backed_cells(cells: list[ET.Element], provider: str) -> set[str]:
+    cells_by_id = {cell.get("id"): cell for cell in cells if cell.get("id")}
+    backed: set[str] = set()
     for cell in cells:
-        if cell.get("vertex") != "1":
-            continue
         style = cell.get("style", "")
-        if any(token in style for token in provider_tokens):
+        if not any(token in style for token in PROVIDER_TOKENS[provider]):
             continue
-        if "shape=mxgraph" in style or "image=img/lib" in style or "data:image" in style:
+        cell_id = cell.get("id")
+        while cell_id and cell_id not in backed:
+            backed.add(cell_id)
+            parent = cells_by_id.get(cell_id)
+            cell_id = parent.get("parent") if parent is not None else None
+    return backed
+
+
+def _label_names(shape: dict) -> set[str]:
+    return {
+        normalize_query(name)
+        for name in [shape.get("id", ""), shape.get("title", ""), *shape.get("aliases", [])]
+        if name
+    }
+
+
+def _visible_label(value: str) -> str:
+    return normalize_query(html.unescape(re.sub(r"<[^>]+>", " ", value)))
+
+
+def _generic_shape_issues(
+    cells: list[ET.Element],
+    provider: str,
+    required_shapes: list[dict],
+) -> list[str]:
+    backed = _provider_backed_cells(cells, provider)
+    required_names = set().union(*(_label_names(shape) for shape in required_shapes))
+    issues: list[str] = []
+    for cell in cells:
+        style = cell.get("style", "")
+        cell_id = cell.get("id", "<unknown>")
+        if cell.get("vertex") != "1" or cell_id in backed:
             continue
-        if "grIcon=" in style or "resIcon=" in style:
+        if "rounded=1" not in style and "shape=rectangle" not in style:
             continue
-        rounded = "rounded=1" in style or "shape=rectangle" in style
-        if rounded and cell.get("value"):
-            issues.append(
-                f"generic shape used while provider shapes required: {cell.get('id', '<unknown>')}"
-            )
+        label = _visible_label(cell.get("value", ""))
+        if any(label == name or label.startswith(f"{name} ") for name in required_names):
+            issues.append(f"generic shape used while provider shapes required: {cell_id}")
     return issues
 
 
@@ -113,8 +172,8 @@ def collect_issues(
     require_services: list[str] | None = None,
 ) -> list[str]:
     try:
-        root = ET.parse(diagram).getroot()
-    except (OSError, ET.ParseError) as err:
+        root = _parse_xml(diagram)
+    except (OSError, ValueError, expat.ExpatError) as err:
         return [f"could not parse diagram: {err}"]
 
     cells = [cell for cell in root.iter() if cell.tag.rsplit("}", 1)[-1] == "mxCell"]
@@ -140,15 +199,20 @@ def collect_issues(
             issues.append("--require-services needs --provider")
         else:
             common = load_common_shapes()
+            actual_tokens = {
+                token for style in styles for token in extract_identity_tokens(provider, style)
+            }
+            required_shapes: list[dict] = []
             for service_name in require_services:
                 shape = resolve_shape(provider, service_name, common)
                 if shape is None:
                     issues.append(f"unknown required service for lookup: {service_name}")
                     continue
-                tokens = shape.get("tokens") or []
-                if not tokens or not any(token in joined for token in tokens):
+                required_shapes.append(shape)
+                expected_tokens = set(extract_identity_tokens(provider, shape.get("style")))
+                if not expected_tokens.intersection(actual_tokens):
                     issues.append(f"missing provider shape for {service_name}")
-            issues.extend(_generic_shape_issues(cells, provider))
+            issues.extend(_generic_shape_issues(cells, provider, required_shapes))
     return issues
 
 

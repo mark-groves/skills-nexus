@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -23,14 +24,16 @@ from validate_diagram import collect_issues  # noqa: E402
 
 
 class CloudDiagramLeversTest(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls) -> None:
-        build()
-
-    def test_common_shapes_built(self) -> None:
-        payload = json.loads((REFERENCES / "common-shapes.json").read_text(encoding="utf-8"))
-        self.assertIn("aws", payload["providers"])
-        self.assertIn("alb", payload["providers"]["aws"]["services"])
+    def test_common_shapes_is_reproducible(self) -> None:
+        committed = json.loads((REFERENCES / "common-shapes.json").read_text(encoding="utf-8"))
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "common-shapes.json"
+            generated = build(out_path=output)
+            self.assertEqual(generated, committed)
+            self.assertEqual(
+                json.loads(output.read_text(encoding="utf-8")),
+                committed,
+            )
 
     def test_lookup_alb(self) -> None:
         hit = resolve_shape("aws", "ALB")
@@ -58,6 +61,35 @@ class CloudDiagramLeversTest(unittest.TestCase):
         assert hit is not None
         self.assertIn("img/lib/azure2/", hit["style"])
 
+    def test_registry_covers_eval_services(self) -> None:
+        eval_services = {
+            "aws": [
+                "ALB",
+                "EC2",
+                "RDS",
+                "Aurora",
+                "API Gateway",
+                "Lambda",
+                "DynamoDB",
+                "Cognito",
+                "S3",
+                "CloudFront",
+                "Route 53",
+            ],
+            "azure": [
+                "App Service",
+                "Azure SQL",
+                "Blob Storage",
+                "Application Gateway",
+                "VNet",
+            ],
+            "gcp": ["Pub/Sub", "Dataflow", "BigQuery", "Looker"],
+        }
+        for provider, services in eval_services.items():
+            for service in services:
+                with self.subTest(provider=provider, service=service):
+                    self.assertIsNotNone(resolve_shape(provider, service))
+
     def test_lookup_miss(self) -> None:
         self.assertIsNone(resolve_shape("aws", "NOSUCHTHING_XYZ"))
 
@@ -75,6 +107,26 @@ class CloudDiagramLeversTest(unittest.TestCase):
             text=True,
         )
         self.assertEqual(proc.returncode, 2)
+        self.assertIn("labeled generic rounded rectangle", proc.stderr)
+
+    def test_lookup_cli_json(self) -> None:
+        proc = subprocess.run(
+            [
+                sys.executable,
+                str(SCRIPTS / "lookup_shape.py"),
+                "--provider",
+                "azure",
+                "--json",
+                "Blob Storage",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        result = json.loads(proc.stdout)
+        self.assertEqual(result["id"], "blob")
+        self.assertIn("img/lib/azure2/storage/", result["style"])
 
     def test_validate_three_tier_aws(self) -> None:
         path = REFERENCES / "templates" / "three-tier-aws.drawio.xml"
@@ -86,6 +138,92 @@ class CloudDiagramLeversTest(unittest.TestCase):
         issues = collect_issues(path)
         self.assertTrue(any("missing mxGeometry" in issue for issue in issues))
         self.assertTrue(any("overlap" in issue for issue in issues))
+
+    def test_validate_cli_does_not_need_drawio(self) -> None:
+        proc = subprocess.run(
+            [
+                sys.executable,
+                str(SCRIPTS / "validate_diagram.py"),
+                str(FIXTURES / "bad-edge.drawio"),
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(proc.returncode, 1)
+        self.assertIn("missing mxGeometry", proc.stderr)
+
+    def test_validate_rejects_entity_declarations(self) -> None:
+        xml = """\
+<!DOCTYPE mxfile [<!ENTITY repeat "unsafe">]>
+<mxfile><diagram><mxGraphModel><root>
+  <mxCell id="0" value="&repeat;" />
+</root></mxGraphModel></diagram></mxfile>
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            diagram = Path(directory) / "entity.drawio"
+            diagram.write_text(xml, encoding="utf-8")
+            issues = collect_issues(diagram)
+        self.assertEqual(len(issues), 1)
+        self.assertIn("DTD and entity declarations are not allowed", issues[0])
+
+    def test_validate_rejects_generic_required_service(self) -> None:
+        xml = """\
+<mxfile><diagram><mxGraphModel><root>
+  <mxCell id="0" />
+  <mxCell id="1" parent="0" />
+  <mxCell id="alb" value="ALB" style="rounded=1;" vertex="1" parent="1">
+    <mxGeometry x="20" y="20" width="80" height="40" as="geometry" />
+  </mxCell>
+</root></mxGraphModel></diagram></mxfile>
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            diagram = Path(directory) / "generic.drawio"
+            diagram.write_text(xml, encoding="utf-8")
+            issues = collect_issues(diagram, "aws", ["ALB"])
+        self.assertIn("missing provider shape for ALB", issues)
+        self.assertTrue(any("generic shape" in issue for issue in issues))
+
+    def test_validate_distinguishes_gcp_service_icons(self) -> None:
+        dataflow = resolve_shape("gcp", "Dataflow")
+        assert dataflow is not None
+        xml = f"""\
+<mxfile><diagram><mxGraphModel><root>
+  <mxCell id="0" />
+  <mxCell id="1" parent="0" />
+  <mxCell id="dataflow" value="Dataflow" style="{dataflow["style"]}" vertex="1" parent="1">
+    <mxGeometry x="20" y="20" width="30" height="30" as="geometry" />
+  </mxCell>
+</root></mxGraphModel></diagram></mxfile>
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            diagram = Path(directory) / "dataflow.drawio"
+            diagram.write_text(xml, encoding="utf-8")
+            issues = collect_issues(diagram, "gcp", ["Pub/Sub"])
+        self.assertIn("missing provider shape for Pub/Sub", issues)
+
+    def test_validate_accepts_gcp_card_composite(self) -> None:
+        pubsub = resolve_shape("gcp", "Pub/Sub")
+        assert pubsub is not None
+        xml = f"""\
+<mxfile><diagram><mxGraphModel><root>
+  <mxCell id="0" />
+  <mxCell id="1" parent="0" />
+  <mxCell id="pubsub-card" value="Pub/Sub" style="rounded=1;" vertex="1" parent="1">
+    <mxGeometry x="20" y="20" width="160" height="70" as="geometry" />
+  </mxCell>
+  <mxCell id="pubsub-icon" style="{pubsub["style"]}" vertex="1" parent="pubsub-card">
+    <mxGeometry x="0" y="0.5" width="30" height="30" relative="1" as="geometry">
+      <mxPoint x="15" y="-15" as="offset" />
+    </mxGeometry>
+  </mxCell>
+</root></mxGraphModel></diagram></mxfile>
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            diagram = Path(directory) / "pubsub.drawio"
+            diagram.write_text(xml, encoding="utf-8")
+            issues = collect_issues(diagram, "gcp", ["Pub/Sub"])
+        self.assertEqual(issues, [])
 
 
 if __name__ == "__main__":
