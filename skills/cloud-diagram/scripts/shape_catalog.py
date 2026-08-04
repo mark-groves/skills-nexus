@@ -25,6 +25,7 @@ _SIZE_RE = re.compile(r"- \*\*Size:\*\* (\S+)\s*$")
 _TYPE_RE = re.compile(r"- \*\*Type:\*\* (.+)\s*$")
 _AWS_RES_ICON_RE = re.compile(r"resIcon=mxgraph\.aws4\.[A-Za-z0-9_]+")
 _AWS_SHAPE_RE = re.compile(r"shape=mxgraph\.aws4\.[A-Za-z0-9_]+")
+_AWS_GENERIC_SHAPES = frozenset({"mxgraph.aws4.resourceIcon"})
 _AZURE_IMAGE_RE = re.compile(r"image=img/lib/azure2/[^;]+")
 _GCP_IMAGE_RE = re.compile(r"image=data:image/svg\+xml,[^;]+")
 _GCP_SHAPE_RE = re.compile(r"(?:shape=)?mxgraph\.gcp2\.[A-Za-z0-9_]+")
@@ -88,12 +89,29 @@ def extract_tokens(provider: str, title: str, style: str | None) -> list[str]:
     raise ValueError(f"Unsupported provider: {provider}")
 
 
+def _aws_identity_tokens(style: str) -> list[str]:
+    """Canonical AWS identities shared by resIcon= and shape= forms."""
+    identities: list[str] = []
+    seen: set[str] = set()
+    for token in _AWS_RES_ICON_RE.findall(style):
+        identity = token.removeprefix("resIcon=")
+        if identity not in seen:
+            seen.add(identity)
+            identities.append(identity)
+    for token in _AWS_SHAPE_RE.findall(style):
+        identity = token.removeprefix("shape=")
+        if identity in _AWS_GENERIC_SHAPES or identity in seen:
+            continue
+        seen.add(identity)
+        identities.append(identity)
+    return identities
+
+
 def extract_identity_tokens(provider: str, style: str | None) -> list[str]:
     if not style:
         return []
     if provider == "aws":
-        tokens = _AWS_RES_ICON_RE.findall(style)
-        return tokens or _AWS_SHAPE_RE.findall(style)
+        return _aws_identity_tokens(style)
     if provider == "azure":
         return _AZURE_IMAGE_RE.findall(style)
     if provider == "gcp":

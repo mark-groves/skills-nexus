@@ -133,6 +133,11 @@ class CloudDiagramLeversTest(unittest.TestCase):
         issues = collect_issues(path, "aws", ["ALB", "EC2", "RDS"])
         self.assertEqual(issues, [])
 
+    def test_validate_three_tier_aws_resicon_matches_shape_catalog(self) -> None:
+        path = REFERENCES / "templates" / "three-tier-aws.drawio.xml"
+        issues = collect_issues(path, "aws", ["Internet Gateway", "NAT Gateway"])
+        self.assertEqual(issues, [])
+
     def test_validate_three_tier_gcp(self) -> None:
         path = REFERENCES / "templates" / "three-tier-gcp.drawio.xml"
         issues = collect_issues(
