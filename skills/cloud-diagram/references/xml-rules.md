@@ -17,7 +17,6 @@ Every `.drawio` file follows this exact skeleton:
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
-        <!-- All diagram cells go here with parent="1" -->
       </root>
     </mxGraphModel>
   </diagram>
