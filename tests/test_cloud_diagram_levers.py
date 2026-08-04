@@ -43,10 +43,14 @@ class CloudDiagramLeversTest(unittest.TestCase):
         self.assertIn("fillColor=#8C4FFF", hit["style"])
 
     def test_lookup_aws_groups_prefer_containers(self) -> None:
-        for query, token in (
-            ("VPC", "grIcon=mxgraph.aws4.group_vpc2"),
-            ("Availability Zone", "grIcon=mxgraph.aws4.group_availability_zone"),
-            ("Account", "grIcon=mxgraph.aws4.group_account"),
+        for query, token, size in (
+            ("VPC", "grIcon=mxgraph.aws4.group_vpc2", "700x500"),
+            (
+                "Availability Zone",
+                "grIcon=mxgraph.aws4.group_availability_zone",
+                "300x450",
+            ),
+            ("Account", "grIcon=mxgraph.aws4.group_account", "820x620"),
         ):
             with self.subTest(query=query):
                 hit = resolve_shape("aws", query)
@@ -54,8 +58,8 @@ class CloudDiagramLeversTest(unittest.TestCase):
                 self.assertEqual(hit["kind"], "group")
                 self.assertIn(token, hit["style"])
                 self.assertIn("container=1", hit["style"])
-                self.assertRegex(hit["size"], r"^\d+x\d+$")
-                self.assertNotEqual(hit["size"], "50x50")
+                self.assertEqual(hit["size"], size)
+                self.assertEqual(hit["tokens"], [token])
 
     def test_lookup_azure_subnet_prefers_swimlane(self) -> None:
         hit = resolve_shape("azure", "Subnet")
@@ -65,6 +69,8 @@ class CloudDiagramLeversTest(unittest.TestCase):
         self.assertIn("container=1", hit["style"])
         self.assertEqual(hit["size"], "400x250")
         self.assertNotIn("img/lib/azure2/networking/Subnet.svg", hit["style"])
+        self.assertTrue(hit["tokens"])
+        self.assertTrue(all(token.startswith("azure.group:") for token in hit["tokens"]))
 
     def test_lookup_s3_lambda(self) -> None:
         s3 = resolve_shape("aws", "S3")
@@ -263,6 +269,42 @@ class CloudDiagramLeversTest(unittest.TestCase):
             issues = collect_issues(diagram, "aws", ["ALB"])
         self.assertIn("missing provider shape for ALB", issues)
         self.assertTrue(any("generic shape" in issue for issue in issues))
+
+    def test_validate_distinguishes_aws_group_identities(self) -> None:
+        cloud = resolve_shape("aws", "AWS Cloud")
+        assert cloud is not None
+        xml = f"""\
+<mxfile><diagram><mxGraphModel><root>
+  <mxCell id="0" />
+  <mxCell id="1" parent="0" />
+  <mxCell id="cloud" value="AWS Cloud" style="{cloud["style"]}" vertex="1" parent="1">
+    <mxGeometry x="0" y="0" width="800" height="600" as="geometry" />
+  </mxCell>
+</root></mxGraphModel></diagram></mxfile>
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            diagram = Path(directory) / "aws-cloud-only.drawio"
+            diagram.write_text(xml, encoding="utf-8")
+            issues = collect_issues(diagram, "aws", ["VPC"])
+        self.assertIn("missing provider shape for VPC", issues)
+
+    def test_validate_accepts_azure_subnet_swimlane(self) -> None:
+        subnet = resolve_shape("azure", "Subnet")
+        assert subnet is not None
+        xml = f"""\
+<mxfile><diagram><mxGraphModel><root>
+  <mxCell id="0" />
+  <mxCell id="1" parent="0" />
+  <mxCell id="subnet" value="Subnet" style="{subnet["style"]}" vertex="1" parent="1">
+    <mxGeometry x="0" y="0" width="400" height="250" as="geometry" />
+  </mxCell>
+</root></mxGraphModel></diagram></mxfile>
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            diagram = Path(directory) / "azure-subnet.drawio"
+            diagram.write_text(xml, encoding="utf-8")
+            issues = collect_issues(diagram, "azure", ["Subnet"])
+        self.assertEqual(issues, [])
 
     def test_validate_distinguishes_gcp_service_icons(self) -> None:
         dataflow = resolve_shape("gcp", "Dataflow")

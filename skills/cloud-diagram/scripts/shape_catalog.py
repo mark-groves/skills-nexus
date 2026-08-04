@@ -25,9 +25,18 @@ _STYLE_RE = re.compile(r"- \*\*Style:\*\* `(.+)`\s*$")
 _SIZE_RE = re.compile(r"- \*\*Size:\*\* (\d+x\d+|\S+)")
 _TYPE_RE = re.compile(r"- \*\*Type:\*\* (.+)\s*$")
 _AWS_RES_ICON_RE = re.compile(r"resIcon=mxgraph\.aws4\.[A-Za-z0-9_]+")
+_AWS_GR_ICON_RE = re.compile(r"grIcon=mxgraph\.aws4\.[A-Za-z0-9_]+")
 _AWS_SHAPE_RE = re.compile(r"shape=mxgraph\.aws4\.[A-Za-z0-9_]+")
-_AWS_GENERIC_SHAPES = frozenset({"mxgraph.aws4.resourceIcon"})
+# Shared shell shapes are not service identities; prefer resIcon/grIcon.
+_AWS_GENERIC_SHAPES = frozenset({"mxgraph.aws4.resourceIcon", "mxgraph.aws4.group"})
 _AZURE_IMAGE_RE = re.compile(r"image=img/lib/azure2/[^;]+")
+_AZURE_GROUP_MARKER_KEYS = (
+    "strokeColor",
+    "strokeWidth",
+    "dashed",
+    "dashPattern",
+    "fillColor",
+)
 _GCP_IMAGE_RE = re.compile(r"image=data:image/svg\+xml,[^;]+")
 _GCP_SHAPE_RE = re.compile(r"(?:shape=)?mxgraph\.gcp2\.[A-Za-z0-9_]+")
 
@@ -140,14 +149,41 @@ def parse_catalog(path: Path) -> dict[str, CatalogEntry]:
     return entries
 
 
+def _azure_group_identity(style: str) -> str | None:
+    """Fingerprint Azure swimlane containers that lack azure2 image tokens."""
+    if not (style.startswith("swimlane") or ";swimlane;" in style):
+        return None
+    markers: list[str] = []
+    for key in _AZURE_GROUP_MARKER_KEYS:
+        match = re.search(rf"(?:^|;){re.escape(key)}=([^;]+)", style)
+        if match:
+            markers.append(f"{key}={match.group(1)}")
+    if not markers:
+        return None
+    return "azure.group:" + ";".join(markers)
+
+
 def extract_tokens(provider: str, title: str, style: str | None) -> list[str]:
     if not style:
         return []
     if provider == "aws":
         tokens = _AWS_RES_ICON_RE.findall(style)
-        return tokens or _AWS_SHAPE_RE.findall(style)
+        if tokens:
+            return tokens
+        group_icons = _AWS_GR_ICON_RE.findall(style)
+        if group_icons:
+            return group_icons
+        return [
+            token
+            for token in _AWS_SHAPE_RE.findall(style)
+            if token.removeprefix("shape=") not in _AWS_GENERIC_SHAPES
+        ]
     if provider == "azure":
-        return _AZURE_IMAGE_RE.findall(style)
+        images = _AZURE_IMAGE_RE.findall(style)
+        if images:
+            return images
+        group_identity = _azure_group_identity(style)
+        return [group_identity] if group_identity else []
     if provider == "gcp":
         if "data:image/svg+xml" in style:
             return ["data:image/svg+xml", title]
@@ -156,9 +192,14 @@ def extract_tokens(provider: str, title: str, style: str | None) -> list[str]:
 
 
 def _aws_identity_tokens(style: str) -> list[str]:
-    """Canonical AWS identities shared by resIcon= and shape= forms."""
+    """Canonical AWS identities from grIcon=, resIcon=, and non-generic shape=."""
     identities: list[str] = []
     seen: set[str] = set()
+    for token in _AWS_GR_ICON_RE.findall(style):
+        identity = token.removeprefix("grIcon=")
+        if identity not in seen:
+            seen.add(identity)
+            identities.append(identity)
     for token in _AWS_RES_ICON_RE.findall(style):
         identity = token.removeprefix("resIcon=")
         if identity not in seen:
@@ -179,7 +220,11 @@ def extract_identity_tokens(provider: str, style: str | None) -> list[str]:
     if provider == "aws":
         return _aws_identity_tokens(style)
     if provider == "azure":
-        return _AZURE_IMAGE_RE.findall(style)
+        images = _AZURE_IMAGE_RE.findall(style)
+        if images:
+            return images
+        group_identity = _azure_group_identity(style)
+        return [group_identity] if group_identity else []
     if provider == "gcp":
         images = _GCP_IMAGE_RE.findall(style)
         return images or _GCP_SHAPE_RE.findall(style)

@@ -176,7 +176,7 @@ still catch layout issues (nesting, overlaps, label collisions). AWS
 stencil glyphs may render as placeholders there:
 
 ```bash
-npx --yes drawio-headless render --format png "<name>.drawio" "<name>.review.png"
+npx --yes drawio-headless@0.4.2 render --format png "<name>.drawio" "<name>.review.png"
 ```
 
 Read the review image. Check overlaps, blank icons, crossings, labels,

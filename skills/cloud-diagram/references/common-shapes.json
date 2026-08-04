@@ -30,7 +30,7 @@
           "catalog_size": "800x600",
           "kind": "group",
           "tokens": [
-            "shape=mxgraph.aws4.group"
+            "grIcon=mxgraph.aws4.group_aws_cloud"
           ]
         },
         "region": {
@@ -44,7 +44,7 @@
           "catalog_size": "750x550",
           "kind": "group",
           "tokens": [
-            "shape=mxgraph.aws4.group"
+            "grIcon=mxgraph.aws4.group_region"
           ]
         },
         "vpc": {
@@ -58,7 +58,7 @@
           "catalog_size": "700x500",
           "kind": "group",
           "tokens": [
-            "shape=mxgraph.aws4.group"
+            "grIcon=mxgraph.aws4.group_vpc2"
           ]
         },
         "availability_zone": {
@@ -73,7 +73,7 @@
           "catalog_size": "300x450",
           "kind": "group",
           "tokens": [
-            "shape=mxgraph.aws4.group"
+            "grIcon=mxgraph.aws4.group_availability_zone"
           ]
         },
         "public_subnet": {
@@ -87,7 +87,7 @@
           "catalog_size": "280x200",
           "kind": "group",
           "tokens": [
-            "shape=mxgraph.aws4.group"
+            "grIcon=mxgraph.aws4.group_security_group"
           ]
         },
         "private_subnet": {
@@ -101,7 +101,7 @@
           "catalog_size": "280x200",
           "kind": "group",
           "tokens": [
-            "shape=mxgraph.aws4.group"
+            "grIcon=mxgraph.aws4.group_security_group"
           ]
         },
         "ec2": {
@@ -436,7 +436,9 @@
           "size": "400x250",
           "catalog_size": "400x250",
           "kind": "group",
-          "tokens": []
+          "tokens": [
+            "azure.group:strokeColor=#3B8BBA;dashed=1;dashPattern=5 5;fillColor=none"
+          ]
         },
         "aks": {
           "aliases": [
