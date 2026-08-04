@@ -39,13 +39,9 @@ The full list of azure2 category folders:
 | `storage` | Storage accounts, Data Lake |
 | `web` | SignalR, Notification Hubs |
 
-To derive a path for a service not listed in this catalog:
-
-1. Identify the category folder that best matches the service domain.
-2. Convert the service name to Title_Case with underscores.
-3. Construct the path: `img/lib/azure2/<category>/<Service_Name>.svg`.
-4. If the icon does not render, try alternate category folders or
-   check the draw.io azure2 library for the exact filename.
+Resolve services with `scripts/lookup_shape.py --provider azure <name>`
+or `references/common-shapes.json` first. Do not invent azure2 paths.
+On a confirmed miss, use a labeled generic rounded rectangle.
 
 The base style string for all service icons is:
 

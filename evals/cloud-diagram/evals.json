@@ -65,11 +65,12 @@
         "Output file has .drawio extension",
         "Contains AWS Cloud, Region, and VPC container hierarchy",
         "Uses correct aws4 shape names (resIcon=mxgraph.aws4.*)",
+        "Does not use generic rounded rectangles for ALB, EC2, or RDS when aws4 icons are available",
         "All edge elements contain <mxGeometry relative='1' as='geometry' /> child",
         "Service icon dimensions are 50x50",
         {
           "id": "plain-text-labels",
-          "text": "No HTML tags in label text",
+          "text": "No HTML tags in vertex label text (AWS plain-text labels; style html=1 is allowed)",
           "class": "safety",
           "gate": "hard"
         },
@@ -83,6 +84,7 @@
       "fixtures": [],
       "checks": [
         "Uses Azure image references (img/lib/azure2/...)",
+        "Does not use generic rounded rectangles for App Service, SQL, Blob, or Application Gateway when azure2 icons are available",
         "Contains VNet container with strokeWidth=4 and correct Azure styling",
         "Contains subnet containers with dashed borders",
         "Does not use AWS shape names",
@@ -103,19 +105,22 @@
         },
         "API Gateway, Lambda, DynamoDB, and Cognito are present",
         "Edges show request flow direction with labels",
-        "Uses correct aws4 shape names for all four services"
+        "Uses correct aws4 shape names for all four services",
+        "Does not use generic rounded rectangles for the four requested services"
       ]
     },
     {
       "id": 4,
       "prompt": "/cloud-diagram GCP data pipeline: Pub/Sub ingestion, Dataflow processing, BigQuery storage, Looker dashboards",
-      "expected_behavior": "Creates a GCP data pipeline diagram with correct GCP shapes and left-to-right flow.",
+      "expected_behavior": "Creates a GCP data pipeline diagram with Service Cards (card + icon child), left-to-right flow, and no AWS-style VPC nesting.",
       "fixtures": [],
       "checks": [
-        "Uses mxgraph.gcp2.* shape names",
+        "Uses GCP Service Card pattern (white card cells plus icon children with data:image/svg+xml or part=1)",
         "Contains Pub/Sub, Dataflow, BigQuery, and Looker",
+        "Does not use generic rounded rectangles for those four services when catalog icons exist",
         "Shows data flow direction with labeled edges",
-        "Uses GCP blue colour scheme (#4285F4)"
+        "Uses GCP colour accents (#4285F4 or #4DA1F5 title/platform styling)",
+        "Does not invent AWS-style nested VPC/subnet containers for this pipeline"
       ]
     },
     {
@@ -132,6 +137,7 @@
         },
         "Attempts to export to PNG with --embed-diagram flag",
         "Contains S3, CloudFront, and Route 53 with correct shapes",
+        "Does not use generic rounded rectangles for S3, CloudFront, or Route 53",
         "Does not add unnecessary VPC or subnet containers for a CDN architecture"
       ]
     }
