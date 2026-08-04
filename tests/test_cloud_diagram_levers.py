@@ -133,6 +133,56 @@ class CloudDiagramLeversTest(unittest.TestCase):
         issues = collect_issues(path, "aws", ["ALB", "EC2", "RDS"])
         self.assertEqual(issues, [])
 
+    def test_validate_three_tier_gcp(self) -> None:
+        path = REFERENCES / "templates" / "three-tier-gcp.drawio.xml"
+        issues = collect_issues(
+            path,
+            "gcp",
+            ["Cloud Load Balancing", "Cloud Run", "Cloud SQL"],
+        )
+        self.assertEqual(issues, [])
+
+    def test_validate_allows_nested_sibling_containment(self) -> None:
+        xml = """\
+<mxfile><diagram><mxGraphModel><root>
+  <mxCell id="0" />
+  <mxCell id="1" parent="0" />
+  <mxCell id="platform" value="Platform" style="fillColor=#F6F6F6;" vertex="1" parent="1">
+    <mxGeometry x="0" y="0" width="400" height="300" as="geometry" />
+  </mxCell>
+  <mxCell id="group" value="Group" style="rounded=1;fillColor=#E1F5FE;" vertex="1" parent="1">
+    <mxGeometry x="40" y="40" width="200" height="120" as="geometry" />
+  </mxCell>
+  <mxCell id="card" value="Service" style="rounded=1;" vertex="1" parent="1">
+    <mxGeometry x="60" y="70" width="120" height="60" as="geometry" />
+  </mxCell>
+</root></mxGraphModel></diagram></mxfile>
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            diagram = Path(directory) / "nested.drawio"
+            diagram.write_text(xml, encoding="utf-8")
+            issues = collect_issues(diagram)
+        self.assertEqual(issues, [])
+
+    def test_validate_still_flags_partial_overlap(self) -> None:
+        xml = """\
+<mxfile><diagram><mxGraphModel><root>
+  <mxCell id="0" />
+  <mxCell id="1" parent="0" />
+  <mxCell id="left" value="Left" style="rounded=1;" vertex="1" parent="1">
+    <mxGeometry x="0" y="0" width="100" height="60" as="geometry" />
+  </mxCell>
+  <mxCell id="right" value="Right" style="rounded=1;" vertex="1" parent="1">
+    <mxGeometry x="50" y="20" width="100" height="60" as="geometry" />
+  </mxCell>
+</root></mxGraphModel></diagram></mxfile>
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            diagram = Path(directory) / "partial.drawio"
+            diagram.write_text(xml, encoding="utf-8")
+            issues = collect_issues(diagram)
+        self.assertTrue(any("overlap: left and right" in issue for issue in issues))
+
     def test_validate_bad_edge(self) -> None:
         path = FIXTURES / "bad-edge.drawio"
         issues = collect_issues(path)

@@ -87,6 +87,24 @@ def _bounds(geometry: ET.Element) -> tuple[float, float, float, float]:
     )
 
 
+def _fully_contains(
+    outer: tuple[float, float, float, float],
+    inner: tuple[float, float, float, float],
+) -> bool:
+    """True when outer strictly covers inner (intentional layered backgrounds)."""
+    ox, oy, ow, oh = outer
+    ix, iy, iw, ih = inner
+    if iw <= 0 or ih <= 0 or ow <= 0 or oh <= 0:
+        return False
+    return (
+        ox <= ix
+        and oy <= iy
+        and ox + ow >= ix + iw
+        and oy + oh >= iy + ih
+        and (ow * oh) > (iw * ih)
+    )
+
+
 def _overlap_issues(cells: list[ET.Element]) -> list[str]:
     siblings: dict[str, list[tuple[ET.Element, tuple[float, float, float, float]]]] = defaultdict(
         list
@@ -110,6 +128,12 @@ def _overlap_issues(cells: list[ET.Element]) -> list[str]:
                 lx, ly, lw, lh = left_bounds
                 rx, ry, rw, rh = right_bounds
                 if lw <= 0 or lh <= 0 or rw <= 0 or rh <= 0:
+                    continue
+                # GCP (and similar) place platform/group/card shells as siblings
+                # with visual nesting; full containment is not a layout defect.
+                if _fully_contains(left_bounds, right_bounds) or _fully_contains(
+                    right_bounds, left_bounds
+                ):
                     continue
                 overlap_width = min(lx + lw, rx + rw) - max(lx, rx)
                 overlap_height = min(ly + lh, ry + rh) - max(ly, ry)
