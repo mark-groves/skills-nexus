@@ -26,9 +26,7 @@ def build(
     out_path: Path = COMMON_SHAPES_PATH,
 ) -> dict:
     seed = json.loads(seed_path.read_text(encoding="utf-8"))
-    catalogs = {
-        provider: parse_catalog(path) for provider, path in PROVIDER_FILES.items()
-    }
+    catalogs = {provider: parse_catalog(path) for provider, path in PROVIDER_FILES.items()}
     missing: list[str] = []
     providers_out: dict = {}
     for provider, pdata in seed["providers"].items():

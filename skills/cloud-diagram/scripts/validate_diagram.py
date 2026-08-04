@@ -56,8 +56,8 @@ def _bounds(geometry: ET.Element) -> tuple[float, float, float, float]:
 
 
 def _overlap_issues(cells: list[ET.Element]) -> list[str]:
-    siblings: dict[str, list[tuple[ET.Element, tuple[float, float, float, float]]]] = (
-        defaultdict(list)
+    siblings: dict[str, list[tuple[ET.Element, tuple[float, float, float, float]]]] = defaultdict(
+        list
     )
     for cell in cells:
         if cell.get("vertex") != "1" or cell.get("edge") == "1":
@@ -102,8 +102,7 @@ def _generic_shape_issues(cells: list[ET.Element], provider: str) -> list[str]:
         rounded = "rounded=1" in style or "shape=rectangle" in style
         if rounded and cell.get("value"):
             issues.append(
-                f"generic shape used while provider shapes required: "
-                f"{cell.get('id', '<unknown>')}"
+                f"generic shape used while provider shapes required: {cell.get('id', '<unknown>')}"
             )
     return issues
 
@@ -118,11 +117,7 @@ def collect_issues(
     except (OSError, ET.ParseError) as err:
         return [f"could not parse diagram: {err}"]
 
-    cells = [
-        cell
-        for cell in root.iter()
-        if cell.tag.rsplit("}", 1)[-1] == "mxCell"
-    ]
+    cells = [cell for cell in root.iter() if cell.tag.rsplit("}", 1)[-1] == "mxCell"]
     issues: list[str] = []
     for cell in cells:
         if cell.get("edge") != "1":
@@ -132,16 +127,12 @@ def collect_issues(
             geometry.get("relative") == "1" or geometry.get("as") == "geometry"
         )
         if not valid_geometry:
-            issues.append(
-                f"edge {cell.get('id', '<unknown>')}: missing mxGeometry child"
-            )
+            issues.append(f"edge {cell.get('id', '<unknown>')}: missing mxGeometry child")
 
     issues.extend(_overlap_issues(cells))
     styles = [cell.get("style", "") for cell in cells]
     joined = "\n".join(styles)
-    if provider and not any(
-        token in joined for token in PROVIDER_TOKENS.get(provider, ())
-    ):
+    if provider and not any(token in joined for token in PROVIDER_TOKENS.get(provider, ())):
         issues.append(f"no provider shape tokens found for {provider}")
 
     if require_services:
@@ -163,11 +154,7 @@ def collect_issues(
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
-    required = [
-        service.strip()
-        for service in args.require_services.split(",")
-        if service.strip()
-    ]
+    required = [service.strip() for service in args.require_services.split(",") if service.strip()]
     issues = collect_issues(args.diagram, args.provider, required or None)
     if issues:
         for issue in issues:

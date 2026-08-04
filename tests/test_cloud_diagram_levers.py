@@ -28,9 +28,7 @@ class CloudDiagramLeversTest(unittest.TestCase):
         build()
 
     def test_common_shapes_built(self) -> None:
-        payload = json.loads(
-            (REFERENCES / "common-shapes.json").read_text(encoding="utf-8")
-        )
+        payload = json.loads((REFERENCES / "common-shapes.json").read_text(encoding="utf-8"))
         self.assertIn("aws", payload["providers"])
         self.assertIn("alb", payload["providers"]["aws"]["services"])
 
@@ -38,9 +36,7 @@ class CloudDiagramLeversTest(unittest.TestCase):
         hit = resolve_shape("aws", "ALB")
         assert hit is not None
         self.assertIn("mxgraph.aws4", hit["style"])
-        self.assertTrue(
-            any("elastic_load_balancing" in token for token in hit["tokens"])
-        )
+        self.assertTrue(any("elastic_load_balancing" in token for token in hit["tokens"]))
 
     def test_lookup_s3_lambda(self) -> None:
         s3 = resolve_shape("aws", "S3")
