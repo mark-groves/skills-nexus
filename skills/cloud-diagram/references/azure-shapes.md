@@ -43,6 +43,9 @@ Resolve services with `scripts/lookup_shape.py --provider azure <name>`
 or `references/common-shapes.json` first. Do not invent azure2 paths.
 On a confirmed miss, use a labeled generic rounded rectangle.
 
+When `Subnet` appears as both a swimlane group and an azure2 icon,
+lookup keeps the swimlane container.
+
 The base style string for all service icons is:
 
 ```text

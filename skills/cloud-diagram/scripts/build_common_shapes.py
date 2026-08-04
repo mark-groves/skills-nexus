@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -17,8 +18,27 @@ from shape_catalog import (  # noqa: E402
     COMMON_SHAPES_SEED_PATH,
     PROVIDER_FILES,
     extract_tokens,
+    infer_shape_kind,
+    infer_shape_size,
     parse_catalog,
 )
+
+
+def apply_style_patches(style: str, patches: dict[str, str] | None) -> str:
+    """Replace or append style key=value pairs from the seed."""
+    if not patches:
+        return style
+    updated = style
+    for key, value in patches.items():
+        pattern = re.compile(rf"(?:(?<=;)|^){re.escape(key)}=[^;]*;?")
+        replacement = f"{key}={value};"
+        if pattern.search(updated):
+            updated = pattern.sub(replacement, updated, count=1)
+        else:
+            if not updated.endswith(";"):
+                updated += ";"
+            updated += replacement
+    return updated
 
 
 def build(
@@ -38,17 +58,19 @@ def build(
             if entry is None or not entry.get("style"):
                 missing.append(f"{provider}:{service_id}:{title}")
                 continue
-            style = entry["style"]
-            assert isinstance(style, str)
-            kind = meta.get("kind", "icon")
+            raw_style = entry["style"]
+            if not isinstance(raw_style, str):
+                missing.append(f"{provider}:{service_id}:{title}")
+                continue
+            style = apply_style_patches(raw_style, meta.get("style_patches"))
+            kind = infer_shape_kind(provider, style, meta.get("kind"))
             default_size = seed.get("icon_size_default", "50x50")
-            if kind == "gcp_card_icon":
-                default_size = "30x30"
+            size = infer_shape_size(kind, entry.get("size"), default_size)
             services_out[service_id] = {
                 "aliases": list(meta["aliases"]),
                 "title": title,
                 "style": style,
-                "size": default_size,
+                "size": size,
                 "catalog_size": entry.get("size"),
                 "kind": kind,
                 "tokens": extract_tokens(provider, title, style),

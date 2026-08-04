@@ -7,7 +7,40 @@
         "alb": {
           "aliases": ["alb", "application load balancer", "application_load_balancer", "elb"],
           "title": "Elastic Load Balancing",
-          "kind": "icon"
+          "kind": "icon",
+          "style_patches": {
+            "fillColor": "#8C4FFF"
+          }
+        },
+        "aws_cloud": {
+          "aliases": ["aws cloud"],
+          "title": "AWS Cloud",
+          "kind": "group"
+        },
+        "region": {
+          "aliases": ["region", "aws region"],
+          "title": "Region",
+          "kind": "group"
+        },
+        "vpc": {
+          "aliases": ["vpc", "virtual private cloud"],
+          "title": "VPC",
+          "kind": "group"
+        },
+        "availability_zone": {
+          "aliases": ["az", "availability zone", "availability_zone"],
+          "title": "Availability Zone",
+          "kind": "group"
+        },
+        "public_subnet": {
+          "aliases": ["public subnet", "public_subnet"],
+          "title": "Public Subnet",
+          "kind": "group"
+        },
+        "private_subnet": {
+          "aliases": ["private subnet", "private_subnet"],
+          "title": "Private Subnet",
+          "kind": "group"
         },
         "ec2": {
           "aliases": ["ec2", "elastic compute cloud"],
@@ -122,6 +155,11 @@
           "aliases": ["vnet", "virtual network", "virtual networks"],
           "title": "Virtual Networks",
           "kind": "icon"
+        },
+        "subnet": {
+          "aliases": ["subnet", "azure subnet"],
+          "title": "Subnet",
+          "kind": "group"
         },
         "aks": {
           "aliases": ["aks", "kubernetes services", "azure kubernetes"],

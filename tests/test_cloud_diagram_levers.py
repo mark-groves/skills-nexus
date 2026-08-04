@@ -40,6 +40,31 @@ class CloudDiagramLeversTest(unittest.TestCase):
         assert hit is not None
         self.assertIn("mxgraph.aws4", hit["style"])
         self.assertTrue(any("elastic_load_balancing" in token for token in hit["tokens"]))
+        self.assertIn("fillColor=#8C4FFF", hit["style"])
+
+    def test_lookup_aws_groups_prefer_containers(self) -> None:
+        for query, token in (
+            ("VPC", "grIcon=mxgraph.aws4.group_vpc2"),
+            ("Availability Zone", "grIcon=mxgraph.aws4.group_availability_zone"),
+            ("Account", "grIcon=mxgraph.aws4.group_account"),
+        ):
+            with self.subTest(query=query):
+                hit = resolve_shape("aws", query)
+                assert hit is not None
+                self.assertEqual(hit["kind"], "group")
+                self.assertIn(token, hit["style"])
+                self.assertIn("container=1", hit["style"])
+                self.assertRegex(hit["size"], r"^\d+x\d+$")
+                self.assertNotEqual(hit["size"], "50x50")
+
+    def test_lookup_azure_subnet_prefers_swimlane(self) -> None:
+        hit = resolve_shape("azure", "Subnet")
+        assert hit is not None
+        self.assertEqual(hit["kind"], "group")
+        self.assertTrue(hit["style"].startswith("swimlane;"))
+        self.assertIn("container=1", hit["style"])
+        self.assertEqual(hit["size"], "400x250")
+        self.assertNotIn("img/lib/azure2/networking/Subnet.svg", hit["style"])
 
     def test_lookup_s3_lambda(self) -> None:
         s3 = resolve_shape("aws", "S3")
