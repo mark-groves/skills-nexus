@@ -111,15 +111,19 @@ from a single source, parallel bus patterns, or avoiding crossings.
 
 ## Spacing and layout
 
-The provider template is the primary layout reference. These are
-recommended defaults when no template guidance applies:
+Provider style examples teach look and feel, not required coordinates.
+Use them for icons, groups, cards, and edges. Invent placement that
+fits the user's architecture. Defaults when you need numbers:
 
-- **Minimum 200px horizontal gap** between sibling resources.
-- **Minimum 120px vertical gap** between tiers/rows.
+- **Service icons:** 50x50 for AWS and Azure. GCP card icons 30x30.
+- **Minimum 200px horizontal gap** between sibling resources when
+  inventing layout.
+- **Minimum 120px vertical gap** between tiers/rows when inventing.
 - **Container padding:** 40px on each side.
 - Align all coordinates to 10px grid multiples.
 - Canvas size: 1600x900 for simple diagrams, 1900x1500 for
   complex ones. Adjust `dx`/`dy` and `pageWidth`/`pageHeight`.
+- Fan-out edges should include waypoints (see three-tier AWS).
 
 ## Style strings
 

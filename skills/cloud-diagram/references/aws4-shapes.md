@@ -16,10 +16,9 @@ icon inside a category-coloured rounded square.
 **Product icons** set `shape=mxgraph.aws4.<SERVICE>` directly with no
 `resIcon`. These render the bare service glyph.
 
-To derive a shape not listed here, convert the service name to
-`lower_snake_case` and substitute it into the appropriate template.
-Check the draw.io aws4 stencil source if unsure of the exact
-identifier.
+Resolve services with `scripts/lookup_shape.py --provider aws <name>`
+or `references/common-shapes.json` first. Do not invent stencil names.
+On a confirmed miss, use a labeled generic rounded rectangle.
 
 ---
 

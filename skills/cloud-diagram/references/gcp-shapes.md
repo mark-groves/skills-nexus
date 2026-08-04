@@ -135,11 +135,13 @@ children inside Service Cards (see above), not as standalone elements.
 
 A smaller set of shapes use `mxgraph.gcp2.*` stencil names (e.g. user
 personas, the platform logo). These are listed with their stencil style
-in the catalog.
+in the catalog. Prefer Service Cards with catalog `data:image` icons
+for product services. Use `mxgraph.gcp2.*` only for personas, logos,
+and other non-card glyphs listed that way.
 
-To derive a shape not in this catalog, convert the official GCP product
-name to lowercase and replace spaces with underscores. Drop the "Cloud"
-prefix when the stencil omits it (check both forms).
+Resolve services with `scripts/lookup_shape.py --provider gcp <name>`
+or `references/common-shapes.json` first. Do not invent stencil names.
+On a confirmed miss, use a labeled generic rounded rectangle.
 
 ## GCP colour palette
 

@@ -101,37 +101,53 @@
         </mxCell>
 
         <!-- Edge: Users to IGW -->
-        <mxCell id="edge-users-igw" value="HTTPS:443" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#232F3E;fontSize=10;" edge="1" source="users" target="igw" parent="1">
+        <mxCell id="edge-users-igw" value="HTTPS:443" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=open;endFill=0;strokeWidth=2;strokeColor=#545B64;fontSize=10;" edge="1" source="users" target="igw" parent="1">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
 
         <!-- Edge: IGW to ALB -->
-        <mxCell id="edge-igw-alb" value="HTTPS:443" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#232F3E;fontSize=10;" edge="1" source="igw" target="alb" parent="1">
+        <mxCell id="edge-igw-alb" value="HTTPS:443" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=open;endFill=0;strokeWidth=2;strokeColor=#545B64;fontSize=10;" edge="1" source="igw" target="alb" parent="1">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
 
-        <!-- Edge: ALB to EC2 AZ1 -->
-        <mxCell id="edge-alb-ec2-1" value="HTTP:80" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#232F3E;fontSize=10;" edge="1" source="alb" target="ec2-1" parent="1">
-          <mxGeometry relative="1" as="geometry" />
+        <!-- Edge: ALB to EC2 AZ1 (fan-out with waypoints) -->
+        <mxCell id="edge-alb-ec2-1" value="HTTP:80" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=open;endFill=0;strokeWidth=2;strokeColor=#545B64;fontSize=10;" edge="1" source="alb" target="ec2-1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="540" y="420" />
+              <mxPoint x="540" y="520" />
+            </Array>
+          </mxGeometry>
         </mxCell>
 
-        <!-- Edge: ALB to EC2 AZ2 -->
-        <mxCell id="edge-alb-ec2-2" value="HTTP:80" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#232F3E;fontSize=10;" edge="1" source="alb" target="ec2-2" parent="1">
-          <mxGeometry relative="1" as="geometry" />
+        <!-- Edge: ALB to EC2 AZ2 (fan-out with waypoints) -->
+        <mxCell id="edge-alb-ec2-2" value="HTTP:80" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=open;endFill=0;strokeWidth=2;strokeColor=#545B64;fontSize=10;" edge="1" source="alb" target="ec2-2" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="540" y="420" />
+              <mxPoint x="1340" y="420" />
+              <mxPoint x="1340" y="520" />
+            </Array>
+          </mxGeometry>
         </mxCell>
 
         <!-- Edge: EC2 AZ1 to RDS Primary -->
-        <mxCell id="edge-ec2-1-rds" value="TCP:5432" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#232F3E;fontSize=10;" edge="1" source="ec2-1" target="rds-primary" parent="1">
+        <mxCell id="edge-ec2-1-rds" value="TCP:5432" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=open;endFill=0;strokeWidth=2;strokeColor=#545B64;fontSize=10;" edge="1" source="ec2-1" target="rds-primary" parent="1">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
 
         <!-- Edge: EC2 AZ2 to RDS Primary -->
-        <mxCell id="edge-ec2-2-rds" value="TCP:5432" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#232F3E;fontSize=10;" edge="1" source="ec2-2" target="rds-primary" parent="1">
-          <mxGeometry relative="1" as="geometry" />
+        <mxCell id="edge-ec2-2-rds" value="TCP:5432" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=open;endFill=0;strokeWidth=2;strokeColor=#545B64;fontSize=10;" edge="1" source="ec2-2" target="rds-primary" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1340" y="700" />
+              <mxPoint x="540" y="700" />
+            </Array>
+          </mxGeometry>
         </mxCell>
 
         <!-- Edge: RDS Primary to Standby (replication) -->
-        <mxCell id="edge-rds-repl" value="Replication" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#C925D1;dashed=1;fontSize=10;" edge="1" source="rds-primary" target="rds-standby" parent="1">
+        <mxCell id="edge-rds-repl" value="Replication" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=open;endFill=0;strokeWidth=2;strokeColor=#C925D1;dashed=1;fontSize=10;" edge="1" source="rds-primary" target="rds-standby" parent="1">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
 

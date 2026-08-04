@@ -9,16 +9,23 @@
       "protected": true
     },
     {
+      "id": "validate-diagram",
+      "source": "SKILL.md",
+      "heading": "## Step 8 — Validate (always)",
+      "class": "local-contract",
+      "protected": true
+    },
+    {
       "id": "visual-review",
       "source": "SKILL.md",
-      "heading": "## Step 8 — Visual review",
+      "heading": "## Step 9 — Visual review (optional)",
       "class": "local-contract",
       "protected": true
     },
     {
       "id": "mcp-refinement",
       "source": "SKILL.md",
-      "heading": "## Step 9 — MCP refinement",
+      "heading": "## Step 10 — MCP refinement (optional)",
       "class": "workflow",
       "protected": false
     },
