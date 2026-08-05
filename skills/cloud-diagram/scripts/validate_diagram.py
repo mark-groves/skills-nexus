@@ -31,6 +31,13 @@ PROVIDER_TOKENS = {
     "gcp": ("data:image/svg+xml", "mxgraph.gcp2"),
 }
 
+# Reject cross-cloud icon libraries when a provider was declared.
+FOREIGN_PROVIDER_TOKENS = {
+    "aws": ("img/lib/azure2", "data:image/svg+xml", "mxgraph.gcp2"),
+    "azure": ("mxgraph.aws4", "data:image/svg+xml", "mxgraph.gcp2"),
+    "gcp": ("mxgraph.aws4", "img/lib/azure2"),
+}
+
 
 def _parse_xml(path: Path) -> ET.Element:
     builder = ET.TreeBuilder()
@@ -191,6 +198,41 @@ def _generic_shape_issues(
     return issues
 
 
+def _foreign_provider_issues(joined_styles: str, provider: str) -> list[str]:
+    issues: list[str] = []
+    for token in FOREIGN_PROVIDER_TOKENS.get(provider, ()):
+        if token in joined_styles:
+            issues.append(f"foreign provider shape token for {provider}: {token}")
+    return issues
+
+
+def _gcp_service_card_issues(
+    cells: list[ET.Element],
+    required_shapes: list[dict],
+) -> list[str]:
+    """Require GCP product icons to sit in Service Cards (part=1 children)."""
+    issues: list[str] = []
+    for shape in required_shapes:
+        if shape.get("kind") != "gcp_card_icon":
+            continue
+        expected = set(extract_identity_tokens("gcp", shape.get("style")))
+        if not expected:
+            continue
+        matched = False
+        for cell in cells:
+            style = cell.get("style", "")
+            tokens = set(extract_identity_tokens("gcp", style))
+            if not expected.intersection(tokens):
+                continue
+            if "part=1" in style and cell.get("parent") not in {None, "", "0", "1"}:
+                matched = True
+                break
+        if not matched:
+            title = shape.get("title") or shape.get("id") or "<unknown>"
+            issues.append(f"GCP service must use Service Card (part=1 icon child): {title}")
+    return issues
+
+
 def collect_issues(
     diagram: Path,
     provider: str | None = None,
@@ -218,6 +260,8 @@ def collect_issues(
     joined = "\n".join(styles)
     if provider and not any(token in joined for token in PROVIDER_TOKENS.get(provider, ())):
         issues.append(f"no provider shape tokens found for {provider}")
+    if provider:
+        issues.extend(_foreign_provider_issues(joined, provider))
 
     if require_services:
         if provider is None:
@@ -238,6 +282,8 @@ def collect_issues(
                 if not expected_tokens.intersection(actual_tokens):
                     issues.append(f"missing provider shape for {service_name}")
             issues.extend(_generic_shape_issues(cells, provider, required_shapes))
+            if provider == "gcp":
+                issues.extend(_gcp_service_card_issues(cells, required_shapes))
     return issues
 
 

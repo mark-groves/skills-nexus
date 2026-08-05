@@ -221,8 +221,13 @@
           "kind": "gcp_card_icon"
         },
         "load_balancing": {
-          "aliases": ["load balancing", "cloud load balancing", "glb"],
+          "aliases": ["load balancing", "cloud load balancing", "glb", "load balancer"],
           "title": "Cloud Load Balancing",
+          "kind": "gcp_card_icon"
+        },
+        "cloud_run": {
+          "aliases": ["cloud run", "run"],
+          "title": "Cloud Run",
           "kind": "gcp_card_icon"
         }
       }

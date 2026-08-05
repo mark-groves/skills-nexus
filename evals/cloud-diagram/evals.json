@@ -118,9 +118,16 @@
         "Uses GCP Service Card pattern (white card cells plus icon children with data:image/svg+xml or part=1)",
         "Contains Pub/Sub, Dataflow, BigQuery, and Looker",
         "Does not use generic rounded rectangles for those four services when catalog icons exist",
+        "Does not use AWS shape names (mxgraph.aws4) or Azure image paths",
         "Shows data flow direction with labeled edges",
         "Uses GCP colour accents (#4285F4 or #4DA1F5 title/platform styling)",
-        "Does not invent AWS-style nested VPC/subnet containers for this pipeline"
+        "Does not invent AWS-style nested VPC/subnet containers for this pipeline",
+        {
+          "id": "gcp-shapes-without-steering",
+          "text": "Uses catalog GCP icons on first attempt without the user asking to switch to GCP shapes",
+          "class": "quality",
+          "gate": "hard"
+        }
       ]
     },
     {
@@ -139,6 +146,20 @@
         "Contains S3, CloudFront, and Route 53 with correct shapes",
         "Does not use generic rounded rectangles for S3, CloudFront, or Route 53",
         "Does not add unnecessary VPC or subnet containers for a CDN architecture"
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "/cloud-diagram 3-tier GCP web app with Cloud Load Balancing, Cloud Run, and Cloud SQL",
+      "expected_behavior": "Creates a GCP 3-tier diagram using Service Cards and GCP platform styling without AWS/Azure icons.",
+      "fixtures": [],
+      "checks": [
+        "Uses GCP Service Card pattern with catalog data:image/svg+xml icons",
+        "Contains Cloud Load Balancing, Cloud Run, and Cloud SQL",
+        "Does not use mxgraph.aws4 or img/lib/azure2 shapes",
+        "Does not use generic rounded rectangles for the three requested services",
+        "Includes GCP title bar or platform styling accents",
+        "All edge elements contain <mxGeometry relative='1' as='geometry' /> child"
       ]
     }
   ]

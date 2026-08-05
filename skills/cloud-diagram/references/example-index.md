@@ -9,7 +9,8 @@ or service inventory as required structure.
 
 1. Pick provider + rough pattern below.
 2. Read that one example (or the three-tier starter) for styling.
-3. Resolve every service with `scripts/lookup_shape.py`.
+3. Resolve every service with `scripts/lookup_shape.py`
+   (GCP: add `--card` for paste-ready Service Cards).
 4. Draw containment with the provider idiom in `SKILL.md` / catalogs.
 5. Lay out for clarity. Examples do not constrain coordinates.
 
@@ -53,7 +54,9 @@ Azure idiom: swimlane containers, `image=img/lib/azure2/...` icons at
 | Hybrid / on-prem | `templates/gcp/gcp-template-example11.drawio` | |
 | Content / retail | `templates/gcp/gcp-template-example12.drawio` | `example05` |
 
-GCP idiom: **Service Cards** (white card + icon child with
-`data:image/svg+xml`), pastel logical groups, platform rect with
-`container=0`, cards `parent="1"`. Do not nest Project→VPC→Subnet like
-AWS. HTML labels on card icon children are required.
+GCP idiom: **Service Cards** from
+`lookup_shape.py --provider gcp --card` (white card + `part=1` icon
+child with `data:image/svg+xml`), pastel logical groups, platform
+rect with `container=0`, cards `parent="1"`. Do not nest
+Project→VPC→Subnet like AWS. Never substitute aws4/azure2 icons.
+HTML labels on card icon children are required.

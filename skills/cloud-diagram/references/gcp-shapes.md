@@ -139,9 +139,21 @@ in the catalog. Prefer Service Cards with catalog `data:image` icons
 for product services. Use `mxgraph.gcp2.*` only for personas, logos,
 and other non-card glyphs listed that way.
 
+Prefer Service Cards with catalog `data:image` icons
+for product services. Use `mxgraph.gcp2.*` only for personas, logos,
+and other non-card glyphs listed that way.
+
 Resolve services with `scripts/lookup_shape.py --provider gcp <name>`
-or `references/common-shapes.json` first. Do not invent stencil names.
-On a confirmed miss, use a labeled generic rounded rectangle.
+or `references/common-shapes.json` first. For every product hit, emit
+paste-ready markup with:
+
+```bash
+python3 scripts/lookup_shape.py --provider gcp --card "<name>"
+```
+
+Do not invent stencil names. Do not paste the raw catalog `style` as a
+standalone vertex. On a confirmed miss, use a labeled generic rounded
+rectangle.
 
 ## GCP colour palette
 
