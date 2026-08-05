@@ -187,8 +187,13 @@ drawio -x -f png -b 10 -o "<name>.review.png" "<name>.drawio"
 ```
 
 If the draw.io binary is missing, a third-party headless render can
-still catch layout issues (nesting, overlaps, label collisions). AWS
-stencil glyphs may render as placeholders there:
+still catch layout issues (nesting, overlaps, label collisions). Do
+**not** trust headless screenshots for GCP acceptance: `html=1` labels
+and embedded `data:image/svg+xml` Service Card icons often render as
+literal markup, overlapping text, or grey placeholders. Prefer the
+official `drawio` CLI (SVG first, then PNG) for visual review of GCP
+diagrams. AWS stencil glyphs may also render as placeholders in
+third-party headless tools:
 
 ```bash
 npx --yes drawio-headless@0.4.2 render --format png "<name>.drawio" "<name>.review.png"

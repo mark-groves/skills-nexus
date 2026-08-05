@@ -415,6 +415,8 @@ class CloudDiagramLeversTest(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertIn('id="card-pubsub"', proc.stdout)
         self.assertIn("part=1", proc.stdout)
+        self.assertIn("fillColor=#ffffff", proc.stdout)
+        self.assertIn('width="160"', proc.stdout)
         self.assertIn("data:image/svg+xml", proc.stdout)
         self.assertIn('parent="card-pubsub"', proc.stdout)
         self.assertIn('x="40"', proc.stdout)

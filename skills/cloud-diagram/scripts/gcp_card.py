@@ -8,7 +8,10 @@ import re
 from typing import Any
 
 _IMAGE_RE = re.compile(r"image=data:image/svg\+xml,[^;]+")
-_CARD_STYLE = "strokeColor=#dddddd;shadow=1;strokeWidth=1;rounded=1;absoluteArcSize=1;arcSize=2;"
+_CARD_STYLE = (
+    "strokeColor=#dddddd;fillColor=#ffffff;shadow=1;strokeWidth=1;"
+    "rounded=1;absoluteArcSize=1;arcSize=2;"
+)
 _ICON_STYLE_PREFIX = (
     "editableCssRules=.*;html=1;fontColor=#999999;shape=image;"
     "verticalLabelPosition=middle;verticalAlign=middle;labelPosition=right;"
@@ -24,13 +27,15 @@ def extract_gcp_image_token(style: str | None) -> str | None:
 
 
 def card_width_for_label(name: str, category: str) -> int:
-    """Pick a card width in the catalog's 140–190 range from label length."""
+    """Pick a card width in the catalog's 160–190 range from label length.
+
+    Service Card labels sit to the right of a 30x30 icon, so widths under
+    160 clip common names like "Dashboards" / "Cloud Load Balancing".
+    """
     longest = max(len(name.strip()), len(category.strip()), 1)
-    if longest <= 10:
-        return 140
-    if longest <= 16:
+    if longest <= 14:
         return 160
-    if longest <= 24:
+    if longest <= 22:
         return 178
     return 190
 
