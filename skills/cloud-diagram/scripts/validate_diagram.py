@@ -26,7 +26,8 @@ from shape_catalog import (  # noqa: E402
 
 PROVIDER_TOKENS = {
     "aws": ("mxgraph.aws4",),
-    "azure": ("img/lib/azure2",),
+    # azure2 icons plus swimlane architecture groups (Subnet, VNet, …).
+    "azure": ("img/lib/azure2", "swimlane;"),
     "gcp": ("data:image/svg+xml", "mxgraph.gcp2"),
 }
 

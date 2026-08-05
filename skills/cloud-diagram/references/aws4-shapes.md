@@ -20,6 +20,10 @@ Resolve services with `scripts/lookup_shape.py --provider aws <name>`
 or `references/common-shapes.json` first. Do not invent stencil names.
 On a confirmed miss, use a labeled generic rounded rectangle.
 
+When a title appears twice (header group vs generated product icon),
+lookup keeps the group/container style. That covers `VPC`,
+`Availability Zone`, and `Account`.
+
 ---
 
 ## Colour conventions

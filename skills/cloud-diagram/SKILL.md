@@ -46,14 +46,27 @@ Use skill-root-relative paths only.
    - GCP → `references/gcp-shapes.md`
 4. `references/common-shapes.json` (or resolve via the lookup script)
 
-**Resolve every service before drawing:**
+**Resolve every service and container before drawing.**
+
+Run lookups from the skill root (or pass an absolute path to the
+script). Relative `scripts/lookup_shape.py` paths assume the skill
+directory is cwd:
 
 ```bash
 python3 scripts/lookup_shape.py --provider <aws|azure|gcp> "<service>"
 ```
 
-Copy the returned style string. Prefer these verified styles over
-guessing. Do not invent stencil names or azure2 paths.
+Copy the returned style string and respect `kind` / `size`:
+
+- `kind=group` → containment boundary (`container=1` / swimlane). Use
+  the reported size as a starting canvas, then grow to fit children.
+- `kind=icon` → service glyph at **50x50** (AWS/Azure).
+- `kind=gcp_card_icon` → **30x30** icon inside a Service Card.
+
+Lookup prefers group/container styles when a title collides with a
+product icon (AWS `VPC`, `Availability Zone`, `Account`; Azure
+`Subnet`). Prefer these verified styles over guessing. Do not invent
+stencil names or azure2 paths.
 
 **Full catalog body** (`<!-- GENERATED BELOW -->` onward): load or Grep
 only when lookup misses and the service is uncommon. Never require the
@@ -143,17 +156,34 @@ tokens, generics while a lookup hit exists). Re-run until clean.
 
 ## Step 9 — Visual review (optional)
 
-If draw.io CLI is available:
+Prefer the official draw.io / diagrams.net CLI when present.
+
+```bash
+drawio -x -f svg -b 10 -o "<name>.review.svg" "<name>.drawio"
+```
+
+Use SVG first for complex AWS group diagrams. In some headless
+environments PNG export returns `Empty export data` on nested
+`mxgraph.aws4.group` canvases while SVG succeeds. Rasterize the SVG
+when you need a PNG (`rsvg-convert` or similar), or retry:
 
 ```bash
 drawio -x -f png -b 10 -o "<name>.review.png" "<name>.drawio"
 ```
 
-Read the PNG. Check overlaps, blank icons, crossings, labels,
-hierarchy, spacing. Fix and re-export at most twice. Delete the review
-PNG when done.
+If the draw.io binary is missing, a third-party headless render can
+still catch layout issues (nesting, overlaps, label collisions). AWS
+stencil glyphs may render as placeholders there:
 
-If CLI is missing, Step 8 is the quality gate.
+```bash
+npx --yes drawio-headless@0.4.2 render --format png "<name>.drawio" "<name>.review.png"
+```
+
+Read the review image. Check overlaps, blank icons, crossings, labels,
+hierarchy, spacing. Fix and re-export at most twice. Delete review
+artifacts when done.
+
+If no renderer is available, Step 8 is the quality gate.
 
 ## Step 10 — MCP refinement (optional)
 

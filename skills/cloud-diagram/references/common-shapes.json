@@ -12,12 +12,96 @@
             "elb"
           ],
           "title": "Elastic Load Balancing",
-          "style": "sketch=0;points=[[0,0,0],[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0,0],[0,1,0],[0.25,1,0],[0.5,1,0],[0.75,1,0],[1,1,0],[0,0.25,0],[0,0.5,0],[0,0.75,0],[1,0.25,0],[1,0.5,0],[1,0.75,0]];outlineConnect=0;fontColor=#232F3E;fillColor=#ED7100;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=12;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.elastic_load_balancing;",
+          "style": "sketch=0;points=[[0,0,0],[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0,0],[0,1,0],[0.25,1,0],[0.5,1,0],[0.75,1,0],[1,1,0],[0,0.25,0],[0,0.5,0],[0,0.75,0],[1,0.25,0],[1,0.5,0],[1,0.75,0]];outlineConnect=0;fontColor=#232F3E;fillColor=#8C4FFF;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=12;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.elastic_load_balancing;",
           "size": "50x50",
           "catalog_size": "78x78",
           "kind": "icon",
           "tokens": [
             "resIcon=mxgraph.aws4.elastic_load_balancing"
+          ]
+        },
+        "aws_cloud": {
+          "aliases": [
+            "aws cloud"
+          ],
+          "title": "AWS Cloud",
+          "style": "points=[[0,0],[0.25,0],[0.5,0],[0.75,0],[1,0],[1,0.25],[1,0.5],[1,0.75],[1,1],[0.75,1],[0.5,1],[0.25,1],[0,1],[0,0.75],[0,0.5],[0,0.25]];outlineConnect=0;gradientColor=none;html=1;whiteSpace=wrap;fontSize=12;fontStyle=0;shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_aws_cloud;strokeColor=#232F3E;fillColor=none;verticalAlign=top;align=left;spacingLeft=30;fontColor=#232F3E;dashed=0;container=1;pointerEvents=0;collapsible=0;",
+          "size": "800x600",
+          "catalog_size": "800x600",
+          "kind": "group",
+          "tokens": [
+            "grIcon=mxgraph.aws4.group_aws_cloud"
+          ]
+        },
+        "region": {
+          "aliases": [
+            "region",
+            "aws region"
+          ],
+          "title": "Region",
+          "style": "points=[[0,0],[0.25,0],[0.5,0],[0.75,0],[1,0],[1,0.25],[1,0.5],[1,0.75],[1,1],[0.75,1],[0.5,1],[0.25,1],[0,1],[0,0.75],[0,0.5],[0,0.25]];outlineConnect=0;gradientColor=none;html=1;whiteSpace=wrap;fontSize=12;fontStyle=0;shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_region;strokeColor=#00A4A6;fillColor=none;verticalAlign=top;align=left;spacingLeft=30;fontColor=#00A4A6;dashed=1;container=1;pointerEvents=0;collapsible=0;",
+          "size": "750x550",
+          "catalog_size": "750x550",
+          "kind": "group",
+          "tokens": [
+            "grIcon=mxgraph.aws4.group_region"
+          ]
+        },
+        "vpc": {
+          "aliases": [
+            "vpc",
+            "virtual private cloud"
+          ],
+          "title": "VPC",
+          "style": "points=[[0,0],[0.25,0],[0.5,0],[0.75,0],[1,0],[1,0.25],[1,0.5],[1,0.75],[1,1],[0.75,1],[0.5,1],[0.25,1],[0,1],[0,0.75],[0,0.5],[0,0.25]];outlineConnect=0;gradientColor=none;html=1;whiteSpace=wrap;fontSize=12;fontStyle=0;shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_vpc2;strokeColor=#8C4FFF;fillColor=none;verticalAlign=top;align=left;spacingLeft=30;fontColor=#8C4FFF;dashed=0;container=1;pointerEvents=0;collapsible=0;",
+          "size": "700x500",
+          "catalog_size": "700x500",
+          "kind": "group",
+          "tokens": [
+            "grIcon=mxgraph.aws4.group_vpc2"
+          ]
+        },
+        "availability_zone": {
+          "aliases": [
+            "az",
+            "availability zone",
+            "availability_zone"
+          ],
+          "title": "Availability Zone",
+          "style": "points=[[0,0],[0.25,0],[0.5,0],[0.75,0],[1,0],[1,0.25],[1,0.5],[1,0.75],[1,1],[0.75,1],[0.5,1],[0.25,1],[0,1],[0,0.75],[0,0.5],[0,0.25]];outlineConnect=0;gradientColor=none;html=1;whiteSpace=wrap;fontSize=12;fontStyle=0;shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_availability_zone;strokeColor=#147EBA;fillColor=none;verticalAlign=top;align=left;spacingLeft=30;fontColor=#147EBA;dashed=1;container=1;pointerEvents=0;collapsible=0;",
+          "size": "300x450",
+          "catalog_size": "300x450",
+          "kind": "group",
+          "tokens": [
+            "grIcon=mxgraph.aws4.group_availability_zone"
+          ]
+        },
+        "public_subnet": {
+          "aliases": [
+            "public subnet",
+            "public_subnet"
+          ],
+          "title": "Public Subnet",
+          "style": "points=[[0,0],[0.25,0],[0.5,0],[0.75,0],[1,0],[1,0.25],[1,0.5],[1,0.75],[1,1],[0.75,1],[0.5,1],[0.25,1],[0,1],[0,0.75],[0,0.5],[0,0.25]];outlineConnect=0;gradientColor=none;html=1;whiteSpace=wrap;fontSize=12;fontStyle=0;shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_security_group;strokeColor=#7AA116;fillColor=#E9F3E6;verticalAlign=top;align=left;spacingLeft=30;fontColor=#7AA116;dashed=0;container=1;pointerEvents=0;collapsible=0;",
+          "size": "280x200",
+          "catalog_size": "280x200",
+          "kind": "group",
+          "tokens": [
+            "grIcon=mxgraph.aws4.group_security_group"
+          ]
+        },
+        "private_subnet": {
+          "aliases": [
+            "private subnet",
+            "private_subnet"
+          ],
+          "title": "Private Subnet",
+          "style": "points=[[0,0],[0.25,0],[0.5,0],[0.75,0],[1,0],[1,0.25],[1,0.5],[1,0.75],[1,1],[0.75,1],[0.5,1],[0.25,1],[0,1],[0,0.75],[0,0.5],[0,0.25]];outlineConnect=0;gradientColor=none;html=1;whiteSpace=wrap;fontSize=12;fontStyle=0;shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_security_group;strokeColor=#147EBA;fillColor=#E6F2FF;verticalAlign=top;align=left;spacingLeft=30;fontColor=#147EBA;dashed=0;container=1;pointerEvents=0;collapsible=0;",
+          "size": "280x200",
+          "catalog_size": "280x200",
+          "kind": "group",
+          "tokens": [
+            "grIcon=mxgraph.aws4.group_security_group"
           ]
         },
         "ec2": {
@@ -340,6 +424,20 @@
           "kind": "icon",
           "tokens": [
             "image=img/lib/azure2/networking/Virtual_Networks.svg"
+          ]
+        },
+        "subnet": {
+          "aliases": [
+            "subnet",
+            "azure subnet"
+          ],
+          "title": "Subnet",
+          "style": "swimlane;startSize=30;fillColor=none;strokeColor=#3B8BBA;dashed=1;dashPattern=5 5;container=1;collapsible=0;pointerEvents=0;fontColor=#3B8BBA;fontSize=12;fontStyle=1;",
+          "size": "400x250",
+          "catalog_size": "400x250",
+          "kind": "group",
+          "tokens": [
+            "azure.group:strokeColor=#3B8BBA;dashed=1;dashPattern=5 5;fillColor=none"
           ]
         },
         "aks": {
