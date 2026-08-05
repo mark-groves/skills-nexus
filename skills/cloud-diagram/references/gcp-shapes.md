@@ -12,7 +12,7 @@ the official draw.io GCP template style.
 ### Card container
 
 ```xml
-<mxCell id="card-lb" value="" style="strokeColor=#dddddd;shadow=1;strokeWidth=1;rounded=1;absoluteArcSize=1;arcSize=2;" vertex="1" parent="1">
+<mxCell id="card-lb" value="" style="strokeColor=#dddddd;fillColor=#ffffff;shadow=1;strokeWidth=1;rounded=1;absoluteArcSize=1;arcSize=2;" vertex="1" parent="1">
   <mxGeometry x="200" y="150" width="160" height="60" as="geometry" />
 </mxCell>
 ```
@@ -20,7 +20,9 @@ the official draw.io GCP template style.
 - **Size:** 160x60 default. Use 140px for short labels, up to 190px
   for long labels (e.g. "Virtual Machines API / Compute Engine").
 - **Value:** always empty string `""` — the label goes on the icon child.
-- **No `fillColor`** — defaults to white.
+- **Style:** white card (`fillColor=#ffffff`) with light gray stroke
+  and shadow — required so validators can distinguish Service Cards
+  from pastel logical groups.
 
 ### Icon child (inside the card)
 
@@ -136,10 +138,6 @@ children inside Service Cards (see above), not as standalone elements.
 A smaller set of shapes use `mxgraph.gcp2.*` stencil names (e.g. user
 personas, the platform logo). These are listed with their stencil style
 in the catalog. Prefer Service Cards with catalog `data:image` icons
-for product services. Use `mxgraph.gcp2.*` only for personas, logos,
-and other non-card glyphs listed that way.
-
-Prefer Service Cards with catalog `data:image` icons
 for product services. Use `mxgraph.gcp2.*` only for personas, logos,
 and other non-card glyphs listed that way.
 

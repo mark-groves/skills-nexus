@@ -165,6 +165,16 @@ Write the `.drawio` file in the working directory.
 python3 scripts/validate_diagram.py "<name>.drawio" --provider <aws|azure|gcp> --require-services "<svc1>,<svc2>,..."
 ```
 
+Multi-cloud: validate once per primary provider and allow sibling
+providers so foreign-token checks do not reject intentional mixes:
+
+```bash
+python3 scripts/validate_diagram.py "<name>.drawio" --provider aws \
+  --allow-providers gcp,azure --require-services "<aws services...>"
+python3 scripts/validate_diagram.py "<name>.drawio" --provider gcp \
+  --allow-providers aws,azure --require-services "<gcp services...>"
+```
+
 Fix reported errors (missing edge geometry, overlaps, missing provider
 tokens, foreign-provider tokens, GCP services not in Service Cards,
 generics while a lookup hit exists). Re-run until clean.

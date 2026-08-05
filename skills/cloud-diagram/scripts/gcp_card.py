@@ -26,6 +26,21 @@ def extract_gcp_image_token(style: str | None) -> str | None:
     return match.group(0) if match else None
 
 
+def is_gcp_service_card_style(style: str | None) -> bool:
+    """True when style matches the white Service Card wrapper contract."""
+    if not style:
+        return False
+    return all(
+        marker in style
+        for marker in (
+            "fillColor=#ffffff",
+            "rounded=1",
+            "shadow=1",
+            "strokeColor=#dddddd",
+        )
+    )
+
+
 def card_width_for_label(name: str, category: str) -> int:
     """Pick a card width in the catalog's 160–190 range from label length.
 

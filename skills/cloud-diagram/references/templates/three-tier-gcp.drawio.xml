@@ -49,7 +49,7 @@
 
         <!-- Cloud Load Balancer card -->
         <mxCell id="card-lb" value=""
-            style="strokeColor=#dddddd;shadow=1;strokeWidth=1;rounded=1;absoluteArcSize=1;arcSize=2;"
+            style="strokeColor=#dddddd;fillColor=#ffffff;shadow=1;strokeWidth=1;rounded=1;absoluteArcSize=1;arcSize=2;"
             vertex="1" parent="1">
           <mxGeometry x="740" y="200" width="160" height="60" as="geometry" />
         </mxCell>
@@ -70,7 +70,7 @@
 
         <!-- Cloud Run card -->
         <mxCell id="card-run" value=""
-            style="strokeColor=#dddddd;shadow=1;strokeWidth=1;rounded=1;absoluteArcSize=1;arcSize=2;"
+            style="strokeColor=#dddddd;fillColor=#ffffff;shadow=1;strokeWidth=1;rounded=1;absoluteArcSize=1;arcSize=2;"
             vertex="1" parent="1">
           <mxGeometry x="740" y="370" width="160" height="60" as="geometry" />
         </mxCell>
@@ -91,7 +91,7 @@
 
         <!-- Cloud SQL card -->
         <mxCell id="card-sql" value=""
-            style="strokeColor=#dddddd;shadow=1;strokeWidth=1;rounded=1;absoluteArcSize=1;arcSize=2;"
+            style="strokeColor=#dddddd;fillColor=#ffffff;shadow=1;strokeWidth=1;rounded=1;absoluteArcSize=1;arcSize=2;"
             vertex="1" parent="1">
           <mxGeometry x="740" y="540" width="160" height="60" as="geometry" />
         </mxCell>
