@@ -30,12 +30,13 @@ _AWS_SHAPE_RE = re.compile(r"shape=mxgraph\.aws4\.[A-Za-z0-9_]+")
 # Shared shell shapes are not service identities; prefer resIcon/grIcon.
 _AWS_GENERIC_SHAPES = frozenset({"mxgraph.aws4.resourceIcon", "mxgraph.aws4.group"})
 _AZURE_IMAGE_RE = re.compile(r"image=img/lib/azure2/[^;]+")
+# Distinguishing swimlane markers only. Optional dashPattern / fillColor
+# vary across templates and must not break identity matching (Subnet vs
+# VNet are already unique via strokeWidth + dashed).
 _AZURE_GROUP_MARKER_KEYS = (
     "strokeColor",
     "strokeWidth",
     "dashed",
-    "dashPattern",
-    "fillColor",
 )
 _GCP_IMAGE_RE = re.compile(r"image=data:image/svg\+xml,[^;]+")
 _GCP_SHAPE_RE = re.compile(r"(?:shape=)?mxgraph\.gcp2\.[A-Za-z0-9_]+")
@@ -74,7 +75,7 @@ def style_preference_rank(style: str | None) -> tuple[int, int]:
     """Higher ranks win when catalog titles collide.
 
     Header group/container styles share titles with later product icons
-    (VPC, Availability Zone, Account, Azure Subnet). Architecture
+    (VPC, Availability Zone, Account, Azure Subnet / VNet). Architecture
     diagrams need the container. Prefer resourceIcon over bare product
     glyphs when both are icons.
     """

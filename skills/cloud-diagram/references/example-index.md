@@ -38,8 +38,10 @@ network boundaries.
 | 3-tier / web app | `templates/three-tier-azure.drawio.xml` | (Azure has no extra example library yet) |
 | Other patterns | three-tier for swimlane + azure2 icon styling | invent layout; keep azure2 SVG paths |
 
-Azure idiom: swimlane containers, `image=img/lib/azure2/...` icons at
-**50x50**, dashed subnet swimlanes, VNet `strokeWidth=4`.
+Azure idiom: swimlane containers from lookup (VNet `strokeWidth=4`,
+dashed Subnet/Resource Group), `image=img/lib/azure2/...` service
+icons at **50x50**. Never use `Virtual_Networks.svg` / `Subnet.svg` as
+the network boundary.
 
 ## GCP
 
