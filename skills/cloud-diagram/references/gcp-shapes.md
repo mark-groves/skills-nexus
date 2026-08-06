@@ -53,8 +53,9 @@ the official draw.io GCP template style.
 ### Square card variant (for user/actor icons)
 
 When an icon has no product label (e.g. end users), use a square card
-with the actor glyph and the label on the card. Prefer
-`shape=mxgraph.gcp2.users` (group) or `mxgraph.gcp2.user` (single).
+with the actor glyph and the label on the card. Use
+`shape=mxgraph.gcp2.users` for both single and group actors — there is
+no cataloged `mxgraph.gcp2.user` stencil.
 Do **not** use `mxgraph.gcp2.generic_person` — it exports as a blank
 grey square in the official draw.io CLI.
 
