@@ -61,7 +61,18 @@ Copy the returned style string and respect `kind` / `size`:
 - `kind=group` → containment boundary (`container=1` / swimlane). Use
   the reported size as a starting canvas, then grow to fit children.
 - `kind=icon` → service glyph at **50x50** (AWS/Azure).
-- `kind=gcp_card_icon` → **30x30** icon inside a Service Card.
+- `kind=gcp_card_icon` → **do not paste the raw style**. Emit a Service
+  Card and insert that XML:
+
+```bash
+python3 scripts/lookup_shape.py --provider gcp --card "<service>" \
+  --x <x> --y <y> --label "<Name>" --category "<Type>"
+```
+
+GCP product icons are always white card + `part=1` icon child with the
+catalog `data:image/svg+xml` token. Never use `mxgraph.aws4.*` or
+`img/lib/azure2/...` for GCP. Never leave a GCP service as a bare 30x30
+image vertex or a generic rounded rectangle when lookup hits.
 
 Lookup prefers group/container styles when a title collides with a
 product icon (AWS `VPC`, `Availability Zone`, `Account`; Azure
@@ -113,9 +124,10 @@ Internal reasoning only.
 - **Azure:** Subscription/Resource Group as needed → VNet swimlane →
   subnet swimlanes → resources. Use azure2 image icons.
 - **GCP:** Title bar + platform rect (`container=0`) + pastel logical
-  groups + **Service Cards** (card cell + icon child). Cards stay
-  `parent="1"`. Do **not** force AWS-style Project→VPC→Region→Subnet
-  nesting.
+  groups + **Service Cards from `lookup_shape.py --card`** (card cell +
+  `part=1` icon child). Cards stay `parent="1"`. Do **not** force
+  AWS-style Project→VPC→Region→Subnet nesting. Do **not** substitute
+  AWS/Azure icons for GCP services.
 
 ### Geometry defaults
 
@@ -133,6 +145,8 @@ Follow `xml-rules.md`.
 
 - Use lookup/catalog styles only. Generic rounded rectangle **only**
   after lookup and catalog search both miss.
+- For GCP hits, insert `--card` XML (or identical Service Card markup).
+  Raw catalog styles are icon children only.
 - Every edge needs `<mxGeometry relative="1" as="geometry" />`.
 - Descriptive cell IDs.
 - Provider edge styles from the catalog header (AWS:
@@ -151,8 +165,19 @@ Write the `.drawio` file in the working directory.
 python3 scripts/validate_diagram.py "<name>.drawio" --provider <aws|azure|gcp> --require-services "<svc1>,<svc2>,..."
 ```
 
+Multi-cloud: validate once per primary provider and allow sibling
+providers so foreign-token checks do not reject intentional mixes:
+
+```bash
+python3 scripts/validate_diagram.py "<name>.drawio" --provider aws \
+  --allow-providers gcp,azure --require-services "<aws services...>"
+python3 scripts/validate_diagram.py "<name>.drawio" --provider gcp \
+  --allow-providers aws,azure --require-services "<gcp services...>"
+```
+
 Fix reported errors (missing edge geometry, overlaps, missing provider
-tokens, generics while a lookup hit exists). Re-run until clean.
+tokens, foreign-provider tokens, GCP services not in Service Cards,
+generics while a lookup hit exists). Re-run until clean.
 
 ## Step 9 — Visual review (optional)
 
@@ -172,8 +197,13 @@ drawio -x -f png -b 10 -o "<name>.review.png" "<name>.drawio"
 ```
 
 If the draw.io binary is missing, a third-party headless render can
-still catch layout issues (nesting, overlaps, label collisions). AWS
-stencil glyphs may render as placeholders there:
+still catch layout issues (nesting, overlaps, label collisions). Do
+**not** trust headless screenshots for GCP acceptance: `html=1` labels
+and embedded `data:image/svg+xml` Service Card icons often render as
+literal markup, overlapping text, or grey placeholders. Prefer the
+official `drawio` CLI (SVG first, then PNG) for visual review of GCP
+diagrams. AWS stencil glyphs may also render as placeholders in
+third-party headless tools:
 
 ```bash
 npx --yes drawio-headless@0.4.2 render --format png "<name>.drawio" "<name>.review.png"

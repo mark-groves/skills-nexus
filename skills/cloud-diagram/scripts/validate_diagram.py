@@ -16,11 +16,13 @@ _SCRIPTS_DIR = Path(__file__).resolve().parent
 if str(_SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS_DIR))
 
+from gcp_card import is_gcp_service_card_style  # noqa: E402
 from shape_catalog import (  # noqa: E402
     PROVIDER_FILES,
     extract_identity_tokens,
     load_common_shapes,
     normalize_query,
+    parse_catalog,
     resolve_shape,
 )
 
@@ -28,8 +30,22 @@ PROVIDER_TOKENS = {
     "aws": ("mxgraph.aws4",),
     # azure2 icons plus swimlane architecture groups (Subnet, VNet, …).
     "azure": ("img/lib/azure2", "swimlane;"),
+    # Positive GCP detection still accepts catalog data:image icons and gcp2.
     "gcp": ("data:image/svg+xml", "mxgraph.gcp2"),
 }
+
+# Library prefixes owned by each provider. Foreign checks reject other
+# providers' markers unless listed in --allow-providers. Generic
+# data:image/svg+xml is never used as GCP evidence — catalog-backed
+# GCP product images are checked separately.
+PROVIDER_LIBRARY_TOKENS = {
+    "aws": ("mxgraph.aws4",),
+    "azure": ("img/lib/azure2",),
+    "gcp": ("mxgraph.gcp2",),
+}
+
+_GCP_IMAGE_TOKEN_RE = re.compile(r"image=data:image/svg\+xml,[^;\s]+")
+_GCP_CATALOG_IMAGE_TOKENS: frozenset[str] | None = None
 
 
 def _parse_xml(path: Path) -> ET.Element:
@@ -59,8 +75,29 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("diagram", type=Path)
     parser.add_argument("--provider", choices=sorted(PROVIDER_FILES))
+    parser.add_argument(
+        "--allow-providers",
+        default="",
+        help=(
+            "Comma-separated extra providers whose shapes are allowed "
+            "(multi-cloud diagrams). Skips foreign-provider checks for those."
+        ),
+    )
     parser.add_argument("--require-services", default="")
     return parser.parse_args(argv)
+
+
+def _gcp_catalog_image_tokens() -> frozenset[str]:
+    """Lazy-load catalog-backed GCP data:image identity tokens."""
+    global _GCP_CATALOG_IMAGE_TOKENS
+    if _GCP_CATALOG_IMAGE_TOKENS is None:
+        tokens: set[str] = set()
+        for entry in parse_catalog(PROVIDER_FILES["gcp"]).values():
+            for token in extract_identity_tokens("gcp", entry.get("style")):
+                if token.startswith("image=data:image/svg+xml,"):
+                    tokens.add(token)
+        _GCP_CATALOG_IMAGE_TOKENS = frozenset(tokens)
+    return _GCP_CATALOG_IMAGE_TOKENS
 
 
 def _geometry(cell: ET.Element) -> ET.Element | None:
@@ -191,10 +228,76 @@ def _generic_shape_issues(
     return issues
 
 
+def _foreign_gcp_catalog_image_issues(joined_styles: str, provider: str) -> list[str]:
+    """Flag catalog GCP product icons used under a non-GCP provider."""
+    catalog = _gcp_catalog_image_tokens()
+    for token in _GCP_IMAGE_TOKEN_RE.findall(joined_styles):
+        if token in catalog:
+            return [f"foreign provider shape token for {provider}: GCP catalog image"]
+    return []
+
+
+def _foreign_provider_issues(
+    joined_styles: str,
+    provider: str,
+    allow_providers: set[str] | None = None,
+) -> list[str]:
+    allowed = {provider, *(allow_providers or set())}
+    issues: list[str] = []
+    for other, tokens in PROVIDER_LIBRARY_TOKENS.items():
+        if other in allowed:
+            continue
+        for token in tokens:
+            if token in joined_styles:
+                issues.append(f"foreign provider shape token for {provider}: {token}")
+    if "gcp" not in allowed:
+        issues.extend(_foreign_gcp_catalog_image_issues(joined_styles, provider))
+    return issues
+
+
+def _gcp_service_card_issues(
+    cells: list[ET.Element],
+    required_shapes: list[dict],
+) -> list[str]:
+    """Require GCP product icons to sit in Service Cards (part=1 children)."""
+    cells_by_id = {cell.get("id"): cell for cell in cells if cell.get("id")}
+    issues: list[str] = []
+    for shape in required_shapes:
+        if shape.get("kind") != "gcp_card_icon":
+            continue
+        expected = set(extract_identity_tokens("gcp", shape.get("style")))
+        if not expected:
+            continue
+        matched = False
+        for cell in cells:
+            style = cell.get("style", "")
+            tokens = set(extract_identity_tokens("gcp", style))
+            if not expected.intersection(tokens):
+                continue
+            if "part=1" not in style:
+                continue
+            parent_id = cell.get("parent")
+            if parent_id in {None, "", "0", "1"}:
+                continue
+            parent = cells_by_id.get(parent_id)
+            if (
+                parent is not None
+                and parent.get("vertex") == "1"
+                and is_gcp_service_card_style(parent.get("style"))
+            ):
+                matched = True
+                break
+        if not matched:
+            title = shape.get("title") or shape.get("id") or "<unknown>"
+            issues.append(f"GCP service must use Service Card (part=1 icon child): {title}")
+    return issues
+
+
 def collect_issues(
     diagram: Path,
     provider: str | None = None,
     require_services: list[str] | None = None,
+    allow_providers: list[str] | None = None,
 ) -> list[str]:
     try:
         root = _parse_xml(diagram)
@@ -218,6 +321,8 @@ def collect_issues(
     joined = "\n".join(styles)
     if provider and not any(token in joined for token in PROVIDER_TOKENS.get(provider, ())):
         issues.append(f"no provider shape tokens found for {provider}")
+    if provider:
+        issues.extend(_foreign_provider_issues(joined, provider, set(allow_providers or [])))
 
     if require_services:
         if provider is None:
@@ -238,13 +343,28 @@ def collect_issues(
                 if not expected_tokens.intersection(actual_tokens):
                     issues.append(f"missing provider shape for {service_name}")
             issues.extend(_generic_shape_issues(cells, provider, required_shapes))
+            if provider == "gcp":
+                issues.extend(_gcp_service_card_issues(cells, required_shapes))
     return issues
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     required = [service.strip() for service in args.require_services.split(",") if service.strip()]
-    issues = collect_issues(args.diagram, args.provider, required or None)
+    allowed = [name.strip() for name in args.allow_providers.split(",") if name.strip()]
+    unknown = [name for name in allowed if name not in PROVIDER_FILES]
+    if unknown:
+        print(
+            f"ERROR: unknown --allow-providers value(s): {', '.join(unknown)}",
+            file=sys.stderr,
+        )
+        return 2
+    issues = collect_issues(
+        args.diagram,
+        args.provider,
+        required or None,
+        allow_providers=allowed or None,
+    )
     if issues:
         for issue in issues:
             print(f"ERROR: {issue}", file=sys.stderr)

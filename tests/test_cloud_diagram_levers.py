@@ -19,6 +19,7 @@ if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
 from build_common_shapes import build  # noqa: E402
+from gcp_card import emit_gcp_service_card  # noqa: E402
 from shape_catalog import resolve_shape  # noqa: E402
 from validate_diagram import collect_issues  # noqa: E402
 
@@ -114,7 +115,15 @@ class CloudDiagramLeversTest(unittest.TestCase):
                 "Application Gateway",
                 "VNet",
             ],
-            "gcp": ["Pub/Sub", "Dataflow", "BigQuery", "Looker"],
+            "gcp": [
+                "Pub/Sub",
+                "Dataflow",
+                "BigQuery",
+                "Looker",
+                "Cloud Run",
+                "Cloud SQL",
+                "Cloud Load Balancing",
+            ],
         }
         for provider, services in eval_services.items():
             for service in services:
@@ -327,18 +336,12 @@ class CloudDiagramLeversTest(unittest.TestCase):
     def test_validate_accepts_gcp_card_composite(self) -> None:
         pubsub = resolve_shape("gcp", "Pub/Sub")
         assert pubsub is not None
+        card_xml = emit_gcp_service_card(pubsub, x=20, y=20, cell_id="card-pubsub")
         xml = f"""\
 <mxfile><diagram><mxGraphModel><root>
   <mxCell id="0" />
   <mxCell id="1" parent="0" />
-  <mxCell id="pubsub-card" value="Pub/Sub" style="rounded=1;" vertex="1" parent="1">
-    <mxGeometry x="20" y="20" width="160" height="70" as="geometry" />
-  </mxCell>
-  <mxCell id="pubsub-icon" style="{pubsub["style"]}" vertex="1" parent="pubsub-card">
-    <mxGeometry x="0" y="0.5" width="30" height="30" relative="1" as="geometry">
-      <mxPoint x="15" y="-15" as="offset" />
-    </mxGeometry>
-  </mxCell>
+  {card_xml}
 </root></mxGraphModel></diagram></mxfile>
 """
         with tempfile.TemporaryDirectory() as directory:
@@ -346,6 +349,180 @@ class CloudDiagramLeversTest(unittest.TestCase):
             diagram.write_text(xml, encoding="utf-8")
             issues = collect_issues(diagram, "gcp", ["Pub/Sub"])
         self.assertEqual(issues, [])
+
+    def test_validate_rejects_standalone_gcp_icon(self) -> None:
+        pubsub = resolve_shape("gcp", "Pub/Sub")
+        assert pubsub is not None
+        xml = f"""\
+<mxfile><diagram><mxGraphModel><root>
+  <mxCell id="0" />
+  <mxCell id="1" parent="0" />
+  <mxCell id="pubsub" value="Pub/Sub" style="{pubsub["style"]}" vertex="1" parent="1">
+    <mxGeometry x="20" y="20" width="30" height="30" as="geometry" />
+  </mxCell>
+</root></mxGraphModel></diagram></mxfile>
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            diagram = Path(directory) / "standalone.drawio"
+            diagram.write_text(xml, encoding="utf-8")
+            issues = collect_issues(diagram, "gcp", ["Pub/Sub"])
+        self.assertTrue(
+            any("Service Card" in issue for issue in issues),
+            issues,
+        )
+
+    def test_validate_rejects_aws_shapes_in_gcp_diagram(self) -> None:
+        alb = resolve_shape("aws", "ALB")
+        assert alb is not None
+        xml = f"""\
+<mxfile><diagram><mxGraphModel><root>
+  <mxCell id="0" />
+  <mxCell id="1" parent="0" />
+  <mxCell id="alb" value="Load Balancer" style="{alb["style"]}" vertex="1" parent="1">
+    <mxGeometry x="20" y="20" width="50" height="50" as="geometry" />
+  </mxCell>
+</root></mxGraphModel></diagram></mxfile>
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            diagram = Path(directory) / "aws-in-gcp.drawio"
+            diagram.write_text(xml, encoding="utf-8")
+            issues = collect_issues(diagram, "gcp", ["Cloud Load Balancing"])
+        self.assertTrue(any("foreign provider" in issue for issue in issues), issues)
+        self.assertTrue(any("missing provider shape" in issue for issue in issues), issues)
+
+    def test_validate_rejects_gcp_icon_with_non_card_parent(self) -> None:
+        pubsub = resolve_shape("gcp", "Pub/Sub")
+        assert pubsub is not None
+        # part=1 under a logical group — not a white Service Card wrapper.
+        xml = f"""\
+<mxfile><diagram><mxGraphModel><root>
+  <mxCell id="0" />
+  <mxCell id="1" parent="0" />
+  <mxCell id="group" value="Ingest" style="rounded=1;fillColor=#E3F2FD;strokeColor=#90CAF9;" vertex="1" parent="1">
+    <mxGeometry x="20" y="20" width="200" height="120" as="geometry" />
+  </mxCell>
+  <mxCell id="pubsub" value="Pub/Sub" style="{pubsub["style"]};part=1;" vertex="1" parent="group">
+    <mxGeometry x="20" y="20" width="30" height="30" as="geometry" />
+  </mxCell>
+</root></mxGraphModel></diagram></mxfile>
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            diagram = Path(directory) / "fake-card.drawio"
+            diagram.write_text(xml, encoding="utf-8")
+            issues = collect_issues(diagram, "gcp", ["Pub/Sub"])
+        self.assertTrue(
+            any("Service Card" in issue for issue in issues),
+            issues,
+        )
+
+    def test_validate_allows_custom_svg_in_aws_diagram(self) -> None:
+        alb = resolve_shape("aws", "ALB")
+        assert alb is not None
+        # Non-catalog embedded SVG must not be treated as a foreign GCP token.
+        custom = (
+            "shape=image;image=data:image/svg+xml,"
+            "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjxyZWN0Lz48L3N2Zz4=;"
+        )
+        xml = f"""\
+<mxfile><diagram><mxGraphModel><root>
+  <mxCell id="0" />
+  <mxCell id="1" parent="0" />
+  <mxCell id="alb" value="ALB" style="{alb["style"]}" vertex="1" parent="1">
+    <mxGeometry x="20" y="20" width="50" height="50" as="geometry" />
+  </mxCell>
+  <mxCell id="badge" value="" style="{custom}" vertex="1" parent="1">
+    <mxGeometry x="100" y="20" width="20" height="20" as="geometry" />
+  </mxCell>
+</root></mxGraphModel></diagram></mxfile>
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            diagram = Path(directory) / "aws-custom-svg.drawio"
+            diagram.write_text(xml, encoding="utf-8")
+            issues = collect_issues(diagram, "aws", ["ALB"])
+        self.assertEqual(issues, [])
+
+    def test_validate_rejects_gcp_catalog_image_in_aws_diagram(self) -> None:
+        alb = resolve_shape("aws", "ALB")
+        pubsub = resolve_shape("gcp", "Pub/Sub")
+        assert alb is not None and pubsub is not None
+        xml = f"""\
+<mxfile><diagram><mxGraphModel><root>
+  <mxCell id="0" />
+  <mxCell id="1" parent="0" />
+  <mxCell id="alb" value="ALB" style="{alb["style"]}" vertex="1" parent="1">
+    <mxGeometry x="20" y="20" width="50" height="50" as="geometry" />
+  </mxCell>
+  <mxCell id="pubsub" value="Pub/Sub" style="{pubsub["style"]}" vertex="1" parent="1">
+    <mxGeometry x="100" y="20" width="30" height="30" as="geometry" />
+  </mxCell>
+</root></mxGraphModel></diagram></mxfile>
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            diagram = Path(directory) / "gcp-in-aws.drawio"
+            diagram.write_text(xml, encoding="utf-8")
+            issues = collect_issues(diagram, "aws", ["ALB"])
+        self.assertTrue(
+            any("foreign provider" in issue and "GCP catalog image" in issue for issue in issues),
+            issues,
+        )
+
+    def test_validate_multi_cloud_with_allow_providers(self) -> None:
+        alb = resolve_shape("aws", "ALB")
+        pubsub = resolve_shape("gcp", "Pub/Sub")
+        assert alb is not None and pubsub is not None
+        card_xml = emit_gcp_service_card(pubsub, x=120, y=20, cell_id="card-pubsub")
+        xml = f"""\
+<mxfile><diagram><mxGraphModel><root>
+  <mxCell id="0" />
+  <mxCell id="1" parent="0" />
+  <mxCell id="alb" value="ALB" style="{alb["style"]}" vertex="1" parent="1">
+    <mxGeometry x="20" y="20" width="50" height="50" as="geometry" />
+  </mxCell>
+  {card_xml}
+</root></mxGraphModel></diagram></mxfile>
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            diagram = Path(directory) / "multi-cloud.drawio"
+            diagram.write_text(xml, encoding="utf-8")
+            blocked = collect_issues(diagram, "aws", ["ALB"])
+            allowed = collect_issues(diagram, "aws", ["ALB"], allow_providers=["gcp"])
+            gcp_ok = collect_issues(diagram, "gcp", ["Pub/Sub"], allow_providers=["aws"])
+        self.assertTrue(any("foreign provider" in issue for issue in blocked), blocked)
+        self.assertEqual(allowed, [])
+        self.assertEqual(gcp_ok, [])
+
+    def test_lookup_cli_emits_gcp_service_card(self) -> None:
+        proc = subprocess.run(
+            [
+                sys.executable,
+                str(SCRIPTS / "lookup_shape.py"),
+                "--provider",
+                "gcp",
+                "--card",
+                "--x",
+                "40",
+                "--y",
+                "80",
+                "--label",
+                "Ingest",
+                "--category",
+                "Pub/Sub",
+                "Pub/Sub",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn('id="card-pubsub"', proc.stdout)
+        self.assertIn("part=1", proc.stdout)
+        self.assertIn("fillColor=#ffffff", proc.stdout)
+        self.assertIn('width="160"', proc.stdout)
+        self.assertIn("data:image/svg+xml", proc.stdout)
+        self.assertIn('parent="card-pubsub"', proc.stdout)
+        self.assertIn('x="40"', proc.stdout)
+        self.assertIn('y="80"', proc.stdout)
+        self.assertIn("Ingest", proc.stdout)
 
 
 if __name__ == "__main__":
