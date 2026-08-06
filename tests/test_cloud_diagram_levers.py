@@ -431,6 +431,28 @@ class CloudDiagramLeversTest(unittest.TestCase):
             issues = collect_issues(diagram, "azure", ["Subnet"])
         self.assertEqual(issues, [])
 
+    def test_validate_rejects_azure_vnet_swimlane_without_container(self) -> None:
+        """Swimlane styling alone is not enough; Azure groups need container=1."""
+        vnet = resolve_shape("azure", "VNet")
+        assert vnet is not None
+        style = ";".join(
+            part for part in vnet["style"].split(";") if part and part != "container=1"
+        )
+        xml = f"""\
+<mxfile><diagram><mxGraphModel><root>
+  <mxCell id="0" />
+  <mxCell id="1" parent="0" />
+  <mxCell id="vnet" value="VNet" style="{style}" vertex="1" parent="1">
+    <mxGeometry x="0" y="0" width="500" height="350" as="geometry" />
+  </mxCell>
+</root></mxGraphModel></diagram></mxfile>
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            diagram = Path(directory) / "vnet-no-container.drawio"
+            diagram.write_text(xml, encoding="utf-8")
+            issues = collect_issues(diagram, "azure", ["VNet"])
+        self.assertIn("missing provider shape for VNet", issues)
+
     def test_validate_distinguishes_gcp_service_icons(self) -> None:
         dataflow = resolve_shape("gcp", "Dataflow")
         assert dataflow is not None

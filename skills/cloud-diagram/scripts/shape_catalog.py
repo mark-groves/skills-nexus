@@ -154,6 +154,8 @@ def _azure_group_identity(style: str) -> str | None:
     """Fingerprint Azure swimlane containers that lack azure2 image tokens."""
     if not (style.startswith("swimlane") or ";swimlane;" in style):
         return None
+    if not re.search(r"(?:^|;)container=1(?:;|$)", style):
+        return None
     markers: list[str] = []
     for key in _AZURE_GROUP_MARKER_KEYS:
         match = re.search(rf"(?:^|;){re.escape(key)}=([^;]+)", style)
