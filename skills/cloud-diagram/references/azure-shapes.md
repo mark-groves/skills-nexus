@@ -43,8 +43,10 @@ Resolve services with `scripts/lookup_shape.py --provider azure <name>`
 or `references/common-shapes.json` first. Do not invent azure2 paths.
 On a confirmed miss, use a labeled generic rounded rectangle.
 
-When `Subnet` appears as both a swimlane group and an azure2 icon,
-lookup keeps the swimlane container.
+When `Subnet` or `VNet` / `Virtual Network` appears as both a swimlane
+group and an azure2 product icon, lookup keeps the swimlane container.
+Do not use `Virtual_Networks.svg` or `Subnet.svg` as the network
+boundary — those icons are product glyphs, not containment.
 
 The base style string for all service icons is:
 

@@ -293,6 +293,36 @@ def _gcp_service_card_issues(
     return issues
 
 
+def _azure_group_issues(
+    cells: list[ET.Element],
+    required_shapes: list[dict],
+    actual_tokens: set[str],
+) -> list[str]:
+    """Flag Azure group services drawn as azure2 product icons."""
+    issues: list[str] = []
+    for shape in required_shapes:
+        if shape.get("kind") != "group":
+            continue
+        expected = set(extract_identity_tokens("azure", shape.get("style")))
+        if expected and expected.intersection(actual_tokens):
+            continue
+        names = _label_names(shape)
+        title = shape.get("title") or shape.get("id") or "<unknown>"
+        for cell in cells:
+            if cell.get("vertex") != "1":
+                continue
+            style = cell.get("style", "")
+            if "img/lib/azure2/" not in style:
+                continue
+            label = _visible_label(cell.get("value", ""))
+            if any(label == name or label.startswith(f"{name} ") for name in names):
+                issues.append(
+                    f"Azure group must use swimlane container, not azure2 product icon: {title}"
+                )
+                break
+    return issues
+
+
 def collect_issues(
     diagram: Path,
     provider: str | None = None,
@@ -345,6 +375,8 @@ def collect_issues(
             issues.extend(_generic_shape_issues(cells, provider, required_shapes))
             if provider == "gcp":
                 issues.extend(_gcp_service_card_issues(cells, required_shapes))
+            if provider == "azure":
+                issues.extend(_azure_group_issues(cells, required_shapes, actual_tokens))
     return issues
 
 
