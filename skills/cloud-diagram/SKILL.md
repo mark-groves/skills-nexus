@@ -152,6 +152,10 @@ Internal reasoning only.
 When the example does not suggest otherwise (`xml-rules.md`):
 
 - Icon size **50x50** (AWS/Azure). GCP card icons **30x30** inside cards.
+- **Actors / Users:** AWS → flat `shape=mxgraph.aws4.users` (not
+  `resourceIcon`). GCP → square actor card with
+  `shape=mxgraph.gcp2.users` (never `generic_person`). Azure →
+  `img/lib/azure2/identity/Users.svg` or catalog user stencil.
 - ~200px horizontal / ~120px vertical between peers; 40px container
   padding.
 - Add waypoints on fan-out edges (see three-tier AWS edges).

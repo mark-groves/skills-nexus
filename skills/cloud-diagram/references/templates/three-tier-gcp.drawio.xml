@@ -26,17 +26,17 @@
           </mxGeometry>
         </mxCell>
 
-        <!-- Users (outside cloud) -->
+        <!-- Users (outside cloud): use gcp2.users — generic_person exports as a blank square -->
         <mxCell id="card-users" value="End Users"
             style="strokeColor=#dddddd;fillColor=#ffffff;shadow=1;strokeWidth=1;rounded=1;absoluteArcSize=1;arcSize=2;labelPosition=center;verticalLabelPosition=middle;align=center;verticalAlign=bottom;fontColor=#999999;fontSize=12;whiteSpace=wrap;spacingBottom=2;html=1;"
             vertex="1" parent="1">
-          <mxGeometry x="760" y="1060" width="80" height="90" as="geometry" />
+          <mxGeometry x="765" y="1060" width="70" height="90" as="geometry" />
         </mxCell>
         <mxCell id="icon-users" value=""
-            style="dashed=0;connectable=0;html=1;fillColor=#757575;strokeColor=none;shape=mxgraph.gcp2.generic_person;part=1;"
+            style="dashed=0;connectable=0;html=1;fillColor=#757575;strokeColor=none;shape=mxgraph.gcp2.users;part=1;"
             vertex="1" parent="card-users">
-          <mxGeometry x="0.5" width="50" height="46" relative="1" as="geometry">
-            <mxPoint x="-25" y="10" as="offset" />
+          <mxGeometry x="0.5" width="50" height="31.5" relative="1" as="geometry">
+            <mxPoint x="-25" y="19" as="offset" />
           </mxGeometry>
         </mxCell>
 

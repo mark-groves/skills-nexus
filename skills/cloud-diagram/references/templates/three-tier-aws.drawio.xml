@@ -77,8 +77,8 @@
           <mxGeometry x="325" y="100" width="50" height="50" as="geometry" />
         </mxCell>
 
-        <mxCell id="users" value="Users" style="sketch=0;outlineConnect=0;fontColor=#232F3E;fillColor=#232F3E;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=12;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.users;" vertex="1" parent="1">
-          <mxGeometry x="900" y="1160" width="50" height="50" as="geometry" />
+        <mxCell id="users" value="Users" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#232F3E;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=12;fontStyle=0;aspect=fixed;pointerEvents=1;shape=mxgraph.aws4.users;labelBackgroundColor=none;" vertex="1" parent="1">
+          <mxGeometry x="890" y="1150" width="70" height="70" as="geometry" />
         </mxCell>
 
         <mxCell id="edge-users-igw" value="HTTPS:443" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=open;endFill=0;strokeWidth=2;strokeColor=#545B64;fontSize=10;" edge="1" source="users" target="igw" parent="1">
