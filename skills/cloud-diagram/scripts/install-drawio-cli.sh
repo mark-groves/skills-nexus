@@ -11,6 +11,15 @@ DRAWIO_URL="https://github.com/jgraph/drawio-desktop/releases/download/v${DRAWIO
 DRAWIO_SHA256="${DRAWIO_SHA256:-93c2d86e418d120179b547409e5a1d3f5fba58f409b033077206cca96a5edc3d}"
 MARKER="/usr/local/share/drawio-cli.version"
 
+if [[ ! "${DRAWIO_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo "ERROR: DRAWIO_VERSION must be MAJOR.MINOR.PATCH (got '${DRAWIO_VERSION}')" >&2
+  exit 1
+fi
+if [[ ! "${DRAWIO_SHA256}" =~ ^[a-fA-F0-9]{64}$ ]]; then
+  echo "ERROR: DRAWIO_SHA256 must be a 64-char hex digest" >&2
+  exit 1
+fi
+
 need_root() {
   if [[ "${EUID}" -eq 0 ]]; then
     "$@"
@@ -68,22 +77,16 @@ run_drawio_version() {
   fi
 }
 
-current_version() {
+# Always probe the official binary (never trust MARKER alone — it can go stale).
+# Electron may dump dbus noise on stdout before the real "31.1.5" line.
+probe_installed_version() {
   is_official_drawio || return 1
-  # Prefer marker / dpkg: Electron dumps dbus noise on stdout before "31.1.5".
-  if [[ -f "${MARKER}" ]]; then
-    tr -d '[:space:]' <"${MARKER}"
-    return 0
-  fi
-  if command -v dpkg-query >/dev/null 2>&1; then
-    local pkg_ver
-    pkg_ver="$(dpkg-query -W -f='${Version}' draw.io 2>/dev/null || true)"
-    if [[ -n "${pkg_ver}" ]]; then
-      printf '%s\n' "${pkg_ver}"
-      return 0
-    fi
-  fi
   run_drawio_version | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+' | head -n 1
+}
+
+write_version_marker() {
+  # Avoid embedding env values in a root `bash -c` string (CWE-78).
+  printf '%s\n' "${DRAWIO_VERSION}" | need_root tee "${MARKER}" >/dev/null
 }
 
 # Repair partial hosts before any version shortcut (xvfb + PNG fallback).
@@ -91,7 +94,7 @@ if ! command -v xvfb-run >/dev/null 2>&1 || ! command -v rsvg-convert >/dev/null
   install_apt_deps
 fi
 
-installed="$(current_version || true)"
+installed="$(probe_installed_version || true)"
 if [[ "${installed}" == "${DRAWIO_VERSION}" ]]; then
   echo "draw.io CLI ${DRAWIO_VERSION} already installed (official binary)"
 else
@@ -119,7 +122,7 @@ else
   fi
 
   need_root apt-get install -y "${deb_path}"
-  need_root bash -c "printf '%s\n' '${DRAWIO_VERSION}' > '${MARKER}'"
+  write_version_marker
   echo "Installed draw.io CLI ${DRAWIO_VERSION}"
 
   trap - EXIT
@@ -151,9 +154,10 @@ if command -v drawio >/dev/null 2>&1; then
   esac
 fi
 
-# Smoke: version must resolve under xvfb (Electron needs a display).
-if ! run_drawio_version | grep -Eq '[0-9]+\.[0-9]+\.[0-9]+'; then
-  echo "ERROR: draw.io --version produced no version under xvfb" >&2
+# Smoke: binary under xvfb must report the pinned version exactly.
+probed="$(probe_installed_version || true)"
+if [[ "${probed}" != "${DRAWIO_VERSION}" ]]; then
+  echo "ERROR: draw.io version probe mismatch (expected ${DRAWIO_VERSION}, got '${probed:-<empty>}')" >&2
   exit 1
 fi
-echo "draw.io CLI ready: $(current_version) ($(official_drawio_bin))"
+echo "draw.io CLI ready: ${probed} ($(official_drawio_bin))"
