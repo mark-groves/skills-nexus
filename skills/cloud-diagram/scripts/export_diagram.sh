@@ -74,7 +74,7 @@ if ! command -v drawio >/dev/null 2>&1; then
   cat <<'EOF' >&2
 ERROR: official draw.io CLI not found on PATH.
 
-Install with: bash scripts/install-drawio-cli.sh
+Install with: bash scripts/install-drawio-cli.sh (from the skill root)
 Do NOT use npx drawio-headless for human-review screenshots — it omits
 provider icons and mangles layout. Without drawio, rely on
 validate_diagram.py only and report that aesthetic export is unavailable.

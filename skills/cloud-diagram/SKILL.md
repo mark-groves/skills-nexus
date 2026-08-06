@@ -27,13 +27,28 @@ If the provider is ambiguous, ask.
 ## Step 2 — Detect capabilities
 
 ```bash
-which drawio 2>/dev/null || which draw.io 2>/dev/null
+drawio_bin="$(command -v drawio 2>/dev/null || true)"
+if [[ -n "${drawio_bin}" ]]; then
+  drawio_real="$(readlink -f "${drawio_bin}")"
+  case "${drawio_real}" in
+    /opt/drawio/*|/opt/draw.io/*)
+      echo "official draw.io available: ${drawio_real}"
+      ;;
+    *)
+      echo "non-official drawio on PATH (${drawio_real}); treat as unavailable"
+      ;;
+  esac
+else
+  echo "drawio missing"
+fi
 ```
 
-Report whether the **official** draw.io desktop CLI is available.
-If missing, install with `bash scripts/install-drawio-cli.sh` from the
-repo root when you have permission, or note that aesthetic export is
-unavailable. Do not treat `npx drawio-headless` as a substitute.
+Report the **official** draw.io desktop CLI as available only when the
+resolved binary is under `/opt/drawio` or `/opt/draw.io` (same contract as
+`scripts/export_diagram.sh`). If missing, install with
+`bash scripts/install-drawio-cli.sh` from the skill root when you have
+permission, or note that aesthetic export is unavailable. Do not treat
+`npx drawio-headless` as a substitute.
 
 ## Step 3 — Load references (tiered)
 
