@@ -94,8 +94,9 @@ image vertex or a generic rounded rectangle when lookup hits.
 
 Lookup prefers group/container styles when a title collides with a
 product icon (AWS `VPC`, `Availability Zone`, `Account`; Azure
-`Subnet`). Prefer these verified styles over guessing. Do not invent
-stencil names or azure2 paths.
+`Subnet`, `VNet` / `Virtual Network`). Prefer these verified styles
+over guessing. Do not invent stencil names or azure2 paths. Never use
+`Virtual_Networks.svg` or `Subnet.svg` as the VNet/subnet boundary.
 
 **Full catalog body** (`<!-- GENERATED BELOW -->` onward): load or Grep
 only when lookup misses and the service is uncommon. Never require the
@@ -139,8 +140,10 @@ Internal reasoning only.
   with real `parent` nesting and `mxgraph.aws4.group` styles from the
   catalog header. Skip VPC/subnet nesting for serverless/CDN unless the
   user asked for them.
-- **Azure:** Subscription/Resource Group as needed → VNet swimlane →
-  subnet swimlanes → resources. Use azure2 image icons.
+- **Azure:** Subscription/Resource Group as needed → VNet swimlane
+  (`strokeWidth=4`) → subnet swimlanes (dashed) → resources. Use
+  azure2 image icons for services. Resolve VNet/Subnet via lookup so
+  you get swimlanes, not product icons.
 - **GCP:** Title bar + platform rect (`container=0`) + pastel logical
   groups + **Service Cards from `lookup_shape.py --card`** (card cell +
   `part=1` icon child). Cards stay `parent="1"`. Do **not** force

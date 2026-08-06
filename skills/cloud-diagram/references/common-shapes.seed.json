@@ -151,10 +151,30 @@
           "title": "Application Gateways",
           "kind": "icon"
         },
+        "subscription": {
+          "aliases": ["subscription", "azure subscription"],
+          "title": "Subscription",
+          "kind": "group"
+        },
+        "resource_group": {
+          "aliases": ["resource group", "rg", "azure resource group"],
+          "title": "Resource Group",
+          "kind": "group"
+        },
+        "region": {
+          "aliases": ["region", "azure region"],
+          "title": "Region",
+          "kind": "group"
+        },
         "vnet": {
-          "aliases": ["vnet", "virtual network", "virtual networks"],
-          "title": "Virtual Networks",
-          "kind": "icon"
+          "aliases": [
+            "vnet",
+            "virtual network",
+            "virtual networks",
+            "virtual network (vnet)"
+          ],
+          "title": "Virtual Network (VNet)",
+          "kind": "group"
         },
         "subnet": {
           "aliases": ["subnet", "azure subnet"],

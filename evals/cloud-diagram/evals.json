@@ -85,10 +85,16 @@
       "checks": [
         "Uses Azure image references (img/lib/azure2/...)",
         "Does not use generic rounded rectangles for App Service, SQL, Blob, or Application Gateway when azure2 icons are available",
-        "Contains VNet container with strokeWidth=4 and correct Azure styling",
-        "Contains subnet containers with dashed borders",
-        "Does not use AWS shape names",
-        "All mentioned services are present in the diagram"
+        "Contains VNet swimlane container with strokeWidth=4 (not Virtual_Networks.svg as the boundary)",
+        "Contains subnet swimlane containers with dashed borders (not Subnet.svg as the boundary)",
+        "Does not use AWS shape names (mxgraph.aws4) or GCP shapes",
+        "All mentioned services are present in the diagram",
+        {
+          "id": "azure-shapes-without-steering",
+          "text": "Uses catalog azure2 icons and VNet/Subnet swimlanes on first attempt without the user asking to switch to Azure shapes",
+          "class": "quality",
+          "gate": "hard"
+        }
       ]
     },
     {

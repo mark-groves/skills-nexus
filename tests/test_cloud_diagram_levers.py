@@ -72,6 +72,34 @@ class CloudDiagramLeversTest(unittest.TestCase):
         self.assertNotIn("img/lib/azure2/networking/Subnet.svg", hit["style"])
         self.assertTrue(hit["tokens"])
         self.assertTrue(all(token.startswith("azure.group:") for token in hit["tokens"]))
+        self.assertIn("strokeColor=#3B8BBA", hit["tokens"][0])
+        self.assertIn("dashed=1", hit["tokens"][0])
+        self.assertNotIn("dashPattern=", hit["tokens"][0])
+
+    def test_lookup_azure_vnet_prefers_swimlane(self) -> None:
+        for query in ("VNet", "Virtual Network", "Virtual Networks"):
+            with self.subTest(query=query):
+                hit = resolve_shape("azure", query)
+                assert hit is not None
+                self.assertEqual(hit["kind"], "group")
+                self.assertTrue(hit["style"].startswith("swimlane;"))
+                self.assertIn("strokeWidth=4", hit["style"])
+                self.assertIn("container=1", hit["style"])
+                self.assertEqual(hit["size"], "500x350")
+                self.assertNotIn("Virtual_Networks.svg", hit["style"])
+                self.assertTrue(hit["tokens"])
+                self.assertTrue(all(token.startswith("azure.group:") for token in hit["tokens"]))
+                self.assertIn("strokeWidth=4", hit["tokens"][0])
+
+    def test_lookup_azure_resource_group_and_subscription(self) -> None:
+        rg = resolve_shape("azure", "Resource Group")
+        assert rg is not None
+        self.assertEqual(rg["kind"], "group")
+        self.assertIn("strokeColor=#CBCBCB", rg["style"])
+        sub = resolve_shape("azure", "Subscription")
+        assert sub is not None
+        self.assertEqual(sub["kind"], "group")
+        self.assertIn("strokeColor=#0078D4", sub["style"])
 
     def test_lookup_s3_lambda(self) -> None:
         s3 = resolve_shape("aws", "S3")
@@ -114,6 +142,9 @@ class CloudDiagramLeversTest(unittest.TestCase):
                 "Blob Storage",
                 "Application Gateway",
                 "VNet",
+                "Subnet",
+                "Resource Group",
+                "Subscription",
             ],
             "gcp": [
                 "Pub/Sub",
@@ -297,6 +328,91 @@ class CloudDiagramLeversTest(unittest.TestCase):
             issues = collect_issues(diagram, "aws", ["VPC"])
         self.assertIn("missing provider shape for VPC", issues)
 
+    def test_validate_three_tier_azure(self) -> None:
+        path = REFERENCES / "templates" / "three-tier-azure.drawio.xml"
+        issues = collect_issues(
+            path,
+            "azure",
+            [
+                "App Service",
+                "Azure SQL",
+                "Application Gateway",
+                "VNet",
+                "Subnet",
+                "Resource Group",
+                "Subscription",
+            ],
+        )
+        self.assertEqual(issues, [])
+
+    def test_validate_accepts_azure_subnet_without_dash_pattern(self) -> None:
+        """Templates may omit optional dashPattern; identity must still match."""
+        subnet = resolve_shape("azure", "Subnet")
+        assert subnet is not None
+        # Drop dashPattern if present — mirrors older / hand-edited swimlanes.
+        style = ";".join(
+            part
+            for part in subnet["style"].split(";")
+            if part and not part.startswith("dashPattern=")
+        )
+        xml = f"""\
+<mxfile><diagram><mxGraphModel><root>
+  <mxCell id="0" />
+  <mxCell id="1" parent="0" />
+  <mxCell id="subnet" value="Subnet" style="{style}" vertex="1" parent="1">
+    <mxGeometry x="0" y="0" width="400" height="250" as="geometry" />
+  </mxCell>
+</root></mxGraphModel></diagram></mxfile>
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            diagram = Path(directory) / "azure-subnet-no-dash.drawio"
+            diagram.write_text(xml, encoding="utf-8")
+            issues = collect_issues(diagram, "azure", ["Subnet"])
+        self.assertEqual(issues, [])
+
+    def test_validate_rejects_azure_vnet_product_icon(self) -> None:
+        icon = (
+            "aspect=fixed;html=1;shape=image;points=[];align=center;image;"
+            "fontSize=12;image=img/lib/azure2/networking/Virtual_Networks.svg;"
+        )
+        xml = f"""\
+<mxfile><diagram><mxGraphModel><root>
+  <mxCell id="0" />
+  <mxCell id="1" parent="0" />
+  <mxCell id="vnet" value="VNet" style="{icon}" vertex="1" parent="1">
+    <mxGeometry x="20" y="20" width="50" height="50" as="geometry" />
+  </mxCell>
+</root></mxGraphModel></diagram></mxfile>
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            diagram = Path(directory) / "vnet-icon.drawio"
+            diagram.write_text(xml, encoding="utf-8")
+            issues = collect_issues(diagram, "azure", ["VNet"])
+        self.assertIn("missing provider shape for VNet", issues)
+        self.assertTrue(
+            any("swimlane container" in issue for issue in issues),
+            issues,
+        )
+
+    def test_validate_rejects_aws_shapes_in_azure_diagram(self) -> None:
+        alb = resolve_shape("aws", "ALB")
+        assert alb is not None
+        xml = f"""\
+<mxfile><diagram><mxGraphModel><root>
+  <mxCell id="0" />
+  <mxCell id="1" parent="0" />
+  <mxCell id="alb" value="Application Gateway" style="{alb["style"]}" vertex="1" parent="1">
+    <mxGeometry x="20" y="20" width="50" height="50" as="geometry" />
+  </mxCell>
+</root></mxGraphModel></diagram></mxfile>
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            diagram = Path(directory) / "aws-in-azure.drawio"
+            diagram.write_text(xml, encoding="utf-8")
+            issues = collect_issues(diagram, "azure", ["Application Gateway"])
+        self.assertTrue(any("foreign provider" in issue for issue in issues), issues)
+        self.assertTrue(any("missing provider shape" in issue for issue in issues), issues)
+
     def test_validate_accepts_azure_subnet_swimlane(self) -> None:
         subnet = resolve_shape("azure", "Subnet")
         assert subnet is not None
@@ -314,6 +430,28 @@ class CloudDiagramLeversTest(unittest.TestCase):
             diagram.write_text(xml, encoding="utf-8")
             issues = collect_issues(diagram, "azure", ["Subnet"])
         self.assertEqual(issues, [])
+
+    def test_validate_rejects_azure_vnet_swimlane_without_container(self) -> None:
+        """Swimlane styling alone is not enough; Azure groups need container=1."""
+        vnet = resolve_shape("azure", "VNet")
+        assert vnet is not None
+        style = ";".join(
+            part for part in vnet["style"].split(";") if part and part != "container=1"
+        )
+        xml = f"""\
+<mxfile><diagram><mxGraphModel><root>
+  <mxCell id="0" />
+  <mxCell id="1" parent="0" />
+  <mxCell id="vnet" value="VNet" style="{style}" vertex="1" parent="1">
+    <mxGeometry x="0" y="0" width="500" height="350" as="geometry" />
+  </mxCell>
+</root></mxGraphModel></diagram></mxfile>
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            diagram = Path(directory) / "vnet-no-container.drawio"
+            diagram.write_text(xml, encoding="utf-8")
+            issues = collect_issues(diagram, "azure", ["VNet"])
+        self.assertIn("missing provider shape for VNet", issues)
 
     def test_validate_distinguishes_gcp_service_icons(self) -> None:
         dataflow = resolve_shape("gcp", "Dataflow")

@@ -411,19 +411,63 @@
             "image=img/lib/azure2/networking/Application_Gateways.svg"
           ]
         },
+        "subscription": {
+          "aliases": [
+            "subscription",
+            "azure subscription"
+          ],
+          "title": "Subscription",
+          "style": "swimlane;startSize=30;fillColor=none;strokeColor=#0078D4;dashed=0;container=1;collapsible=0;pointerEvents=0;fontColor=#0078D4;fontSize=14;fontStyle=1;",
+          "size": "800x500",
+          "catalog_size": "800x500",
+          "kind": "group",
+          "tokens": [
+            "azure.group:strokeColor=#0078D4;dashed=0"
+          ]
+        },
+        "resource_group": {
+          "aliases": [
+            "resource group",
+            "rg",
+            "azure resource group"
+          ],
+          "title": "Resource Group",
+          "style": "swimlane;startSize=30;fillColor=none;strokeColor=#CBCBCB;dashed=1;dashPattern=5 5;container=1;collapsible=0;pointerEvents=0;fontColor=#333333;fontSize=12;fontStyle=1;",
+          "size": "600x400",
+          "catalog_size": "600x400",
+          "kind": "group",
+          "tokens": [
+            "azure.group:strokeColor=#CBCBCB;dashed=1"
+          ]
+        },
+        "region": {
+          "aliases": [
+            "region",
+            "azure region"
+          ],
+          "title": "Region",
+          "style": "swimlane;startSize=30;fillColor=none;strokeColor=#808080;dashed=1;dashPattern=8 4;container=1;collapsible=0;pointerEvents=0;fontColor=#808080;fontSize=12;fontStyle=1;",
+          "size": "900x600",
+          "catalog_size": "900x600",
+          "kind": "group",
+          "tokens": [
+            "azure.group:strokeColor=#808080;dashed=1"
+          ]
+        },
         "vnet": {
           "aliases": [
             "vnet",
             "virtual network",
-            "virtual networks"
+            "virtual networks",
+            "virtual network (vnet)"
           ],
-          "title": "Virtual Networks",
-          "style": "aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/networking/Virtual_Networks.svg;",
-          "size": "50x50",
-          "catalog_size": "67x40",
-          "kind": "icon",
+          "title": "Virtual Network (VNet)",
+          "style": "swimlane;startSize=30;fillColor=none;strokeColor=#3B8BBA;strokeWidth=4;dashed=0;container=1;collapsible=0;pointerEvents=0;fontColor=#3B8BBA;fontSize=12;fontStyle=1;",
+          "size": "500x350",
+          "catalog_size": "500x350",
+          "kind": "group",
           "tokens": [
-            "image=img/lib/azure2/networking/Virtual_Networks.svg"
+            "azure.group:strokeColor=#3B8BBA;strokeWidth=4;dashed=0"
           ]
         },
         "subnet": {
@@ -437,7 +481,7 @@
           "catalog_size": "400x250",
           "kind": "group",
           "tokens": [
-            "azure.group:strokeColor=#3B8BBA;dashed=1;dashPattern=5 5;fillColor=none"
+            "azure.group:strokeColor=#3B8BBA;dashed=1"
           ]
         },
         "aks": {
