@@ -27,10 +27,28 @@ If the provider is ambiguous, ask.
 ## Step 2 — Detect capabilities
 
 ```bash
-which drawio 2>/dev/null || which draw.io 2>/dev/null
+drawio_bin="$(command -v drawio 2>/dev/null || true)"
+if [[ -n "${drawio_bin}" ]]; then
+  drawio_real="$(readlink -f "${drawio_bin}")"
+  case "${drawio_real}" in
+    /opt/drawio/*|/opt/draw.io/*)
+      echo "official draw.io available: ${drawio_real}"
+      ;;
+    *)
+      echo "non-official drawio on PATH (${drawio_real}); treat as unavailable"
+      ;;
+  esac
+else
+  echo "drawio missing"
+fi
 ```
 
-Report whether draw.io CLI export/review is available.
+Report the **official** draw.io desktop CLI as available only when the
+resolved binary is under `/opt/drawio` or `/opt/draw.io` (same contract as
+`scripts/export_diagram.sh`). If missing, install with
+`bash scripts/install-drawio-cli.sh` from the skill root when you have
+permission, or note that aesthetic export is unavailable. Do not treat
+`npx drawio-headless` as a substitute.
 
 ## Step 3 — Load references (tiered)
 
@@ -181,39 +199,26 @@ generics while a lookup hit exists). Re-run until clean.
 
 ## Step 9 — Visual review (optional)
 
-Prefer the official draw.io / diagrams.net CLI when present.
+Prefer the official draw.io / diagrams.net CLI only. Use the fail-closed
+helper from the skill root (never `npx drawio-headless` for
+human-review screenshots — it omits provider icons and mangles layout):
 
 ```bash
-drawio -x -f svg -b 10 -o "<name>.review.svg" "<name>.drawio"
+bash scripts/export_diagram.sh "<name>.drawio" "<name>.review.svg"
+bash scripts/export_diagram.sh "<name>.drawio" "<name>.review.png" --format png
 ```
 
-Use SVG first for complex AWS group diagrams. In some headless
-environments PNG export returns `Empty export data` on nested
-`mxgraph.aws4.group` canvases while SVG succeeds. Rasterize the SVG
-when you need a PNG (`rsvg-convert` or similar), or retry:
+SVG first for complex AWS group diagrams. The helper falls back to
+SVG→`rsvg-convert` when direct PNG export returns empty data on nested
+`mxgraph.aws4.group` canvases.
 
-```bash
-drawio -x -f png -b 10 -o "<name>.review.png" "<name>.drawio"
-```
-
-If the draw.io binary is missing, a third-party headless render can
-still catch layout issues (nesting, overlaps, label collisions). Do
-**not** trust headless screenshots for GCP acceptance: `html=1` labels
-and embedded `data:image/svg+xml` Service Card icons often render as
-literal markup, overlapping text, or grey placeholders. Prefer the
-official `drawio` CLI (SVG first, then PNG) for visual review of GCP
-diagrams. AWS stencil glyphs may also render as placeholders in
-third-party headless tools:
-
-```bash
-npx --yes drawio-headless@0.4.2 render --format png "<name>.drawio" "<name>.review.png"
-```
+If `export_diagram.sh` exits non-zero because drawio is missing, Step 8
+is the quality gate. Say aesthetic export is unavailable. Do **not**
+post third-party headless PNGs as visual proof for AWS, Azure, or GCP.
 
 Read the review image. Check overlaps, blank icons, crossings, labels,
 hierarchy, spacing. Fix and re-export at most twice. Delete review
 artifacts when done.
-
-If no renderer is available, Step 8 is the quality gate.
 
 ## Step 10 — MCP refinement (optional)
 
@@ -222,12 +227,12 @@ targeted edits over full regenerate.
 
 ## Step 11 — Final output
 
-Offer exports when CLI exists:
+Offer exports when the official CLI exists (same helper):
 
 ```bash
-drawio -x -f png --embed-diagram -b 10 -o "<name>.drawio.png" "<name>.drawio"
-drawio -x -f svg --embed-diagram -b 10 -o "<name>.drawio.svg" "<name>.drawio"
-drawio -x -f pdf --embed-diagram -b 10 -o "<name>.drawio.pdf" "<name>.drawio"
+bash scripts/export_diagram.sh "<name>.drawio" "<name>.drawio.svg"
+bash scripts/export_diagram.sh "<name>.drawio" "<name>.drawio.png" --format png
+bash scripts/export_diagram.sh "<name>.drawio" "<name>.drawio.pdf" --format pdf
 ```
 
 Report the `.drawio` path.
