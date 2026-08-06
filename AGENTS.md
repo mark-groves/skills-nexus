@@ -32,3 +32,7 @@ non-obvious caveats are noted here.
   service. Live (non-`--plan`) runs require the Codex CLI on `PATH`, credentials
   (`CODEX_API_KEY` or `~/.codex/auth.json`), and network access. Those runs are optional
   and not needed for tests, validation, or deployment.
+- Aesthetic diagram screenshots for human review need the official draw.io desktop
+  CLI (`bash scripts/install-drawio-cli.sh`, then
+  `skills/cloud-diagram/scripts/export_diagram.sh`). Do not use `npx drawio-headless`
+  for proof images — it omits provider icons.
