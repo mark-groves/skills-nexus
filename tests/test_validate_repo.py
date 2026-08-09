@@ -650,27 +650,61 @@ class ValidateRepoSkillLayoutTests(unittest.TestCase):
     def tearDown(self) -> None:
         validate_repo.ERRORS.clear()
 
-    def test_validate_skills_root_accepts_flat_skills_with_external_evals(self) -> None:
+    def test_validate_skills_root_accepts_plugin_bundles_with_external_evals(self) -> None:
         with tempfile.TemporaryDirectory(dir=REPO_DIR) as temp_dir:
-            skills_dir = Path(temp_dir) / "skills"
-            skill_dir = skills_dir / "example-skill"
-            skill_dir.mkdir(parents=True)
-            (skill_dir / "SKILL.md").write_text(
-                "---\nname: example-skill\ndescription: Example skill\n---\n",
-                encoding="utf-8",
-            )
-            evals_dir = Path(temp_dir) / "evals"
-            (evals_dir / "example-skill").mkdir(parents=True)
+            root = Path(temp_dir)
+            plugins_dir = root / "plugins"
+            for bundle, skills in {
+                "git-workflow": ("commit", "pr"),
+                "drawio": ("cloud-diagram", "drawio-shapes"),
+                "skill-architect": ("skill-architect",),
+            }.items():
+                plugin = plugins_dir / bundle
+                (plugin / "skills").mkdir(parents=True)
+                (
+                    plugin / "plugin.json"
+                ).write_text(
+                    json.dumps(
+                        {
+                            "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+                            "name": bundle,
+                            "version": "1.0.0",
+                            "description": bundle,
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+                for skill in skills:
+                    skill_dir = plugin / "skills" / skill
+                    skill_dir.mkdir(parents=True)
+                    (skill_dir / "SKILL.md").write_text(
+                        f"---\nname: {skill}\ndescription: Example\n---\n",
+                        encoding="utf-8",
+                    )
+            evals_dir = root / "evals"
+            for skill in (
+                "commit",
+                "pr",
+                "cloud-diagram",
+                "drawio-shapes",
+                "skill-architect",
+            ):
+                (evals_dir / skill).mkdir(parents=True)
 
             with (
-                mock.patch.object(validate_repo, "SKILLS_DIR", skills_dir),
+                mock.patch.object(validate_repo, "REPO_DIR", root),
+                mock.patch.object(validate_repo, "PLUGINS_DIR", plugins_dir),
+                mock.patch.object(validate_repo, "SKILLS_DIR", plugins_dir),
                 mock.patch.object(validate_repo, "EVALS_DIR", evals_dir),
                 mock.patch.object(validate_repo, "validate_skill_contract"),
                 mock.patch.object(validate_repo, "validate_evals"),
             ):
                 valid_skills = validate_repo.validate_skills_root()
 
-        self.assertEqual(valid_skills, ["example-skill"])
+        self.assertEqual(
+            valid_skills,
+            ["cloud-diagram", "commit", "drawio-shapes", "pr", "skill-architect"],
+        )
         self.assertEqual(validate_repo.ERRORS, [])
 
 

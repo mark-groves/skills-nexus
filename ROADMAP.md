@@ -86,6 +86,23 @@ package. That is not a clean single-cause protected-regression proof. A future
 positive pilot must also preserve held-back behavior and avoid overstating
 Codex evidence as cross-harness support.
 
+Cursor CLI production adapters and the Multi-harness evaluations v1 — Cursor
+milestone (#45, #50–#53) were closed as not planned. The repository is pivoting
+to companion [Agent Plugins](https://agent-plugins.org/) bundles (canonical
+under `plugins/`) with Cursor Cloud Agents as the foundry operator. Static
+validation remains the quality floor; live Codex matrices are demoted.
+
+## Phase 5b — Agent Plugin companion bundles
+
+- [x] Lock packaging topology (Option A) and companion bundles: `git-workflow`,
+      `drawio`, `skill-architect`.
+- [x] Scaffold `PluginRepository` with pinned Agent Plugins schema and fixture
+      tests (pre-cutover).
+- [x] Move canonical skills under `plugins/<bundle>/skills/<name>/` with
+      manifests; rewire discovery, validation, and deploy.
+- [x] Document Cursor Agent Plugin install as the primary path.
+- [ ] Add Cloud Agent ops guidance for skill improvement PRs.
+
 ## Phase 6 — Promote and learn
 
 - [ ] Generate pull requests rather than directly modifying the default branch.

@@ -1,0 +1,8 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "skill-architect",
+  "version": "1.0.0",
+  "description": "Design and improve reusable Agent Skills.",
+  "repository": "https://github.com/mark-groves/skills-nexus",
+  "license": "MIT"
+}

@@ -1,5 +1,5 @@
 working/
-skills/*/working/
+plugins/*/skills/*/working/
 __pycache__/
 *.pyc
 .venv/
@@ -8,3 +8,4 @@ __pycache__/
 .pytest_cache/
 .skill-evals/
 .skill-feedback/
+.audit/

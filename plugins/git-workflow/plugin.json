@@ -1,0 +1,8 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "git-workflow",
+  "version": "1.0.0",
+  "description": "Conventional commit splitting and pull request workflows.",
+  "repository": "https://github.com/mark-groves/skills-nexus",
+  "license": "MIT"
+}

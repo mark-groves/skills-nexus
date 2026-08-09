@@ -1,18 +1,30 @@
 # Deployment
 
-For normal installation from GitHub, use the community `skills` CLI. It
-discovers the canonical packages under `skills/<name>/`:
+Skills Nexus publishes companion skills as [Agent Plugins](https://agent-plugins.org/)
+under `plugins/<bundle>/`. Each plugin has a root `plugin.json` and one or more
+skills under `skills/<name>/`.
+
+## Cursor Agent Plugins (primary)
+
+Install one plugin at a time by placing its directory where Cursor loads local
+plugins, for example:
 
 ```bash
-npx skills add mark-groves/skills-nexus --list
-npx skills add mark-groves/skills-nexus --skill commit --agent codex
+mkdir -p ~/.cursor/plugins/local
+ln -s "$PWD/plugins/git-workflow" ~/.cursor/plugins/local/git-workflow
+ln -s "$PWD/plugins/drawio" ~/.cursor/plugins/local/drawio
 ```
 
-The repository's deployment script is a local-development and controlled-copy
-adapter. Run it from any directory; it resolves canonical skill paths from the
-checkout and target paths from `harnesses/<name>.json`.
+Reload the Cursor window after linking. Installing `git-workflow` provides both
+`commit` and `pr`; installing `drawio` provides `cloud-diagram` and
+`drawio-shapes`.
 
-## Select a harness and skills
+## Local harness skill-root helper
+
+`scripts/deploy-skills.sh` remains available for development installs into
+harness skill directories. It resolves canonical skill paths from plugin bundles
+and target paths from `harnesses/<name>.json`. Selecting a skill expands to the
+full owning companion bundle before copying.
 
 Every command requires `--harness`:
 
@@ -25,21 +37,18 @@ Every command requires `--harness`:
 | `cursor` | `~/.cursor/skills` | `.cursor/skills` |
 | `kiro` | `~/.kiro/skills` | `.kiro/skills` |
 
-Select one or more canonical names with repeated `--skill` options, or use
-`--all`:
-
 ```bash
 bash scripts/deploy-skills.sh \
   --harness cursor \
-  --skill commit \
-  --skill pr
+  --skill commit
 
 bash scripts/deploy-skills.sh --harness agents --all
 ```
 
-`skills/<name>` is also accepted as an explicit selector. Harness-specific
-metadata and install locations are adapter concerns; there are no separate
-harness-owned copies of the skill source.
+`--skill commit` installs both `commit` and `pr`. Bundle paths such as
+`plugins/git-workflow/skills/commit` are also accepted as selectors.
+Harness-specific metadata and install locations are adapter concerns; there are
+no separate harness-owned copies of the skill source.
 
 ## Choose a scope
 
@@ -59,9 +68,9 @@ bash scripts/deploy-skills.sh \
   --project-root /path/to/project
 ```
 
-Every deployment installs a clean runtime copy of the canonical directory
+Every deployment installs clean runtime copies of the selected bundle members
 without repo-only working files. Evals and raw observations live outside
-`skills/`, so neither can leak into an installed copy. The packager preserves
+`plugins/`, so neither can leak into an installed copy. The packager preserves
 `SKILL.md` exactly; deployment never rewrites metadata for a target.
 
 Redeployment replaces an existing destination directory. A destination that is

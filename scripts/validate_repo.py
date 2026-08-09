@@ -11,7 +11,8 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from skill_eval.core import EvalError, load_eval_spec
+from plugin_repository import PluginRepository, PluginRepositoryError
+from skill_eval.core import EvalError, load_eval_spec, resolve_skill
 from skill_review.ablation import load_component_contract
 from skill_review.core import (
     load_case_groups,
@@ -20,14 +21,24 @@ from skill_review.core import (
 )
 
 REPO_DIR = Path(__file__).resolve().parents[1]
-SKILLS_DIR = REPO_DIR / "skills"
+PLUGINS_DIR = REPO_DIR / "plugins"
 EVALS_DIR = REPO_DIR / "evals"
 HARNESS_DIR = REPO_DIR / "harnesses"
 MODEL_PROFILES = REPO_DIR / "eval-profiles.json"
-CLOUD_DIAGRAM_REFS = SKILLS_DIR / "cloud-diagram" / "references"
-DRAWIO_FIXTURES = SKILLS_DIR / "drawio-shapes" / "fixtures" / "extracted"
-DRAWIO_GENERATOR = SKILLS_DIR / "drawio-shapes" / "scripts" / "generate_catalog.py"
-CLOUD_IMPORTER = SKILLS_DIR / "cloud-diagram" / "scripts" / "import_shape_catalog.py"
+# Compatibility alias for tests that still patch SKILLS_DIR; production uses plugins/.
+SKILLS_DIR = PLUGINS_DIR
+CLOUD_DIAGRAM_REFS = (
+    PLUGINS_DIR / "drawio" / "skills" / "cloud-diagram" / "references"
+)
+DRAWIO_FIXTURES = (
+    PLUGINS_DIR / "drawio" / "skills" / "drawio-shapes" / "fixtures" / "extracted"
+)
+DRAWIO_GENERATOR = (
+    PLUGINS_DIR / "drawio" / "skills" / "drawio-shapes" / "scripts" / "generate_catalog.py"
+)
+CLOUD_IMPORTER = (
+    PLUGINS_DIR / "drawio" / "skills" / "cloud-diagram" / "scripts" / "import_shape_catalog.py"
+)
 GENERATED_MARKER = "<!-- GENERATED BELOW -->"
 
 EXPECTED_HARNESS_KEYS = {"user_install_root", "project_install_root"}
@@ -592,7 +603,7 @@ def parse_frontmatter(skill_md: Path) -> dict[str, FrontmatterValue] | None:
 
 
 def validate_generated_junk() -> None:
-    for file_path in git_ls_files("skills", "evals"):
+    for file_path in git_ls_files("plugins", "evals"):
         rel = repo_relative(file_path)
         if "/working/" in rel:
             fail(f"Tracked generated junk under working/: {rel}")
@@ -987,20 +998,23 @@ def validate_skill_contract(skill_dir: Path) -> None:
 def validate_skills_root() -> list[str]:
     valid_skills: list[str] = []
 
-    if not SKILLS_DIR.is_dir():
-        fail("Missing skill root: skills")
+    if not PLUGINS_DIR.is_dir():
+        fail("Missing plugin root: plugins")
         return valid_skills
     if not EVALS_DIR.is_dir():
         fail("Missing eval root: evals")
 
-    for skill_dir in sorted(SKILLS_DIR.iterdir(), key=lambda path: path.name):
-        if not skill_dir.is_dir():
-            fail(f"Unexpected file directly under skills/: {repo_relative(skill_dir)}")
-            continue
-        if not (skill_dir / "SKILL.md").is_file():
-            fail(f"Immediate child of skills/ is not a valid skill: {repo_relative(skill_dir)}")
-            continue
-        skill_id_value = skill_id(skill_dir)
+    try:
+        repository = PluginRepository.load(REPO_DIR)
+    except PluginRepositoryError as exc:
+        fail(str(exc))
+        return valid_skills
+
+    for skill_id_value, package in sorted(
+        ((skill.id.value, skill) for skill in repository.skills.values()),
+        key=lambda item: item[0],
+    ):
+        skill_dir = package.source_dir
         valid_skills.append(skill_id_value)
         validate_skill_contract(skill_dir)
         eval_dir = EVALS_DIR / skill_dir.name
@@ -1018,9 +1032,16 @@ def validate_skills_root() -> list[str]:
                 fail(f"Orphan eval suite without matching skill: {repo_relative(eval_dir)}")
 
     if not valid_skills:
-        fail("No valid skills found under skills/")
+        fail("No valid skills found under plugins/")
     return valid_skills
 
+
+def _skill_source(skill_name: str) -> Path:
+    try:
+        return resolve_skill(REPO_DIR, skill_name)
+    except EvalError as exc:
+        fail(str(exc))
+        return REPO_DIR / "missing-skill" / skill_name
 
 def validate_deploy_script(
     valid_skills: list[str], harness_manifests: dict[str, dict[str, str]]
@@ -1030,7 +1051,7 @@ def validate_deploy_script(
         return
 
     explicit_skill = valid_skills[0]
-    explicit_skill_src = SKILLS_DIR / explicit_skill
+    explicit_skill_src = _skill_source(explicit_skill)
     explicit_install_name = skill_install_name(explicit_skill)
 
     with tempfile.TemporaryDirectory() as temp_dir:
