@@ -11,7 +11,7 @@
         </mxCell>
 
         <!-- Resource Group -->
-        <mxCell id="rg" value="Resource Group" style="swimlane;startSize=30;fillColor=none;strokeColor=#CBCBCB;dashed=1;container=1;collapsible=0;pointerEvents=0;fontColor=#333333;fontSize=12;fontStyle=1;whiteSpace=wrap;html=1;" vertex="1" parent="subscription">
+        <mxCell id="rg" value="Resource Group" style="swimlane;startSize=30;fillColor=none;strokeColor=#CBCBCB;dashed=1;dashPattern=5 5;container=1;collapsible=0;pointerEvents=0;fontColor=#333333;fontSize=12;fontStyle=1;whiteSpace=wrap;html=1;" vertex="1" parent="subscription">
           <mxGeometry x="40" y="50" width="1440" height="910" as="geometry" />
         </mxCell>
 
@@ -21,7 +21,7 @@
         </mxCell>
 
         <!-- Frontend Subnet -->
-        <mxCell id="subnet-frontend" value="Frontend Subnet 10.0.1.0/24" style="swimlane;startSize=30;fillColor=none;strokeColor=#3B8BBA;dashed=1;container=1;collapsible=0;pointerEvents=0;fontColor=#3B8BBA;fontSize=11;fontStyle=1;whiteSpace=wrap;html=1;" vertex="1" parent="vnet">
+        <mxCell id="subnet-frontend" value="Frontend Subnet 10.0.1.0/24" style="swimlane;startSize=30;fillColor=none;strokeColor=#3B8BBA;dashed=1;dashPattern=5 5;container=1;collapsible=0;pointerEvents=0;fontColor=#3B8BBA;fontSize=11;fontStyle=1;whiteSpace=wrap;html=1;" vertex="1" parent="vnet">
           <mxGeometry x="40" y="50" width="1280" height="200" as="geometry" />
         </mxCell>
 
@@ -31,7 +31,7 @@
         </mxCell>
 
         <!-- App Subnet -->
-        <mxCell id="subnet-app" value="Application Subnet 10.0.2.0/24" style="swimlane;startSize=30;fillColor=none;strokeColor=#3B8BBA;dashed=1;container=1;collapsible=0;pointerEvents=0;fontColor=#3B8BBA;fontSize=11;fontStyle=1;whiteSpace=wrap;html=1;" vertex="1" parent="vnet">
+        <mxCell id="subnet-app" value="Application Subnet 10.0.2.0/24" style="swimlane;startSize=30;fillColor=none;strokeColor=#3B8BBA;dashed=1;dashPattern=5 5;container=1;collapsible=0;pointerEvents=0;fontColor=#3B8BBA;fontSize=11;fontStyle=1;whiteSpace=wrap;html=1;" vertex="1" parent="vnet">
           <mxGeometry x="40" y="300" width="1280" height="200" as="geometry" />
         </mxCell>
 
@@ -41,7 +41,7 @@
         </mxCell>
 
         <!-- Data Subnet -->
-        <mxCell id="subnet-data" value="Data Subnet 10.0.3.0/24" style="swimlane;startSize=30;fillColor=none;strokeColor=#3B8BBA;dashed=1;container=1;collapsible=0;pointerEvents=0;fontColor=#3B8BBA;fontSize=11;fontStyle=1;whiteSpace=wrap;html=1;" vertex="1" parent="vnet">
+        <mxCell id="subnet-data" value="Data Subnet 10.0.3.0/24" style="swimlane;startSize=30;fillColor=none;strokeColor=#3B8BBA;dashed=1;dashPattern=5 5;container=1;collapsible=0;pointerEvents=0;fontColor=#3B8BBA;fontSize=11;fontStyle=1;whiteSpace=wrap;html=1;" vertex="1" parent="vnet">
           <mxGeometry x="40" y="550" width="1280" height="220" as="geometry" />
         </mxCell>
 

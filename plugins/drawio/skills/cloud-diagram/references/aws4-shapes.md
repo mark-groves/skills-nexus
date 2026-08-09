@@ -16,10 +16,18 @@ icon inside a category-coloured rounded square.
 **Product icons** set `shape=mxgraph.aws4.<SERVICE>` directly with no
 `resIcon`. These render the bare service glyph.
 
-To derive a shape not listed here, convert the service name to
-`lower_snake_case` and substitute it into the appropriate template.
-Check the draw.io aws4 stencil source if unsure of the exact
-identifier.
+**Actors (Users / User):** use the flat product icon
+(`shape=mxgraph.aws4.users` or `shape=mxgraph.aws4.user`), not
+`resourceIcon` + `resIcon=...users` — the resourceIcon wrap puts the
+glyph inside a heavy dark square that reads as a service tile.
+
+Resolve services with `scripts/lookup_shape.py --provider aws <name>`
+or `references/common-shapes.json` first. Do not invent stencil names.
+On a confirmed miss, use a labeled generic rounded rectangle.
+
+When a title appears twice (header group vs generated product icon),
+lookup keeps the group/container style. That covers `VPC`,
+`Availability Zone`, and `Account`.
 
 ---
 

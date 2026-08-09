@@ -39,13 +39,14 @@ The full list of azure2 category folders:
 | `storage` | Storage accounts, Data Lake |
 | `web` | SignalR, Notification Hubs |
 
-To derive a path for a service not listed in this catalog:
+Resolve services with `scripts/lookup_shape.py --provider azure <name>`
+or `references/common-shapes.json` first. Do not invent azure2 paths.
+On a confirmed miss, use a labeled generic rounded rectangle.
 
-1. Identify the category folder that best matches the service domain.
-2. Convert the service name to Title_Case with underscores.
-3. Construct the path: `img/lib/azure2/<category>/<Service_Name>.svg`.
-4. If the icon does not render, try alternate category folders or
-   check the draw.io azure2 library for the exact filename.
+When `Subnet` or `VNet` / `Virtual Network` appears as both a swimlane
+group and an azure2 product icon, lookup keeps the swimlane container.
+Do not use `Virtual_Networks.svg` or `Subnet.svg` as the network
+boundary — those icons are product glyphs, not containment.
 
 The base style string for all service icons is:
 

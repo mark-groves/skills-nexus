@@ -1,0 +1,256 @@
+{
+  "version": 1,
+  "icon_size_default": "50x50",
+  "providers": {
+    "aws": {
+      "services": {
+        "alb": {
+          "aliases": ["alb", "application load balancer", "application_load_balancer", "elb"],
+          "title": "Elastic Load Balancing",
+          "kind": "icon",
+          "style_patches": {
+            "fillColor": "#8C4FFF"
+          }
+        },
+        "aws_cloud": {
+          "aliases": ["aws cloud"],
+          "title": "AWS Cloud",
+          "kind": "group"
+        },
+        "region": {
+          "aliases": ["region", "aws region"],
+          "title": "Region",
+          "kind": "group"
+        },
+        "vpc": {
+          "aliases": ["vpc", "virtual private cloud"],
+          "title": "VPC",
+          "kind": "group"
+        },
+        "availability_zone": {
+          "aliases": ["az", "availability zone", "availability_zone"],
+          "title": "Availability Zone",
+          "kind": "group"
+        },
+        "public_subnet": {
+          "aliases": ["public subnet", "public_subnet"],
+          "title": "Public Subnet",
+          "kind": "group"
+        },
+        "private_subnet": {
+          "aliases": ["private subnet", "private_subnet"],
+          "title": "Private Subnet",
+          "kind": "group"
+        },
+        "ec2": {
+          "aliases": ["ec2", "elastic compute cloud"],
+          "title": "EC2",
+          "kind": "icon"
+        },
+        "rds": {
+          "aliases": ["rds", "relational database service"],
+          "title": "RDS",
+          "kind": "icon"
+        },
+        "aurora": {
+          "aliases": ["aurora", "rds aurora"],
+          "title": "Aurora",
+          "kind": "icon"
+        },
+        "s3": {
+          "aliases": ["s3", "simple storage service", "simple storage service (s3)"],
+          "title": "Simple Storage Service (S3)",
+          "kind": "icon"
+        },
+        "lambda": {
+          "aliases": ["lambda", "aws lambda"],
+          "title": "Lambda",
+          "kind": "icon"
+        },
+        "dynamodb": {
+          "aliases": ["dynamodb", "dynamo db", "dynamo"],
+          "title": "DynamoDB",
+          "kind": "icon"
+        },
+        "api_gateway": {
+          "aliases": ["api gateway", "apigw", "api gw"],
+          "title": "API Gateway",
+          "kind": "icon"
+        },
+        "cognito": {
+          "aliases": ["cognito", "amazon cognito"],
+          "title": "Cognito",
+          "kind": "icon"
+        },
+        "cloudfront": {
+          "aliases": ["cloudfront", "cloud front"],
+          "title": "CloudFront",
+          "kind": "icon"
+        },
+        "route53": {
+          "aliases": ["route53", "route 53", "r53"],
+          "title": "Route 53",
+          "kind": "icon"
+        },
+        "sns": {
+          "aliases": ["sns", "simple notification service"],
+          "title": "Simple Notification Service",
+          "kind": "icon"
+        },
+        "sqs": {
+          "aliases": ["sqs", "simple queue service"],
+          "title": "Simple Queue Service",
+          "kind": "icon"
+        },
+        "eks": {
+          "aliases": ["eks", "elastic kubernetes service"],
+          "title": "Elastic Kubernetes Service",
+          "kind": "icon"
+        },
+        "ecs": {
+          "aliases": ["ecs", "elastic container service"],
+          "title": "Elastic Container Service",
+          "kind": "icon"
+        },
+        "internet_gateway": {
+          "aliases": ["igw", "internet gateway"],
+          "title": "Internet Gateway",
+          "kind": "icon"
+        },
+        "nat_gateway": {
+          "aliases": ["nat", "nat gateway"],
+          "title": "NAT Gateway",
+          "kind": "icon"
+        }
+      }
+    },
+    "azure": {
+      "services": {
+        "vm": {
+          "aliases": ["vm", "virtual machine"],
+          "title": "Virtual Machine",
+          "kind": "icon"
+        },
+        "app_service": {
+          "aliases": ["app service", "app services", "web app"],
+          "title": "App Services",
+          "kind": "icon"
+        },
+        "sql": {
+          "aliases": ["sql", "azure sql", "sql database"],
+          "title": "SQL Database",
+          "kind": "icon"
+        },
+        "blob": {
+          "aliases": ["blob", "blob storage", "storage account", "storage accounts"],
+          "title": "Storage Accounts",
+          "kind": "icon"
+        },
+        "app_gateway": {
+          "aliases": ["app gateway", "application gateway", "application gateways"],
+          "title": "Application Gateways",
+          "kind": "icon"
+        },
+        "subscription": {
+          "aliases": ["subscription", "azure subscription"],
+          "title": "Subscription",
+          "kind": "group"
+        },
+        "resource_group": {
+          "aliases": ["resource group", "rg", "azure resource group"],
+          "title": "Resource Group",
+          "kind": "group"
+        },
+        "region": {
+          "aliases": ["region", "azure region"],
+          "title": "Region",
+          "kind": "group"
+        },
+        "vnet": {
+          "aliases": [
+            "vnet",
+            "virtual network",
+            "virtual networks",
+            "virtual network (vnet)"
+          ],
+          "title": "Virtual Network (VNet)",
+          "kind": "group"
+        },
+        "subnet": {
+          "aliases": ["subnet", "azure subnet"],
+          "title": "Subnet",
+          "kind": "group"
+        },
+        "aks": {
+          "aliases": ["aks", "kubernetes services", "azure kubernetes"],
+          "title": "Kubernetes Services",
+          "kind": "icon"
+        },
+        "functions": {
+          "aliases": ["functions", "function apps", "azure functions"],
+          "title": "Function Apps",
+          "kind": "icon"
+        },
+        "cosmos": {
+          "aliases": ["cosmos", "cosmos db", "azure cosmos db"],
+          "title": "Cosmos DB",
+          "kind": "icon"
+        }
+      }
+    },
+    "gcp": {
+      "services": {
+        "pubsub": {
+          "aliases": ["pubsub", "pub/sub", "cloud pub/sub", "cloud pubsub"],
+          "title": "Pub/Sub",
+          "kind": "gcp_card_icon"
+        },
+        "dataflow": {
+          "aliases": ["dataflow", "cloud dataflow"],
+          "title": "Dataflow",
+          "kind": "gcp_card_icon"
+        },
+        "bigquery": {
+          "aliases": ["bigquery", "bq"],
+          "title": "BigQuery",
+          "kind": "gcp_card_icon"
+        },
+        "looker": {
+          "aliases": ["looker"],
+          "title": "Looker",
+          "kind": "gcp_card_icon"
+        },
+        "compute_engine": {
+          "aliases": ["compute engine", "gce", "vm"],
+          "title": "Compute Engine",
+          "kind": "gcp_card_icon"
+        },
+        "gke": {
+          "aliases": ["gke", "kubernetes engine", "google kubernetes engine"],
+          "title": "Kubernetes Engine",
+          "kind": "gcp_card_icon"
+        },
+        "cloud_storage": {
+          "aliases": ["gcs", "cloud storage", "storage"],
+          "title": "Cloud Storage",
+          "kind": "gcp_card_icon"
+        },
+        "cloud_sql": {
+          "aliases": ["cloud sql", "sql"],
+          "title": "Cloud SQL",
+          "kind": "gcp_card_icon"
+        },
+        "load_balancing": {
+          "aliases": ["load balancing", "cloud load balancing", "glb", "load balancer"],
+          "title": "Cloud Load Balancing",
+          "kind": "gcp_card_icon"
+        },
+        "cloud_run": {
+          "aliases": ["cloud run", "run"],
+          "title": "Cloud Run",
+          "kind": "gcp_card_icon"
+        }
+      }
+    }
+  }
+}

@@ -12,7 +12,7 @@ the official draw.io GCP template style.
 ### Card container
 
 ```xml
-<mxCell id="card-lb" value="" style="strokeColor=#dddddd;shadow=1;strokeWidth=1;rounded=1;absoluteArcSize=1;arcSize=2;" vertex="1" parent="1">
+<mxCell id="card-lb" value="" style="strokeColor=#dddddd;fillColor=#ffffff;shadow=1;strokeWidth=1;rounded=1;absoluteArcSize=1;arcSize=2;" vertex="1" parent="1">
   <mxGeometry x="200" y="150" width="160" height="60" as="geometry" />
 </mxCell>
 ```
@@ -20,7 +20,9 @@ the official draw.io GCP template style.
 - **Size:** 160x60 default. Use 140px for short labels, up to 190px
   for long labels (e.g. "Virtual Machines API / Compute Engine").
 - **Value:** always empty string `""` — the label goes on the icon child.
-- **No `fillColor`** — defaults to white.
+- **Style:** white card (`fillColor=#ffffff`) with light gray stroke
+  and shadow — required so validators can distinguish Service Cards
+  from pastel logical groups.
 
 ### Icon child (inside the card)
 
@@ -50,20 +52,24 @@ the official draw.io GCP template style.
 
 ### Square card variant (for user/actor icons)
 
-When an icon has no text label (e.g. a user persona), use a square card
-with the label below:
+When an icon has no product label (e.g. end users), use a square card
+with the actor glyph and the label on the card. Use
+`shape=mxgraph.gcp2.users` for both single and group actors — there is
+no cataloged `mxgraph.gcp2.user` stencil.
+Do **not** use `mxgraph.gcp2.generic_person` — it exports as a blank
+grey square in the official draw.io CLI.
 
 ```xml
-<mxCell id="card-user" value="End User"
+<mxCell id="card-users" value="End Users"
     style="strokeColor=#dddddd;fillColor=#ffffff;shadow=1;strokeWidth=1;rounded=1;absoluteArcSize=1;arcSize=2;labelPosition=center;verticalLabelPosition=middle;align=center;verticalAlign=bottom;fontColor=#999999;fontSize=12;whiteSpace=wrap;spacingBottom=2;html=1;"
     vertex="1" parent="1">
-  <mxGeometry x="100" y="200" width="70" height="100" as="geometry" />
+  <mxGeometry x="100" y="200" width="70" height="90" as="geometry" />
 </mxCell>
-<mxCell id="icon-user" value=""
-    style="dashed=0;connectable=0;html=1;fillColor=#757575;strokeColor=none;shape=mxgraph.gcp2.laptop;part=1;"
-    vertex="1" parent="card-user">
-  <mxGeometry x="0.5" width="50" height="33" relative="1" as="geometry">
-    <mxPoint x="-25" y="18.5" as="offset" />
+<mxCell id="icon-users" value=""
+    style="dashed=0;connectable=0;html=1;fillColor=#757575;strokeColor=none;shape=mxgraph.gcp2.users;part=1;"
+    vertex="1" parent="card-users">
+  <mxGeometry x="0.5" width="50" height="31.5" relative="1" as="geometry">
+    <mxPoint x="-25" y="19" as="offset" />
   </mxGeometry>
 </mxCell>
 ```
@@ -135,11 +141,21 @@ children inside Service Cards (see above), not as standalone elements.
 
 A smaller set of shapes use `mxgraph.gcp2.*` stencil names (e.g. user
 personas, the platform logo). These are listed with their stencil style
-in the catalog.
+in the catalog. Prefer Service Cards with catalog `data:image` icons
+for product services. Use `mxgraph.gcp2.*` only for personas, logos,
+and other non-card glyphs listed that way.
 
-To derive a shape not in this catalog, convert the official GCP product
-name to lowercase and replace spaces with underscores. Drop the "Cloud"
-prefix when the stencil omits it (check both forms).
+Resolve services with `scripts/lookup_shape.py --provider gcp <name>`
+or `references/common-shapes.json` first. For every product hit, emit
+paste-ready markup with:
+
+```bash
+python3 scripts/lookup_shape.py --provider gcp --card "<name>"
+```
+
+Do not invent stencil names. Do not paste the raw catalog `style` as a
+standalone vertex. On a confirmed miss, use a labeled generic rounded
+rectangle.
 
 ## GCP colour palette
 
