@@ -11,12 +11,8 @@ import unittest
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-SCRIPTS = (
-    REPO_ROOT / "plugins" / "drawio" / "skills" / "cloud-diagram" / "scripts"
-)
-REFERENCES = (
-    REPO_ROOT / "plugins" / "drawio" / "skills" / "cloud-diagram" / "references"
-)
+SCRIPTS = REPO_ROOT / "plugins" / "drawio" / "skills" / "cloud-diagram" / "scripts"
+REFERENCES = REPO_ROOT / "plugins" / "drawio" / "skills" / "cloud-diagram" / "references"
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "cloud-diagram"
 
 if str(SCRIPTS) not in sys.path:

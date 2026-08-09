@@ -27,12 +27,8 @@ HARNESS_DIR = REPO_DIR / "harnesses"
 MODEL_PROFILES = REPO_DIR / "eval-profiles.json"
 # Compatibility alias for tests that still patch SKILLS_DIR; production uses plugins/.
 SKILLS_DIR = PLUGINS_DIR
-CLOUD_DIAGRAM_REFS = (
-    PLUGINS_DIR / "drawio" / "skills" / "cloud-diagram" / "references"
-)
-DRAWIO_FIXTURES = (
-    PLUGINS_DIR / "drawio" / "skills" / "drawio-shapes" / "fixtures" / "extracted"
-)
+CLOUD_DIAGRAM_REFS = PLUGINS_DIR / "drawio" / "skills" / "cloud-diagram" / "references"
+DRAWIO_FIXTURES = PLUGINS_DIR / "drawio" / "skills" / "drawio-shapes" / "fixtures" / "extracted"
 DRAWIO_GENERATOR = (
     PLUGINS_DIR / "drawio" / "skills" / "drawio-shapes" / "scripts" / "generate_catalog.py"
 )
@@ -1036,12 +1032,13 @@ def validate_skills_root() -> list[str]:
     return valid_skills
 
 
-def _skill_source(skill_name: str) -> Path:
+def _skill_source(skill_name: str) -> Path | None:
     try:
         return resolve_skill(REPO_DIR, skill_name)
     except EvalError as exc:
         fail(str(exc))
-        return REPO_DIR / "missing-skill" / skill_name
+        return None
+
 
 def validate_deploy_script(
     valid_skills: list[str], harness_manifests: dict[str, dict[str, str]]
@@ -1052,6 +1049,8 @@ def validate_deploy_script(
 
     explicit_skill = valid_skills[0]
     explicit_skill_src = _skill_source(explicit_skill)
+    if explicit_skill_src is None:
+        return
     explicit_install_name = skill_install_name(explicit_skill)
 
     with tempfile.TemporaryDirectory() as temp_dir:

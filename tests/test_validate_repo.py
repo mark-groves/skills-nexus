@@ -661,9 +661,7 @@ class ValidateRepoSkillLayoutTests(unittest.TestCase):
             }.items():
                 plugin = plugins_dir / bundle
                 (plugin / "skills").mkdir(parents=True)
-                (
-                    plugin / "plugin.json"
-                ).write_text(
+                (plugin / "plugin.json").write_text(
                     json.dumps(
                         {
                             "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",

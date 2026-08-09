@@ -3,7 +3,11 @@ set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 HARNESS_DIR="$REPO_DIR/harnesses"
-PLUGINS_DIR="$REPO_DIR/plugins"
+if [[ -x "$REPO_DIR/.venv/bin/python" ]]; then
+  REPO_PYTHON="$REPO_DIR/.venv/bin/python"
+else
+  REPO_PYTHON="python3"
+fi
 
 HARNESS=""
 SCOPE="user"
@@ -51,7 +55,7 @@ expand_home() {
 
 read_manifest_value() {
   local file="$1" key="$2" label="$3"
-  python3 - "$file" "$key" "$label" <<'PY'
+  "$REPO_PYTHON" - "$file" "$key" "$label" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -74,7 +78,7 @@ PY
 
 resolve_skill_dir() {
   local name="$1"
-  python3 - "$REPO_DIR" "$name" <<'PY'
+  "$REPO_PYTHON" - "$REPO_DIR" "$name" <<'PY'
 import sys
 from pathlib import Path
 
@@ -91,16 +95,27 @@ PY
 
 add_skill() {
   local name="$1"
+  local plugin_selector=""
   case "$name" in
     skills/*)
       name="${name#skills/}"
       ;;
     plugins/*/skills/*)
-      name="${name##*/}"
+      [[ "$name" =~ ^plugins/([^/]+)/skills/([^/]+)$ ]] || fail "invalid plugin skill path: $1"
+      plugin_selector="$name"
+      name="${BASH_REMATCH[2]}"
+      [[ -f "$REPO_DIR/$plugin_selector/SKILL.md" ]] || fail "missing skill: $1"
       ;;
   esac
   [[ "$name" != */* && "$name" != "." && "$name" != ".." ]] || fail "invalid skill name: $1"
-  resolve_skill_dir "$name" >/dev/null || fail "missing skill: $name"
+  local resolved
+  resolved="$(resolve_skill_dir "$name")" || fail "missing skill: $name"
+  if [[ -n "$plugin_selector" ]]; then
+    local expected
+    expected="$(cd "$REPO_DIR" && realpath "$plugin_selector")"
+    [[ "$resolved" == "$expected" ]] || fail \
+      "plugin path $plugin_selector does not match canonical skill '$name' at $resolved"
+  fi
   if [[ -z "${SEEN_SKILLS[$name]:-}" ]]; then
     SEEN_SKILLS["$name"]=1
     SKILL_NAMES+=("$name")
@@ -117,7 +132,7 @@ expand_bundle_members() {
       [[ -n "$member" ]] || continue
       add_skill "$member"
     done < <(
-      python3 - "$REPO_DIR" "$skill_name" <<'PY'
+      "$REPO_PYTHON" - "$REPO_DIR" "$skill_name" <<'PY'
 import sys
 from pathlib import Path
 
@@ -141,9 +156,22 @@ PY
 }
 
 add_all_skills() {
-  while IFS= read -r skill_md; do
-    add_skill "$(basename "$(dirname "$skill_md")")"
-  done < <(find "$PLUGINS_DIR" -mindepth 4 -maxdepth 4 -type f -path '*/skills/*/SKILL.md' | sort)
+  while IFS= read -r skill_name; do
+    [[ -n "$skill_name" ]] || continue
+    add_skill "$skill_name"
+  done < <(
+    "$REPO_PYTHON" - "$REPO_DIR" <<'PY'
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(sys.argv[1]) / "scripts"))
+from plugin_repository import PluginRepository
+
+repo = PluginRepository.load(Path(sys.argv[1]))
+for skill_id in sorted(repo.skills, key=lambda item: item.value):
+    print(skill_id.value)
+PY
+  )
 }
 
 install_skill() {
@@ -161,7 +189,7 @@ install_skill() {
   if (( DRY_RUN )); then
     echo "copy runtime $src $dst"
   else
-    python3 "$REPO_DIR/scripts/package_skill.py" "$src" "$dst"
+    "$REPO_PYTHON" "$REPO_DIR/scripts/package_skill.py" "$src" "$dst"
   fi
 }
 

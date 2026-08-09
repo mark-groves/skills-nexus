@@ -478,7 +478,11 @@ def discover_repository_skills(repo_root: Path) -> tuple[Path, ...]:
                 (
                     path.parent.resolve()
                     for path in plugins_root.glob("*/skills/*/SKILL.md")
-                    if path.is_file() and not path.is_symlink()
+                    if path.is_file()
+                    and not path.is_symlink()
+                    and not any(
+                        part.startswith(".") for part in path.relative_to(plugins_root).parts
+                    )
                 ),
                 key=lambda path: str(path),
             )

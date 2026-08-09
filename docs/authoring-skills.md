@@ -76,6 +76,6 @@ The validator checks naming, the minimal frontmatter contract, local links,
 path portability, evaluation schemas, runtime packaging, harness manifests, and
 the generated cloud-shape workflow.
 
-The bundled [`skill-architect`](../skills/skill-architect/SKILL.md) provides a
-deeper workflow for designing, auditing, evaluating, and iterating a reusable
-skill.
+The bundled [`skill-architect`](../plugins/skill-architect/skills/skill-architect/SKILL.md)
+provides a deeper workflow for designing, auditing, evaluating, and iterating a
+reusable skill.
