@@ -465,9 +465,33 @@ def parse_review_policy(value: object) -> ReviewPolicy:
 
 
 def discover_repository_skills(repo_root: Path) -> tuple[Path, ...]:
-    """Return publishable skill packages from the repository skill root."""
-    skills_root = repo_root.resolve() / "skills"
-    if not skills_root.is_dir():
+    """Return publishable skill packages from the repository.
+
+    Production layout is Agent Plugin bundles under ``plugins/<bundle>/skills/``.
+    A flat ``skills/<name>/`` tree remains supported for isolated test fixtures.
+    """
+    repo_root = repo_root.resolve()
+    plugins_root = repo_root / "plugins"
+    if plugins_root.is_dir() and not plugins_root.is_symlink():
+        plugin_skills = tuple(
+            sorted(
+                (
+                    path.parent.resolve()
+                    for path in plugins_root.glob("*/skills/*/SKILL.md")
+                    if path.is_file()
+                    and not path.is_symlink()
+                    and not any(
+                        part.startswith(".") for part in path.relative_to(plugins_root).parts
+                    )
+                ),
+                key=lambda path: str(path),
+            )
+        )
+        if plugin_skills:
+            return plugin_skills
+
+    skills_root = repo_root / "skills"
+    if not skills_root.is_dir() or skills_root.is_symlink():
         return ()
     return tuple(
         sorted(
@@ -490,16 +514,12 @@ def resolve_skill(repo_root: Path, selector: str) -> Path:
         if (candidate / "SKILL.md").is_file():
             return candidate
 
-    skills_root = repo_root / "skills"
-    exact = (skills_root / selector).resolve()
-    if (exact / "SKILL.md").is_file():
-        return exact
-
     matches = [path for path in discover_repository_skills(repo_root) if path.name == selector]
     if not matches:
         raise EvalError(
             f"No skill matches {selector!r}. Use a short name such as 'commit', "
-            "a repository path such as 'skills/commit', or a skill directory path."
+            "a repository path such as 'plugins/git-workflow/skills/commit', "
+            "or a skill directory path."
         )
     if len(matches) > 1:
         display = ", ".join(str(path.relative_to(repo_root)) for path in matches)

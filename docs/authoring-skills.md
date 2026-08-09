@@ -1,8 +1,10 @@
 # Authoring skills
 
-Canonical runtime skills live under `skills/<name>/`. Each directory is a
+Canonical runtime skills live under `plugins/<bundle>/skills/<name>/` inside an
+[Agent Plugin](https://agent-plugins.org/) package. Each skill directory is a
 self-contained package that can be copied, packaged, or installed by a
-compatible agent client.
+compatible agent client. Companion skills that should always install together
+share one plugin (`git-workflow`, `drawio`, or `skill-architect`).
 
 Skills Nexus follows the common Agent Skills package shape and authoring
 principles, but its canonical metadata contract is intentionally smaller than
@@ -59,7 +61,8 @@ material under `evals/<name>/` and raw observations under the gitignored
 
 ## Add and validate a skill
 
-1. Create `skills/<name>/SKILL.md` with the minimal metadata contract.
+1. Create `plugins/<bundle>/skills/<name>/SKILL.md` with the minimal metadata
+   contract (add `plugin.json` when introducing a new bundle).
 2. Add only resources used by the runtime workflow.
 3. Create `evals/<name>/evals.json` with trigger and behavior evidence.
 4. Add focused fixtures under `evals/<name>/fixtures/` when needed.
@@ -73,6 +76,6 @@ The validator checks naming, the minimal frontmatter contract, local links,
 path portability, evaluation schemas, runtime packaging, harness manifests, and
 the generated cloud-shape workflow.
 
-The bundled [`skill-architect`](../skills/skill-architect/SKILL.md) provides a
-deeper workflow for designing, auditing, evaluating, and iterating a reusable
-skill.
+The bundled [`skill-architect`](../plugins/skill-architect/skills/skill-architect/SKILL.md)
+provides a deeper workflow for designing, auditing, evaluating, and iterating a
+reusable skill.

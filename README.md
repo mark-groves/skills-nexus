@@ -1,48 +1,50 @@
 # skills-nexus
 
 `skills-nexus` is an evidence-driven foundry for reusable agent workflows. It
-combines a publishable skill collection with tooling to author, evaluate,
-package, deploy, observe, and improve skills across supported agent harnesses.
+packages companion skills as [Agent Plugins](https://agent-plugins.org/) and
+keeps repository-owned evaluation, validation, and improvement tooling beside
+them.
 
 Canonical skills use the widely adopted `SKILL.md` directory conventions and a
 deliberately minimal cross-client metadata core. The repository owns the
-quality, evaluation, and promotion contract; target-specific permissions,
-presentation, hooks, and plugin packaging belong in target integrations.
+quality, evaluation, and promotion contract; client-specific presentation and
+hooks stay outside the portable plugin package.
 
-## Available skills
+## Available plugins
 
-- `cloud-diagram` — create AWS, Azure, GCP, and multi-cloud draw.io diagrams
-- `commit` — prepare intentional Git commits with conventional messages
-- `drawio-shapes` — refresh and inspect draw.io cloud shape catalogs
-- `pr` — draft or publish structured GitHub and Azure DevOps pull requests
-- `skill-architect` — design and improve reusable Agent Skills
+| Plugin | Skills |
+| --- | --- |
+| `git-workflow` | `commit`, `pr` |
+| `drawio` | `cloud-diagram`, `drawio-shapes` |
+| `skill-architect` | `skill-architect` |
 
-## Install a skill
+## Install
 
-Use the community skills installer for normal cross-agent installation:
+Primary path for Cursor: copy or symlink a plugin directory into the local
+plugins root (see Cursor's Agent Plugins docs), for example:
 
 ```bash
-npx skills add mark-groves/skills-nexus --skill commit --agent codex
+ln -s "$PWD/plugins/git-workflow" ~/.cursor/plugins/local/git-workflow
 ```
 
-The repository also includes a local deployment helper for development and
-controlled packaging:
+For harness skill-root installs during development, the local helper expands a
+skill selector to its owning companion bundle:
 
 ```bash
 git clone https://github.com/mark-groves/skills-nexus.git
 cd skills-nexus
-bash scripts/deploy-skills.sh --harness codex --skill commit
+bash scripts/deploy-skills.sh --harness cursor --skill commit
+# installs commit and pr together
 ```
 
-Install every canonical skill:
+Install every canonical skill (all bundles):
 
 ```bash
-bash scripts/deploy-skills.sh --harness codex --all
+bash scripts/deploy-skills.sh --harness cursor --all
 ```
 
 Supported local deployment targets are `agents`, `claude-code`, `codex`,
-`copilot`, `cursor`, and `kiro`. All local deployments install clean runtime
-copies. See [Deployment](docs/deployment.md).
+`copilot`, `cursor`, and `kiro`. See [Deployment](docs/deployment.md).
 
 ## Evaluate and improve skills
 
@@ -96,7 +98,7 @@ evidence contract for planned context reduction and retirement reviews.
 ## Repository layout
 
 ```text
-skills/<name>/       Publishable skill instructions and runtime resources
+plugins/<bundle>/    Agent Plugin packages (plugin.json + skills/<name>/)
 evals/<name>/        Repository-only trigger cases, behavior cases, and fixtures
 harnesses/           Local installation destinations for supported harnesses
 scripts/             Packaging, deployment, evaluation, and observation tools

@@ -1,0 +1,8 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "drawio",
+  "version": "1.0.0",
+  "description": "Draw.io cloud architecture diagrams and shape catalogs.",
+  "repository": "https://github.com/mark-groves/skills-nexus",
+  "license": "MIT"
+}

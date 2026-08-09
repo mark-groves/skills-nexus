@@ -1471,6 +1471,21 @@ class EvalCoreTests(unittest.TestCase):
             self.assertNotIn(embedded.resolve(), discovered)
             self.assertNotIn(nested.resolve(), discovered)
 
+    def test_repository_discovery_excludes_dot_prefixed_plugin_bundles(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo = Path(temp_dir)
+            visible = repo / "plugins" / "drawio" / "skills" / "cloud-diagram"
+            hidden = repo / "plugins" / ".scratch" / "skills" / "hidden-skill"
+            visible.mkdir(parents=True)
+            hidden.mkdir(parents=True)
+            (visible / "SKILL.md").write_text("visible", encoding="utf-8")
+            (hidden / "SKILL.md").write_text("hidden", encoding="utf-8")
+
+            discovered = discover_repository_skills(repo)
+
+            self.assertEqual(discovered, (visible.resolve(),))
+            self.assertNotIn(hidden.resolve(), discovered)
+
     def test_runtime_skill_copy_preserves_canonical_runtime_content(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

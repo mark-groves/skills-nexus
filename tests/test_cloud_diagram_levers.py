@@ -11,8 +11,8 @@ import unittest
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-SCRIPTS = REPO_ROOT / "skills" / "cloud-diagram" / "scripts"
-REFERENCES = REPO_ROOT / "skills" / "cloud-diagram" / "references"
+SCRIPTS = REPO_ROOT / "plugins" / "drawio" / "skills" / "cloud-diagram" / "scripts"
+REFERENCES = REPO_ROOT / "plugins" / "drawio" / "skills" / "cloud-diagram" / "references"
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "cloud-diagram"
 
 if str(SCRIPTS) not in sys.path:
@@ -652,15 +652,47 @@ class CloudDiagramLeversTest(unittest.TestCase):
             text=True,
         )
         self.assertEqual(proc.returncode, 0, proc.stderr)
-        self.assertIn('id="card-pubsub"', proc.stdout)
+        self.assertIn('id="card-pubsub-40x80"', proc.stdout)
         self.assertIn("part=1", proc.stdout)
         self.assertIn("fillColor=#ffffff", proc.stdout)
         self.assertIn('width="160"', proc.stdout)
         self.assertIn("data:image/svg+xml", proc.stdout)
-        self.assertIn('parent="card-pubsub"', proc.stdout)
+        self.assertIn('parent="card-pubsub-40x80"', proc.stdout)
         self.assertIn('x="40"', proc.stdout)
         self.assertIn('y="80"', proc.stdout)
         self.assertIn("Ingest", proc.stdout)
+
+    def test_emit_gcp_service_card_ids_unique_per_coordinates(self) -> None:
+        pubsub = resolve_shape("gcp", "Pub/Sub")
+        assert pubsub is not None
+        first = emit_gcp_service_card(pubsub, x=20, y=20)
+        second = emit_gcp_service_card(pubsub, x=200, y=20)
+        self.assertIn('id="card-pubsub-20x20"', first)
+        self.assertIn('id="card-pubsub-200x20"', second)
+        self.assertNotEqual(first, second)
+
+    def test_validate_rejects_custom_svg_only_gcp_diagram(self) -> None:
+        custom = (
+            "shape=image;image=data:image/svg+xml,"
+            "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjxyZWN0Lz48L3N2Zz4=;"
+        )
+        xml = f"""\
+<mxfile><diagram><mxGraphModel><root>
+  <mxCell id="0" />
+  <mxCell id="1" parent="0" />
+  <mxCell id="badge" value="" style="{custom}" vertex="1" parent="1">
+    <mxGeometry x="20" y="20" width="20" height="20" as="geometry" />
+  </mxCell>
+</root></mxGraphModel></diagram></mxfile>
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            diagram = Path(directory) / "custom-only-gcp.drawio"
+            diagram.write_text(xml, encoding="utf-8")
+            issues = collect_issues(diagram, "gcp")
+        self.assertTrue(
+            any("no provider shape tokens found for gcp" in issue for issue in issues),
+            issues,
+        )
 
 
 if __name__ == "__main__":

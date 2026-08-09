@@ -42,7 +42,7 @@ def is_gcp_service_card_style(style: str | None) -> bool:
 
 
 def card_width_for_label(name: str, category: str) -> int:
-    """Pick a card width in the catalog's 160–190 range from label length.
+    """Pick a card width in the catalog's 160-190 range from label length.
 
     Service Card labels sit to the right of a 30x30 icon, so widths under
     160 clip common names like "Dashboards" / "Cloud Load Balancing".
@@ -91,8 +91,14 @@ def emit_gcp_service_card(
         raise ValueError(f"no GCP data:image token in style for {shape.get('title')!r}")
 
     service_id = str(shape.get("id") or "service").replace(" ", "-")
-    card_id = cell_id or f"card-{service_id}"
-    icon_id = f"icon-{service_id}" if cell_id is None else f"icon-{cell_id.removeprefix('card-')}"
+    if cell_id:
+        card_id = cell_id
+        icon_id = f"icon-{cell_id.removeprefix('card-')}"
+    else:
+        # Coordinates keep repeated cards for the same service unique.
+        coord = f"{x:g}x{y:g}".replace(".", "p")
+        card_id = f"card-{service_id}-{coord}"
+        icon_id = f"icon-{service_id}-{coord}"
     title = str(shape.get("title") or service_id)
     primary = name or title
     secondary = category or title
