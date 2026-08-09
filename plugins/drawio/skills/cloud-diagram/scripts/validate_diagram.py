@@ -30,8 +30,8 @@ PROVIDER_TOKENS = {
     "aws": ("mxgraph.aws4",),
     # azure2 icons plus swimlane architecture groups (Subnet, VNet, …).
     "azure": ("img/lib/azure2", "swimlane;"),
-    # Positive GCP detection still accepts catalog data:image icons and gcp2.
-    "gcp": ("data:image/svg+xml", "mxgraph.gcp2"),
+    # Positive GCP detection requires gcp2 or a catalog-backed data:image icon.
+    "gcp": ("mxgraph.gcp2",),
 }
 
 # Library prefixes owned by each provider. Foreign checks reject other
@@ -98,6 +98,26 @@ def _gcp_catalog_image_tokens() -> frozenset[str]:
                     tokens.add(token)
         _GCP_CATALOG_IMAGE_TOKENS = frozenset(tokens)
     return _GCP_CATALOG_IMAGE_TOKENS
+
+
+def _style_has_provider_evidence(style: str, provider: str) -> bool:
+    if any(token in style for token in PROVIDER_TOKENS.get(provider, ())):
+        return True
+    if provider == "gcp":
+        catalog = _gcp_catalog_image_tokens()
+        return any(match.group(0) in catalog for match in _GCP_IMAGE_TOKEN_RE.finditer(style))
+    return False
+
+
+def _joined_has_provider_evidence(joined_styles: str, provider: str) -> bool:
+    if any(token in joined_styles for token in PROVIDER_TOKENS.get(provider, ())):
+        return True
+    if provider == "gcp":
+        catalog = _gcp_catalog_image_tokens()
+        return any(
+            match.group(0) in catalog for match in _GCP_IMAGE_TOKEN_RE.finditer(joined_styles)
+        )
+    return False
 
 
 def _geometry(cell: ET.Element) -> ET.Element | None:
@@ -185,7 +205,7 @@ def _provider_backed_cells(cells: list[ET.Element], provider: str) -> set[str]:
     backed: set[str] = set()
     for cell in cells:
         style = cell.get("style", "")
-        if not any(token in style for token in PROVIDER_TOKENS[provider]):
+        if not _style_has_provider_evidence(style, provider):
             continue
         cell_id = cell.get("id")
         while cell_id and cell_id not in backed:
@@ -349,7 +369,7 @@ def collect_issues(
     issues.extend(_overlap_issues(cells))
     styles = [cell.get("style", "") for cell in cells]
     joined = "\n".join(styles)
-    if provider and not any(token in joined for token in PROVIDER_TOKENS.get(provider, ())):
+    if provider and not _joined_has_provider_evidence(joined, provider):
         issues.append(f"no provider shape tokens found for {provider}")
     if provider:
         issues.extend(_foreign_provider_issues(joined, provider, set(allow_providers or [])))

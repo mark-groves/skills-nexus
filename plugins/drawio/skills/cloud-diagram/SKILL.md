@@ -19,8 +19,10 @@ Identify:
   or custom.
 - **Services:** only what the user named (plus gateways strictly
   required for the described connectivity).
-- **Filename:** from the description (e.g. `three-tier-aws.drawio`).
-  Default: `architecture.drawio`.
+- **Filename:** a local basename ending in `.drawio` (e.g.
+  `three-tier-aws.drawio`). Default: `architecture.drawio`. Reject path
+  separators and `.` / `..` components. Use this exact value for Write and
+  CLI paths; do not append `.drawio` again.
 
 If the provider is ambiguous, ask.
 
@@ -182,21 +184,22 @@ Follow `xml-rules.md`.
 
 ## Step 7 — Write the file
 
-Write the `.drawio` file in the working directory.
+Write **Filename** (the local `.drawio` basename from Step 1) in the
+working directory.
 
 ## Step 8 — Validate (always)
 
 ```bash
-python3 scripts/validate_diagram.py "<name>.drawio" --provider <aws|azure|gcp> --require-services "<svc1>,<svc2>,..."
+python3 scripts/validate_diagram.py "<Filename>" --provider <aws|azure|gcp> --require-services "<svc1>,<svc2>,..."
 ```
 
 Multi-cloud: validate once per primary provider and allow sibling
 providers so foreign-token checks do not reject intentional mixes:
 
 ```bash
-python3 scripts/validate_diagram.py "<name>.drawio" --provider aws \
+python3 scripts/validate_diagram.py "<Filename>" --provider aws \
   --allow-providers gcp,azure --require-services "<aws services...>"
-python3 scripts/validate_diagram.py "<name>.drawio" --provider gcp \
+python3 scripts/validate_diagram.py "<Filename>" --provider gcp \
   --allow-providers aws,azure --require-services "<gcp services...>"
 ```
 
@@ -211,13 +214,14 @@ helper from the skill root (never `npx drawio-headless` for
 human-review screenshots — it omits provider icons and mangles layout):
 
 ```bash
-bash scripts/export_diagram.sh "<name>.drawio" "<name>.review.svg"
-bash scripts/export_diagram.sh "<name>.drawio" "<name>.review.png" --format png
+bash scripts/export_diagram.sh "<Filename>" "<stem>.review.svg"
+bash scripts/export_diagram.sh "<Filename>" "<stem>.review.png" --format png
 ```
 
-SVG first for complex AWS group diagrams. The helper falls back to
-SVG→`rsvg-convert` when direct PNG export returns empty data on nested
-`mxgraph.aws4.group` canvases.
+Use `<stem>` = Filename without the `.drawio` suffix. SVG first for
+complex AWS group diagrams. The helper falls back to SVG→`rsvg-convert`
+when direct PNG export returns empty data on nested `mxgraph.aws4.group`
+canvases.
 
 If `export_diagram.sh` exits non-zero because drawio is missing, Step 8
 is the quality gate. Say aesthetic export is unavailable. Do **not**
@@ -237,12 +241,12 @@ targeted edits over full regenerate.
 Offer exports when the official CLI exists (same helper):
 
 ```bash
-bash scripts/export_diagram.sh "<name>.drawio" "<name>.drawio.svg"
-bash scripts/export_diagram.sh "<name>.drawio" "<name>.drawio.png" --format png
-bash scripts/export_diagram.sh "<name>.drawio" "<name>.drawio.pdf" --format pdf
+bash scripts/export_diagram.sh "<Filename>" "<stem>.svg"
+bash scripts/export_diagram.sh "<Filename>" "<stem>.png" --format png
+bash scripts/export_diagram.sh "<Filename>" "<stem>.pdf" --format pdf
 ```
 
-Report the `.drawio` path.
+Report the Filename path.
 
 ## Safety rules
 

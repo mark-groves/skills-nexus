@@ -71,6 +71,8 @@ class InstallDrawioCliTests(unittest.TestCase):
         self.assertNotIn("tr -d '[:space:]' <\"${MARKER}\"", fast_path)
 
     def test_stale_marker_does_not_block_idempotent_success(self) -> None:
+        if os.environ.get("RUN_PRIVILEGED_DRAWIO_TESTS") != "1":
+            self.skipTest("set RUN_PRIVILEGED_DRAWIO_TESTS=1 for host installer testing")
         if not Path("/opt/drawio/drawio").is_file():
             self.skipTest("official draw.io not installed in this environment")
         marker = Path("/usr/local/share/drawio-cli.version")

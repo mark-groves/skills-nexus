@@ -24,7 +24,11 @@ Treat these as sandbox-suspect errors:
 - `cannot lock ref`
 - `unable to create directory for .git/refs`
 - `Bad owner or permissions on /etc/ssh/`
-- `Could not read from remote repository`
+
+Do not treat `Could not read from remote repository` as sandbox-suspect;
+that is a Git transport or access failure (credentials, keys, URL, or
+permissions). Escalate it with host permissions only when the harness
+explicitly reports a sandbox restriction for that command.
 
 If a read-only command fails with one of those errors, retry the same command
 once with the required host permissions when the harness permits it before
@@ -181,18 +185,23 @@ safety or ambiguity stops, not review gates.
 
 ## Step 6 — Stage and commit
 
-- Stage specific files by name. Never use `git add -A` or `git add .`.
+- Stage specific files by name with `git add -- <path>`. Never use
+  `git add -A` or `git add .`. The `--` keeps option-shaped or
+  secret-like filenames from being parsed as flags.
 - Do not use interactive staging commands such as `git add -p`.
 - Keep mutating steps as separate Bash invocations. Do not chain
   staging, committing, and verification into one opaque command.
-- Commit using a HEREDOC to preserve formatting:
+- After staging the intended paths, run staged-content and secret
+  checks before committing.
+- Commit using a HEREDOC with a collision-resistant delimiter (or write
+  the message to a temp file and pass `-F`):
 
 ```bash
-git commit -F - <<'EOF'
+git commit -F - <<'COMMIT_MSG_EOF'
 subject line here
 
 Body text here, hard-wrapped at 72 characters.
-EOF
+COMMIT_MSG_EOF
 ```
 
 ## Step 7 — Verify

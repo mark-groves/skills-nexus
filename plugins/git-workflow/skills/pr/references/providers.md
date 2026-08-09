@@ -80,7 +80,7 @@ gh pr create \
   --base "$base" \
   --head "$github_head" \
   --title "$title" \
-  --body-file - <<'EOF'
+  --body-file - <<'PR_BODY_EOF'
 ## Summary
 
 - ...
@@ -88,7 +88,7 @@ gh pr create \
 ## Validation
 
 - ...
-EOF
+PR_BODY_EOF
 ```
 
 `gh pr create --head <owner>:<branch>` does not support an organization as the
@@ -97,7 +97,7 @@ owner. For an organization-owned fork, use the REST create endpoint and include
 target:
 
 ```bash
-body=$(cat <<'EOF'
+body=$(cat <<'PR_BODY_EOF'
 ## Summary
 
 - ...
@@ -105,7 +105,7 @@ body=$(cat <<'EOF'
 ## Validation
 
 - ...
-EOF
+PR_BODY_EOF
 )
 gh api --hostname "$github_host" --method POST \
   "repos/$github_target_owner/$github_target_name/pulls" \
@@ -200,7 +200,7 @@ Create the PR. Use a shell variable so multiline Markdown reaches Azure DevOps
 unchanged:
 
 ```bash
-body=$(cat <<'EOF'
+body=$(cat <<'PR_BODY_EOF'
 ## Summary
 
 - ...
@@ -208,7 +208,7 @@ body=$(cat <<'EOF'
 ## Validation
 
 - ...
-EOF
+PR_BODY_EOF
 )
 az repos pr create \
   --organization "$azure_organization" \

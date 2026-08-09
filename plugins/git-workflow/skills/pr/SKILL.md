@@ -81,14 +81,19 @@ Select `base_remote`, the repository that owns the PR target, independently:
 This separation is required in fork workflows: a branch may push to `origin`
 while its PR targets `upstream/main`.
 
-Read `push_fetch_url` with `git remote get-url <push_remote>`, the actual push
-destination as `push_url` with `git remote get-url --push <push_remote>`, and
-the target fetch URL as `base_url` with
-`git remote get-url <base_remote>`. Keep `push_fetch_url` and `push_url`
-distinct. A configured `pushurl` overrides the fetch URL for transport,
-provider-source derivation, and host compatibility checks. In command-draft
-mode, label both values before the commands. Detect the PR provider from
-`base_url`, preferring an explicit provider named by the user:
+Read `push_fetch_url` with `git remote get-url <push_remote>`, and the target
+fetch URL as `base_url` with `git remote get-url <base_remote>`. Collect every
+configured push destination with
+`git config --get-all remote.<push_remote>.pushurl`; when that list is empty,
+use `git remote get-url --push <push_remote>` as the sole push URL. Require
+exactly one push destination, or validate every destination against the same
+provider-source and host compatibility checks before publishing. Do not treat
+the first `get-url --push` result as complete when multiple `pushurl` values
+exist. Keep `push_fetch_url` and the validated push URL(s) distinct. A
+configured `pushurl` overrides the fetch URL for transport, provider-source
+derivation, and host compatibility checks. In command-draft mode, label both
+values before the commands. Detect the PR provider from `base_url`, preferring
+an explicit provider named by the user:
 
 - GitHub: `github.com`, a host beginning with `github.`, or a host already
   configured for GitHub CLI
