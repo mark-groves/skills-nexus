@@ -21,8 +21,12 @@ non-obvious caveats are noted here.
   `actionlint-py` pip package inside `.venv`. ShellCheck is a system binary
   (`apt install shellcheck`) captured in the VM snapshot, not a pip dependency, so the
   script fails if it is missing.
-- Running the product: `bash scripts/deploy-skills.sh --harness <target> --skill <name>`
-  (or `--all`). With default user scope this installs into the selected harness's
+- Running the product: primary Cursor path is copying an Agent Plugin from
+  `plugins/<bundle>/` into `~/.cursor/plugins/local/<bundle>/` (see
+  `docs/deployment.md` and `docs/cloud-agent-ops.md`). Prefer `rsync` over
+  external symlinks. For harness skill-root installs during development:
+  `bash scripts/deploy-skills.sh --harness <target> --skill <name>` (or
+  `--all`). With default user scope this installs into the selected harness's
   `user_install_root` from `harnesses/<target>.json` (for example `~/.agents/skills` for
   `agents` and `codex`, `~/.claude/skills`, `~/.copilot/skills`, `~/.cursor/skills`,
   `~/.kiro/skills`). These all live under the home directory, outside the repo, so

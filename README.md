@@ -20,11 +20,12 @@ hooks stay outside the portable plugin package.
 
 ## Install
 
-Primary path for Cursor: copy or symlink a plugin directory into the local
-plugins root (see Cursor's Agent Plugins docs), for example:
+Primary path for Cursor: copy a plugin directory into the local plugins root
+(see Cursor's Agent Plugins docs). Prefer `rsync` over repo symlinks:
 
 ```bash
-ln -s "$PWD/plugins/git-workflow" ~/.cursor/plugins/local/git-workflow
+mkdir -p ~/.cursor/plugins/local
+rsync -a --delete "$PWD/plugins/git-workflow/" ~/.cursor/plugins/local/git-workflow/
 ```
 
 For harness skill-root installs during development, the local helper expands a
@@ -109,6 +110,8 @@ tests/               Repository tooling tests
 Repository guides:
 
 - [Authoring skills](docs/authoring-skills.md)
+- [Deployment](docs/deployment.md)
+- [Cloud Agent ops](docs/cloud-agent-ops.md)
 - [Evaluating skills](docs/evaluating-skills.md)
 - [Continuous improvement](docs/continuous-improvement.md)
 - [Capability optimisation](docs/capability-optimisation.md)

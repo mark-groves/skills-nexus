@@ -29,7 +29,9 @@ the proposed reduction preserves supported behavior. See the
 [capability-optimisation contract](capability-optimisation.md) for the context
 budgets, model profiles, skill universes, evidence gates, verdicts, and
 retirement criteria. That contract describes planned tooling and does not
-change current evaluator behavior.
+change current evaluator behavior. Cursor Cloud Agents follow the
+[Cloud Agent ops](cloud-agent-ops.md) playbook when turning accepted evidence
+into a reviewed pull request.
 
 ## Observation boundary
 
