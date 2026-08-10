@@ -20,8 +20,8 @@ hooks stay outside the portable plugin package.
 
 ## Install
 
-Primary path for Cursor: copy a plugin directory into the local plugins root
-(see Cursor's Agent Plugins docs). Prefer `rsync` over repo symlinks:
+For Cursor, copy a plugin into `~/.cursor/plugins/local/` with `rsync`. Do not
+symlink out of the repo; Cursor rejects that.
 
 ```bash
 mkdir -p ~/.cursor/plugins/local
@@ -111,7 +111,6 @@ Repository guides:
 
 - [Authoring skills](docs/authoring-skills.md)
 - [Deployment](docs/deployment.md)
-- [Cloud Agent ops](docs/cloud-agent-ops.md)
 - [Evaluating skills](docs/evaluating-skills.md)
 - [Continuous improvement](docs/continuous-improvement.md)
 - [Capability optimisation](docs/capability-optimisation.md)

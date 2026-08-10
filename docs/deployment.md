@@ -6,9 +6,8 @@ skills under `skills/<name>/`.
 
 ## Cursor Agent Plugins (primary)
 
-Install one plugin at a time under `~/.cursor/plugins/local/`. Prefer a real
-directory copy; Cursor often rejects symlinks whose target sits outside that
-tree.
+Copy each plugin into `~/.cursor/plugins/local/`. Use a real directory, not a
+symlink into the repo. Cursor rejects those external symlink targets.
 
 ```bash
 mkdir -p ~/.cursor/plugins/local
@@ -17,13 +16,9 @@ rsync -a --delete "$PWD/plugins/drawio/" ~/.cursor/plugins/local/drawio/
 rsync -a --delete "$PWD/plugins/skill-architect/" ~/.cursor/plugins/local/skill-architect/
 ```
 
-Reload the Cursor window after copying. Confirm load in Customize → Plugins or
-in the Cursor Plugins log (`loadUserLocalPlugin <name> loaded`). Installing
-`git-workflow` provides both `commit` and `pr`; installing `drawio` provides
-`cloud-diagram` and `drawio-shapes`.
-
-Cloud Agent improvement flow (branch, checks, PR, post-merge refresh) is in
-[cloud-agent-ops](cloud-agent-ops.md).
+Reload the Cursor window. Check Customize → Plugins, or the Cursor Plugins log
+for `loadUserLocalPlugin <name> loaded`. `git-workflow` loads `commit` and
+`pr`; `drawio` loads `cloud-diagram` and `drawio-shapes`.
 
 ## Local harness skill-root helper
 

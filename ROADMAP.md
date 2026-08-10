@@ -101,7 +101,6 @@ validation remains the quality floor; live Codex matrices are demoted.
 - [x] Move canonical skills under `plugins/<bundle>/skills/<name>/` with
       manifests; rewire discovery, validation, and deploy.
 - [x] Document Cursor Agent Plugin install as the primary path.
-- [x] Add Cloud Agent ops guidance for skill improvement PRs.
 
 ## Phase 6 — Promote and learn
 
