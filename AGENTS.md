@@ -3,8 +3,6 @@
 This file is caveats only. Standard commands live in `README.md` and
 `docs/development.md`.
 
-- Quality tools live in `.venv`. They are not on the system `PATH` until you
-  activate it (`. .venv/bin/activate`) or call them as `.venv/bin/<tool>`.
 - `bash scripts/check-quality.sh` needs ShellCheck as a system binary, not from
   pip. `actionlint` comes from the `actionlint-py` package inside `.venv`.
   Missing ShellCheck fails the script.
