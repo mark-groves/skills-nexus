@@ -87,11 +87,11 @@ python3 scripts/ablate_skill_components.py \
 Evaluation suites are repository-only evidence. They are stored separately
 from runtime skills and are never included in packaged copies.
 
-The first learning-loop component records bounded, structured observations from
-real executions into a private inbox. Planned stages validate and triage that
-evidence, turn accepted reports into regression cases, and compare candidate
-changes against the current skill before a reviewed pull request can be
-promoted. See [Continuous improvement](docs/continuous-improvement.md) and the
+The learning loop records bounded, structured observations from real executions
+into a private inbox, then redacts, classifies, and either rejects them or
+promotes accepted evidence into `evals.json`. Candidate comparison against the
+current skill remains the next proving-grounds stage before a reviewed pull
+request. See [Continuous improvement](docs/continuous-improvement.md) and the
 tracked [roadmap](ROADMAP.md). The
 [Capability optimisation](docs/capability-optimisation.md) guide defines the
 evidence contract for planned context reduction and retirement reviews.

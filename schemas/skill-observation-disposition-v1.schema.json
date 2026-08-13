@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/mark-groves/skills-nexus/schemas/skill-observation-disposition-v1.schema.json",
+  "title": "Skills Nexus observation disposition v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "observation_id",
+    "skill_id",
+    "recorded_at",
+    "redaction_rules_version",
+    "fingerprint",
+    "classification",
+    "disposition",
+    "reason"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "observation_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "pattern": "^(?!\\.\\.?$)[^/\\\\\\u0000]+$"
+    },
+    "skill_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "pattern": "^(?!\\.\\.?$)[^/\\\\\\u0000]+$"
+    },
+    "recorded_at": {"type": "string", "minLength": 1, "maxLength": 100},
+    "redaction_rules_version": {"const": 1},
+    "fingerprint": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "classification": {
+      "enum": [
+        "instruction",
+        "trigger",
+        "script",
+        "reference",
+        "deployment",
+        "environment"
+      ]
+    },
+    "disposition": {"enum": ["open", "accept", "reject", "insufficient"]},
+    "reason": {"type": ["string", "null"], "minLength": 1, "maxLength": 2000}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"disposition": {"const": "open"}}},
+      "then": {"properties": {"reason": {"type": "null"}}},
+      "else": {"properties": {"reason": {"type": "string", "minLength": 1, "maxLength": 2000}}}
+    }
+  ]
+}

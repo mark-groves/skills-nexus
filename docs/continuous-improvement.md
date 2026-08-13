@@ -102,6 +102,8 @@ The versioned draft contract is also published as
 [`schemas/skill-observation-draft-v1.schema.json`](../schemas/skill-observation-draft-v1.schema.json).
 The recorder adds a generated observation ID and timestamp, `trust: untrusted`,
 the canonical runtime SHA-256 digest, and the current Git commit/dirty state.
+Stored inbox records match
+[`schemas/skill-observation-stored-v1.schema.json`](../schemas/skill-observation-stored-v1.schema.json).
 Harness adapters should populate their real harness, version, model, invocation,
 activation, and external run identifier rather than guessing.
 
@@ -114,19 +116,70 @@ or personal data.
 Capture is opt-in until a harness adapter provides an explicit consent and
 retention policy. Redact secrets and identifying data before recording. Keep the
 private inbox local, restrict its retention, and delete records that are not
-accepted for triage. A later triage stage must validate and redact again; schema
-validation alone does not make task content safe.
+accepted for triage. Schema validation alone does not make task content safe.
+Triage validates the stored record and redacts it again before any classification
+or promotion.
 
 ## Triage
 
-Triage validates the observation before changing a skill:
+Triage does not edit the inbox file or `SKILL.md`. It writes a redacted copy and
+a disposition under `.skill-feedback/triage/`, which Git ignores. Classify first.
+Matching fingerprints are the cluster. Query them with `cluster_for` over
+disposition records that share a fingerprint. There is no separate cluster CLI.
+The hash covers the redacted skill id and the signal kind, instruction pointer,
+observation text, and diagnosis. It ignores outcome, task metadata, suggested
+changes, runtime fields, evidence excerpts, and diagnosis confidence.
 
-- confirm the reported skill revision and environment;
-- remove secrets, personal data, unrelated task content, and unsupported claims;
-- deduplicate the report against existing observations and evals;
-- classify the likely change surface: trigger description, instructions, script,
-  reference, packaging, harness adapter, or environment;
-- decide whether the behavior is reproducible and important enough to retain.
+Classifications are `instruction`, `trigger`, `script`, `reference`,
+`deployment`, and `environment`. Disposition records match
+[`schemas/skill-observation-disposition-v1.schema.json`](../schemas/skill-observation-disposition-v1.schema.json).
+
+```bash
+python3 scripts/classify_observation.py \
+  --input .skill-feedback/inbox/commit/<observation-id>.json \
+  --class instruction
+```
+
+To inspect a redacted copy without classifying:
+
+```bash
+python3 scripts/redact_observation.py \
+  --input .skill-feedback/inbox/commit/<observation-id>.json
+```
+
+If the report is not reproducible, or is not a skill defect, close it without
+editing `evals.json`:
+
+```bash
+python3 scripts/reject_observation.py \
+  --input .skill-feedback/inbox/commit/<observation-id>.json \
+  --disposition insufficient \
+  --reason "Excerpt does not reproduce against the current skill."
+```
+
+`--disposition` may be `reject` or `insufficient`. The default is `reject`.
+
+If the behavior is reproducible, promote a trigger case, a behavior case, or
+both into `evals/<skill>/evals.json`. When `capability-case-groups.json` exists,
+new case ids go to the `development` group unless you pass `--group`. Promotion
+does not edit the skill. `deployment` and `environment` classifications cannot
+be promoted.
+
+```bash
+python3 scripts/promote_observation.py \
+  --input .skill-feedback/inbox/commit/<observation-id>.json \
+  --reason "Stopping condition is ambiguous and reproducible." \
+  --trigger-query "split these changes into two commits" \
+  --should-trigger true \
+  --behavior-prompt "/commit split the staged Python and docs changes" \
+  --expected-behavior "Stops after one split decision and does not regroup." \
+  --check "States the split stop condition once"
+```
+
+`load_eval_spec` must accept the updated suite before the write replaces
+`evals.json`. Fixture paths must also resolve under the skill's eval directory,
+the same rule `validate_repo` uses. Identical trigger or behavior content reuses
+the existing case id instead of appending a duplicate.
 
 Some observations should result only in a new eval, a deployment fix, or no
 change. More instructions are not the default answer to every failed run.

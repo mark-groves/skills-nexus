@@ -10,6 +10,8 @@ from .core import (
     ObservationError,
     build_observation,
     load_draft,
+    load_stored_observation,
+    safe_path_segment,
     write_observation,
 )
 
@@ -23,5 +25,7 @@ __all__ = [
     "ObservationError",
     "build_observation",
     "load_draft",
+    "load_stored_observation",
+    "safe_path_segment",
     "write_observation",
 ]

@@ -34,7 +34,7 @@ def main(argv: list[str] | None = None) -> int:
         skill_dir = resolve_skill(repo_root, args.skill)
         if skill_dir not in set(discover_repository_skills(repo_root)):
             raise ObservationError(
-                f"observation skill must be canonical under {repo_root / 'skills'}: {skill_dir}"
+                f"observation skill must be a canonical repository skill: {skill_dir}"
             )
         draft = load_draft(args.input)
         observation = build_observation(draft, skill_dir=skill_dir, repo_root=repo_root)

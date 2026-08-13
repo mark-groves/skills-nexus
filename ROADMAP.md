@@ -26,12 +26,12 @@ verified contract; an unchecked item remains planned work.
 
 ## Phase 3 — Triage evidence
 
-- [ ] Validate and redact observations before analysis.
-- [ ] Deduplicate and cluster repeated obstacles and confusion reports.
-- [ ] Classify reports as instruction, trigger, script, reference, deployment, or
+- [x] Validate and redact observations before analysis.
+- [x] Deduplicate and cluster repeated obstacles and confusion reports.
+- [x] Classify reports as instruction, trigger, script, reference, deployment, or
       environment issues.
-- [ ] Promote accepted evidence into a reproducible regression case.
-- [ ] Reject non-reproducible or unsupported diagnoses without modifying a skill.
+- [x] Promote accepted evidence into a reproducible regression case.
+- [x] Reject non-reproducible or unsupported diagnoses without modifying a skill.
 
 ## Phase 4 — Prove candidate improvements
 

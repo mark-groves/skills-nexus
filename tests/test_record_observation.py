@@ -27,6 +27,7 @@ from skill_observation import (  # noqa: E402
     ObservationError,
     build_observation,
     load_draft,
+    load_stored_observation,
     write_observation,
 )
 
@@ -108,6 +109,96 @@ class ObservationContractTests(unittest.TestCase):
             set(signal["properties"]["diagnosis_confidence"]["enum"]),
             CONFIDENCE | {None},
         )
+
+    def test_published_stored_schema_matches_validator_contract(self) -> None:
+        schema = json.loads(
+            (REPO_DIR / "schemas" / "skill-observation-stored-v1.schema.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        properties = schema["properties"]
+        signal = properties["signals"]["items"]
+        skill = properties["skill"]
+
+        self.assertEqual(set(schema["required"]), set(properties))
+        self.assertEqual(properties["schema_version"]["const"], 1)
+        self.assertEqual(properties["trust"]["const"], "untrusted")
+        self.assertEqual(skill["properties"]["runtime_digest_sha256"]["pattern"], "^[0-9a-f]{64}$")
+        self.assertEqual(skill["properties"]["id"]["pattern"], "^(?!\\.\\.?$)[^/\\\\\\u0000]+$")
+        self.assertEqual(properties["observation_id"]["pattern"], "^(?!\\.\\.?$)[^/\\\\\\u0000]+$")
+        self.assertEqual(set(properties["source"]["properties"]["kind"]["enum"]), SOURCE_KINDS)
+        self.assertEqual(
+            set(properties["runtime"]["properties"]["invocation"]["enum"]), INVOCATIONS
+        )
+        self.assertEqual(
+            set(properties["runtime"]["properties"]["activation"]["enum"]), ACTIVATIONS
+        )
+        self.assertEqual(set(properties["outcome"]["enum"]), OUTCOMES)
+        self.assertEqual(set(signal["properties"]["kind"]["enum"]), SIGNAL_KINDS)
+        self.assertEqual(
+            set(signal["properties"]["diagnosis_confidence"]["enum"]),
+            CONFIDENCE | {None},
+        )
+
+    def test_load_stored_observation_accepts_recorder_output(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            skill = self.write_skill(root)
+            draft = load_draft(self.write_draft(root, valid_draft()))
+            observation = build_observation(draft, skill_dir=skill, repo_root=root)
+            destination = write_observation(observation, root / "inbox")
+            loaded = load_stored_observation(destination)
+
+        self.assertEqual(loaded["observation_id"], observation["observation_id"])
+        self.assertEqual(loaded["recorded_at"], observation["recorded_at"])
+        self.assertEqual(loaded["trust"], "untrusted")
+        self.assertEqual(loaded["skill"], observation["skill"])
+        self.assertEqual(loaded["source"], draft["source"])
+        self.assertEqual(loaded["outcome"], draft["outcome"])
+        self.assertEqual(loaded["signals"], draft["signals"])
+
+    def test_load_stored_observation_rejects_draft_shape(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            path = self.write_draft(root, valid_draft())
+            with self.assertRaisesRegex(ObservationError, "missing"):
+                load_stored_observation(path)
+
+    def test_load_stored_observation_rejects_trust_other_than_untrusted(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            skill = self.write_skill(root)
+            draft = load_draft(self.write_draft(root, valid_draft()))
+            observation = build_observation(draft, skill_dir=skill, repo_root=root)
+            observation["trust"] = "trusted"
+            path = root / "stored.json"
+            path.write_text(json.dumps(observation), encoding="utf-8")
+            with self.assertRaisesRegex(ObservationError, 'trust must be "untrusted"'):
+                load_stored_observation(path)
+
+    def test_load_stored_observation_rejects_extra_fields(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            skill = self.write_skill(root)
+            draft = load_draft(self.write_draft(root, valid_draft()))
+            observation = build_observation(draft, skill_dir=skill, repo_root=root)
+            observation["raw_transcript"] = "untrusted content"
+            path = root / "stored.json"
+            path.write_text(json.dumps(observation), encoding="utf-8")
+            with self.assertRaisesRegex(ObservationError, "unexpected raw_transcript"):
+                load_stored_observation(path)
+
+    def test_load_stored_observation_rejects_unsafe_skill_id(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            skill = self.write_skill(root)
+            draft = load_draft(self.write_draft(root, valid_draft()))
+            observation = build_observation(draft, skill_dir=skill, repo_root=root)
+            observation["skill"]["id"] = str(root / "escaped")
+            path = root / "stored.json"
+            path.write_text(json.dumps(observation), encoding="utf-8")
+            with self.assertRaisesRegex(ObservationError, "safe path segment"):
+                load_stored_observation(path)
 
     def test_load_draft_rejects_arbitrary_fields(self) -> None:
         payload = valid_draft()

@@ -73,6 +73,14 @@ def _text(
     return result
 
 
+def safe_path_segment(value: object, location: str, *, maximum: int) -> str:
+    result = _text(value, location, maximum=maximum)
+    assert result is not None
+    if result in {".", ".."} or "/" in result or "\\" in result or "\0" in result:
+        raise ObservationError(f"{location} must be a safe path segment")
+    return result
+
+
 def _enum(value: object, allowed: set[str], location: str) -> str:
     if not isinstance(value, str) or value not in allowed:
         raise ObservationError(f"{location} must be one of: {', '.join(sorted(allowed))}")
@@ -85,32 +93,54 @@ def _optional_enum(value: object, allowed: set[str], location: str) -> str | Non
     return _enum(value, allowed, location)
 
 
-def load_draft(path: Path) -> dict[str, Any]:
+DRAFT_KEYS = {
+    "schema_version",
+    "source",
+    "runtime",
+    "task",
+    "outcome",
+    "signals",
+    "suggested_change",
+}
+STORED_KEYS = DRAFT_KEYS | {
+    "observation_id",
+    "recorded_at",
+    "trust",
+    "skill",
+}
+
+
+def _read_json_object(path: Path, label: str) -> dict[str, Any]:
     try:
         size = path.stat().st_size
     except OSError as exc:
-        raise ObservationError(f"could not inspect observation draft: {exc}") from exc
+        raise ObservationError(f"could not inspect {label}: {exc}") from exc
     if size > MAX_INPUT_BYTES:
-        raise ObservationError(f"observation draft exceeds {MAX_INPUT_BYTES} bytes")
+        raise ObservationError(f"{label} exceeds {MAX_INPUT_BYTES} bytes")
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
-        raise ObservationError(f"could not read observation draft: {exc}") from exc
+        raise ObservationError(f"could not read {label}: {exc}") from exc
+    return _object(payload, label)
 
-    draft = _object(payload, "draft")
-    _exact_keys(
-        draft,
-        {
-            "schema_version",
-            "source",
-            "runtime",
-            "task",
-            "outcome",
-            "signals",
-            "suggested_change",
-        },
-        "draft",
-    )
+
+def _optional_bool(value: object, location: str) -> bool | None:
+    if value is None:
+        return None
+    if not isinstance(value, bool):
+        raise ObservationError(f"{location} must be a boolean or null")
+    return value
+
+
+def _sha256_hex(value: object, location: str) -> str:
+    digest = _text(value, location, maximum=64)
+    assert digest is not None
+    if len(digest) != 64 or any(char not in "0123456789abcdef" for char in digest):
+        raise ObservationError(f"{location} must be 64 lowercase hex characters")
+    return digest
+
+
+def _normalize_draft(draft: dict[str, Any]) -> dict[str, Any]:
     if draft["schema_version"] != 1:
         raise ObservationError("schema_version must be 1")
 
@@ -219,6 +249,69 @@ def load_draft(path: Path) -> dict[str, Any]:
     }
 
 
+def _normalize_skill(skill: object) -> dict[str, Any]:
+    skill_object = _object(skill, "skill")
+    _exact_keys(
+        skill_object,
+        {"id", "runtime_digest_sha256", "repository_commit", "repository_dirty"},
+        "skill",
+    )
+    return {
+        "id": safe_path_segment(skill_object["id"], "skill.id", maximum=200),
+        "runtime_digest_sha256": _sha256_hex(
+            skill_object["runtime_digest_sha256"], "skill.runtime_digest_sha256"
+        ),
+        "repository_commit": _text(
+            skill_object["repository_commit"],
+            "skill.repository_commit",
+            maximum=200,
+            nullable=True,
+        ),
+        "repository_dirty": _optional_bool(
+            skill_object["repository_dirty"], "skill.repository_dirty"
+        ),
+    }
+
+
+def load_draft(path: Path) -> dict[str, Any]:
+    draft = _read_json_object(path, "observation draft")
+    _exact_keys(draft, DRAFT_KEYS, "draft")
+    return _normalize_draft(draft)
+
+
+def load_stored_observation(path: Path) -> dict[str, Any]:
+    observation = _read_json_object(path, "stored observation")
+    _exact_keys(observation, STORED_KEYS, "stored observation")
+    if observation["trust"] != "untrusted":
+        raise ObservationError('trust must be "untrusted"')
+    draft = _normalize_draft(
+        {
+            "schema_version": observation["schema_version"],
+            "source": observation["source"],
+            "runtime": observation["runtime"],
+            "task": observation["task"],
+            "outcome": observation["outcome"],
+            "signals": observation["signals"],
+            "suggested_change": observation["suggested_change"],
+        }
+    )
+    return {
+        "schema_version": draft["schema_version"],
+        "observation_id": safe_path_segment(
+            observation["observation_id"], "observation_id", maximum=200
+        ),
+        "recorded_at": _text(observation["recorded_at"], "recorded_at", maximum=100),
+        "trust": "untrusted",
+        "source": draft["source"],
+        "skill": _normalize_skill(observation["skill"]),
+        "runtime": draft["runtime"],
+        "task": draft["task"],
+        "outcome": draft["outcome"],
+        "signals": draft["signals"],
+        "suggested_change": draft["suggested_change"],
+    }
+
+
 def _git_value(repo_root: Path, *args: str) -> str | None:
     result = subprocess.run(
         ["git", *args],
@@ -260,13 +353,14 @@ def write_observation(observation: dict[str, Any], output_root: Path) -> Path:
     for component in (absolute_root, *absolute_root.parents):
         if component.is_symlink():
             raise ObservationError(f"observation output path may not contain symlinks: {component}")
-    skill_name = observation["skill"]["id"]
+    skill_name = safe_path_segment(observation["skill"]["id"], "skill.id", maximum=200)
+    observation_id = safe_path_segment(observation["observation_id"], "observation_id", maximum=200)
     destination_dir = output_root / skill_name
     destination_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
     if destination_dir.is_symlink():
         raise ObservationError(f"observation destination may not be a symlink: {destination_dir}")
     destination_dir.chmod(0o700)
-    destination = destination_dir / f"{observation['observation_id']}.json"
+    destination = destination_dir / f"{observation_id}.json"
     payload = (json.dumps(observation, indent=2, sort_keys=True) + "\n").encode()
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
     descriptor = os.open(destination, flags, 0o600)
