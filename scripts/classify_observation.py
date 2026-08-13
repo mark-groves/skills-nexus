@@ -12,6 +12,7 @@ from skill_triage import (
     CLASSIFICATIONS,
     build_disposition,
     redact_observation,
+    refuse_closed_disposition,
     write_disposition,
     write_redacted_observation,
 )
@@ -42,6 +43,11 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         observation = load_stored_observation(args.input)
+        refuse_closed_disposition(
+            args.output_root,
+            observation["skill"]["id"],
+            observation["observation_id"],
+        )
         redacted, _counts = redact_observation(observation)
         write_redacted_observation(redacted, args.output_root)
         record = build_disposition(redacted, classification=args.classification)

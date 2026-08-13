@@ -29,6 +29,7 @@ from skill_triage import (  # noqa: E402
     DISPOSITIONS,
     REDACTION_RULES_VERSION,
     build_disposition,
+    close_disposition,
     cluster_for,
     fingerprint_observation,
     iter_dispositions,
@@ -336,6 +337,63 @@ class ObservationClassificationTests(unittest.TestCase):
         self.assertEqual(status, 1)
         self.assertIn("missing", error_text)
         self.assertFalse(triage_exists)
+
+    def test_cli_refuses_closed_disposition_without_replacing_redacted(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            observation = self.stored_observation(root)
+            inbox = write_observation(observation, root / "inbox")
+            triage = root / "triage"
+            with contextlib.redirect_stdout(io.StringIO()):
+                classify_status = classify_observation_cli.main(
+                    [
+                        "--input",
+                        str(inbox),
+                        "--class",
+                        "instruction",
+                        "--output-root",
+                        str(triage),
+                    ]
+                )
+            write_disposition(
+                close_disposition(
+                    load_disposition(next((triage / "demo").glob("*.disposition.json"))),
+                    disposition="accept",
+                    reason="Already promoted.",
+                ),
+                triage,
+            )
+            redacted_path = next(
+                path
+                for path in (triage / "demo").glob("*.json")
+                if not path.name.endswith(".disposition.json")
+            )
+            redacted_before = redacted_path.read_bytes()
+            rewritten = json.loads(inbox.read_text(encoding="utf-8"))
+            rewritten["signals"][0]["observation"] = "A different failure mode."
+            inbox.write_text(json.dumps(rewritten, indent=2) + "\n", encoding="utf-8")
+            stderr = io.StringIO()
+            with contextlib.redirect_stderr(stderr):
+                status = classify_observation_cli.main(
+                    [
+                        "--input",
+                        str(inbox),
+                        "--class",
+                        "script",
+                        "--output-root",
+                        str(triage),
+                    ]
+                )
+            loaded = load_disposition(next((triage / "demo").glob("*.disposition.json")))
+            redacted_after = redacted_path.read_bytes()
+            error_text = stderr.getvalue()
+
+        self.assertEqual(classify_status, 0)
+        self.assertEqual(status, 1)
+        self.assertIn("already has disposition accept", error_text)
+        self.assertEqual(loaded["disposition"], "accept")
+        self.assertEqual(loaded["classification"], "instruction")
+        self.assertEqual(redacted_after, redacted_before)
 
 
 if __name__ == "__main__":

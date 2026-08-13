@@ -198,18 +198,52 @@ def write_disposition(record: dict[str, Any], output_root: Path) -> Path:
     return write_private_json(normalized, destination)
 
 
-def require_open_disposition(
+def load_optional_disposition(
     output_root: Path, skill_id: str, observation_id: str
-) -> dict[str, Any]:
+) -> dict[str, Any] | None:
     destination = disposition_path(output_root, skill_id, observation_id)
     if not destination.exists():
+        return None
+    return load_disposition(destination)
+
+
+def refuse_closed_disposition(output_root: Path, skill_id: str, observation_id: str) -> None:
+    record = load_optional_disposition(output_root, skill_id, observation_id)
+    if record is not None and record["disposition"] != "open":
+        raise ObservationError(
+            f"observation {observation_id} already has disposition {record['disposition']}"
+        )
+
+
+def require_open_disposition(
+    output_root: Path,
+    observation: dict[str, Any],
+) -> dict[str, Any]:
+    skill = observation.get("skill")
+    skill_id = skill.get("id") if isinstance(skill, dict) else None
+    observation_id = observation.get("observation_id")
+    if not isinstance(skill_id, str) or not isinstance(observation_id, str):
+        raise ObservationError("observation must include skill.id and observation_id")
+    record = load_optional_disposition(output_root, skill_id, observation_id)
+    if record is None:
         raise ObservationError(
             f"observation {observation_id} has no open disposition; classify it first"
         )
-    record = load_disposition(destination)
     if record["disposition"] != "open":
         raise ObservationError(
             f"observation {observation_id} already has disposition {record['disposition']}"
+        )
+    expected_fingerprint = fingerprint_observation(observation)
+    if record["fingerprint"] != expected_fingerprint:
+        raise ObservationError(
+            f"observation {observation_id} disposition fingerprint does not match "
+            "the current observation; reclassify it first"
+        )
+    recorded_at = observation.get("recorded_at")
+    if record["recorded_at"] != recorded_at:
+        raise ObservationError(
+            f"observation {observation_id} disposition recorded_at does not match "
+            "the current observation; reclassify it first"
         )
     return record
 

@@ -18,10 +18,11 @@ _TRIGGER_INPUT_KEYS = {"query", "should_trigger"}
 _BEHAVIOR_INPUT_KEYS = {"prompt", "expected_behavior", "fixtures", "checks"}
 
 
-def next_case_id(cases: list[dict[str, Any]]) -> int:
+def next_case_id(cases: list[Any]) -> int:
     numeric: list[int] = []
-    taken = {str(item.get("id", "")).strip() for item in cases}
-    for item in cases:
+    objects = [item for item in cases if isinstance(item, dict)]
+    taken = {str(item.get("id", "")).strip() for item in objects}
+    for item in objects:
         raw = item.get("id")
         if isinstance(raw, bool):
             continue
@@ -155,11 +156,12 @@ def _write_repo_json(payload: dict[str, Any], destination: Path) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
     temporary = destination.with_name(f".{destination.name}.tmp")
     flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
-    descriptor = os.open(temporary, flags, 0o644)
+    descriptor = os.open(temporary, flags, 0o600)
     try:
         with os.fdopen(descriptor, "wb") as handle:
             handle.write(encoded)
         os.replace(temporary, destination)
+        destination.chmod(0o600)
     except Exception:
         temporary.unlink(missing_ok=True)
         raise
@@ -248,6 +250,7 @@ def promote_into_eval_suite(
         payload, trigger=trigger, behavior=behavior
     )
     groups_path = evals_root / skill_id / "capability-case-groups.json"
+    groups_payload: dict[str, Any] | None = None
     updated_groups: dict[str, Any] | None = None
     if groups_path.is_file():
         try:
@@ -273,8 +276,8 @@ def promote_into_eval_suite(
         raise ObservationError(f"promoted eval suite is invalid: {exc}") from exc
     if new_trigger_ids or new_behavior_ids:
         _write_repo_json(updated, eval_path)
-        if updated_groups is not None:
-            _write_repo_json(updated_groups, groups_path)
+    if updated_groups is not None and updated_groups != groups_payload:
+        _write_repo_json(updated_groups, groups_path)
     if updated_groups is not None:
         return eval_path, trigger_ids, behavior_ids, groups_path
     return eval_path, trigger_ids, behavior_ids, None

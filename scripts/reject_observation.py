@@ -43,17 +43,11 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         observation = load_stored_observation(args.input)
-        existing = require_open_disposition(
-            args.output_root,
-            observation["skill"]["id"],
-            observation["observation_id"],
-        )
         redacted, _counts = redact_observation(observation)
+        existing = require_open_disposition(args.output_root, redacted)
+        closed = close_disposition(existing, disposition=args.disposition, reason=args.reason)
         write_redacted_observation(redacted, args.output_root)
-        destination = write_disposition(
-            close_disposition(existing, disposition=args.disposition, reason=args.reason),
-            args.output_root,
-        )
+        destination = write_disposition(closed, args.output_root)
     except (ObservationError, OSError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

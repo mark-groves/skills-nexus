@@ -17,6 +17,8 @@ from .disposition import (
     fingerprint_observation,
     iter_dispositions,
     load_disposition,
+    load_optional_disposition,
+    refuse_closed_disposition,
     require_open_disposition,
     write_disposition,
 )
@@ -42,7 +44,9 @@ __all__ = [
     "fingerprint_observation",
     "iter_dispositions",
     "load_disposition",
+    "load_optional_disposition",
     "next_case_id",
+    "refuse_closed_disposition",
     "promote_into_eval_suite",
     "redact_observation",
     "redact_text",

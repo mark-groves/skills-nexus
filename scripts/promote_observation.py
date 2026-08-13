@@ -112,17 +112,13 @@ def main(argv: list[str] | None = None) -> int:
         if trigger is None and behavior is None:
             raise ObservationError("promotion requires --trigger-query and/or --behavior-prompt")
         observation = load_stored_observation(args.input)
-        existing = require_open_disposition(
-            args.output_root,
-            observation["skill"]["id"],
-            observation["observation_id"],
-        )
+        redacted, _counts = redact_observation(observation)
+        existing = require_open_disposition(args.output_root, redacted)
         if existing["classification"] in UNPROMOTABLE_CLASSIFICATIONS:
             raise ObservationError(
                 f"classification {existing['classification']} cannot be promoted into evals.json"
             )
-        redacted, _counts = redact_observation(observation)
-        write_redacted_observation(redacted, args.output_root)
+        accepted = close_disposition(existing, disposition="accept", reason=args.reason)
         eval_path, trigger_ids, behavior_ids, _groups_path = promote_into_eval_suite(
             skill_id=observation["skill"]["id"],
             evals_root=args.evals_root,
@@ -130,10 +126,8 @@ def main(argv: list[str] | None = None) -> int:
             behavior=behavior,
             group_id=args.group,
         )
-        destination = write_disposition(
-            close_disposition(existing, disposition="accept", reason=args.reason),
-            args.output_root,
-        )
+        write_redacted_observation(redacted, args.output_root)
+        destination = write_disposition(accepted, args.output_root)
     except (ObservationError, OSError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

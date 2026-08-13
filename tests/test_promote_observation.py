@@ -2,6 +2,7 @@ import contextlib
 import importlib.util
 import io
 import json
+import stat
 import sys
 import tempfile
 import unittest
@@ -151,6 +152,10 @@ class ObservationPromotionTests(unittest.TestCase):
             next_case_id([{"id": 2}, {"id": "3"}]),
             4,
         )
+        self.assertEqual(
+            next_case_id([{"id": 1}, "skip", None, {"id": 3}]),
+            4,
+        )
 
     def test_append_eval_cases_assigns_next_ids_and_reuses_identical_cases(self) -> None:
         payload = sample_eval_suite()
@@ -247,6 +252,39 @@ class ObservationPromotionTests(unittest.TestCase):
                 )
             self.assertEqual(eval_path.read_bytes(), before_eval)
             self.assertEqual(groups_path.read_bytes(), before_groups)
+
+    def test_promote_into_eval_suite_repairs_missing_group_ids_on_reuse(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            eval_path, groups_path = self.write_eval_suite(root)
+            promote_into_eval_suite(
+                skill_id="demo",
+                evals_root=root / "evals",
+                trigger={"query": "new trigger", "should_trigger": True},
+                behavior=None,
+                group_id="development",
+            )
+            groups_payload = json.loads(groups_path.read_text(encoding="utf-8"))
+            groups_payload["groups"][0]["trigger_cases"] = ["1", "note"]
+            groups_path.write_text(json.dumps(groups_payload, indent=2) + "\n", encoding="utf-8")
+            evals_before = eval_path.read_bytes()
+
+            promote_into_eval_suite(
+                skill_id="demo",
+                evals_root=root / "evals",
+                trigger={"query": "new trigger", "should_trigger": True},
+                behavior=None,
+                group_id="development",
+            )
+            repaired = json.loads(groups_path.read_text(encoding="utf-8"))
+            evals_after = json.loads(eval_path.read_text(encoding="utf-8"))
+            evals_after_bytes = eval_path.read_bytes()
+            groups_mode = stat.S_IMODE(groups_path.stat().st_mode)
+
+        self.assertEqual(evals_after_bytes, evals_before)
+        self.assertEqual(repaired["groups"][0]["trigger_cases"], ["1", "note", "2"])
+        self.assertEqual(len(evals_after["trigger_evals"]), 3)
+        self.assertEqual(groups_mode, 0o600)
 
     def test_cli_refuses_without_prior_classify_and_writes_nothing(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -445,6 +483,170 @@ class ObservationPromotionTests(unittest.TestCase):
         self.assertEqual(status, 1)
         self.assertIn("already has disposition accept", error_text)
         self.assertEqual(loaded["reason"], "Already promoted.")
+        self.assertEqual(evals_after, evals_before)
+
+    def test_cli_validates_reason_before_writing_evals(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            observation = self.stored_observation(root)
+            inbox = write_observation(observation, root / "inbox")
+            eval_path, groups_path = self.write_eval_suite(root)
+            evals_before = eval_path.read_bytes()
+            groups_before = groups_path.read_bytes()
+            with contextlib.redirect_stdout(io.StringIO()):
+                classify_status = classify_observation_cli.main(
+                    [
+                        "--input",
+                        str(inbox),
+                        "--class",
+                        "instruction",
+                        "--output-root",
+                        str(root / "triage"),
+                    ]
+                )
+            stderr = io.StringIO()
+            with contextlib.redirect_stderr(stderr):
+                blank_status = promote_observation_cli.main(
+                    [
+                        "--input",
+                        str(inbox),
+                        "--reason",
+                        "   ",
+                        "--output-root",
+                        str(root / "triage"),
+                        "--evals-root",
+                        str(root / "evals"),
+                        "--trigger-query",
+                        "clarify the stopping condition",
+                        "--should-trigger",
+                        "true",
+                    ]
+                )
+            long_stderr = io.StringIO()
+            with contextlib.redirect_stderr(long_stderr):
+                long_status = promote_observation_cli.main(
+                    [
+                        "--input",
+                        str(inbox),
+                        "--reason",
+                        "x" * 2001,
+                        "--output-root",
+                        str(root / "triage"),
+                        "--evals-root",
+                        str(root / "evals"),
+                        "--trigger-query",
+                        "clarify the stopping condition",
+                        "--should-trigger",
+                        "true",
+                    ]
+                )
+            loaded = load_disposition(next((root / "triage" / "demo").glob("*.disposition.json")))
+            evals_after = eval_path.read_bytes()
+            groups_after = groups_path.read_bytes()
+
+        self.assertEqual(classify_status, 0)
+        self.assertEqual(blank_status, 1)
+        self.assertEqual(long_status, 1)
+        self.assertIn("accept disposition reason must be a non-empty string", stderr.getvalue())
+        self.assertIn("reason exceeds 2000 characters", long_stderr.getvalue())
+        self.assertEqual(loaded["disposition"], "open")
+        self.assertEqual(evals_after, evals_before)
+        self.assertEqual(groups_after, groups_before)
+
+    def test_cli_refuses_stale_observation_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            observation = self.stored_observation(root)
+            inbox = write_observation(observation, root / "inbox")
+            eval_path, _groups_path = self.write_eval_suite(root)
+            evals_before = eval_path.read_bytes()
+            with contextlib.redirect_stdout(io.StringIO()):
+                classify_status = classify_observation_cli.main(
+                    [
+                        "--input",
+                        str(inbox),
+                        "--class",
+                        "instruction",
+                        "--output-root",
+                        str(root / "triage"),
+                    ]
+                )
+            rewritten = json.loads(inbox.read_text(encoding="utf-8"))
+            rewritten["signals"][0]["observation"] = "A different failure mode."
+            inbox.write_text(json.dumps(rewritten, indent=2) + "\n", encoding="utf-8")
+            stderr = io.StringIO()
+            with contextlib.redirect_stderr(stderr):
+                status = promote_observation_cli.main(
+                    [
+                        "--input",
+                        str(inbox),
+                        "--reason",
+                        "Stopping condition is ambiguous.",
+                        "--output-root",
+                        str(root / "triage"),
+                        "--evals-root",
+                        str(root / "evals"),
+                        "--trigger-query",
+                        "clarify the stopping condition",
+                        "--should-trigger",
+                        "true",
+                    ]
+                )
+            loaded = load_disposition(next((root / "triage" / "demo").glob("*.disposition.json")))
+            evals_after = eval_path.read_bytes()
+            error_text = stderr.getvalue()
+
+        self.assertEqual(classify_status, 0)
+        self.assertEqual(status, 1)
+        self.assertIn("fingerprint does not match", error_text)
+        self.assertEqual(loaded["disposition"], "open")
+        self.assertEqual(evals_after, evals_before)
+
+    def test_cli_refuses_stale_recorded_at(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            observation = self.stored_observation(root)
+            inbox = write_observation(observation, root / "inbox")
+            eval_path, _groups_path = self.write_eval_suite(root)
+            evals_before = eval_path.read_bytes()
+            with contextlib.redirect_stdout(io.StringIO()):
+                classify_status = classify_observation_cli.main(
+                    [
+                        "--input",
+                        str(inbox),
+                        "--class",
+                        "instruction",
+                        "--output-root",
+                        str(root / "triage"),
+                    ]
+                )
+            rewritten = json.loads(inbox.read_text(encoding="utf-8"))
+            rewritten["recorded_at"] = "2020-01-01T00:00:00+00:00"
+            inbox.write_text(json.dumps(rewritten, indent=2) + "\n", encoding="utf-8")
+            stderr = io.StringIO()
+            with contextlib.redirect_stderr(stderr):
+                status = promote_observation_cli.main(
+                    [
+                        "--input",
+                        str(inbox),
+                        "--reason",
+                        "Stopping condition is ambiguous.",
+                        "--output-root",
+                        str(root / "triage"),
+                        "--evals-root",
+                        str(root / "evals"),
+                        "--trigger-query",
+                        "clarify the stopping condition",
+                        "--should-trigger",
+                        "true",
+                    ]
+                )
+            evals_after = eval_path.read_bytes()
+            error_text = stderr.getvalue()
+
+        self.assertEqual(classify_status, 0)
+        self.assertEqual(status, 1)
+        self.assertIn("recorded_at does not match", error_text)
         self.assertEqual(evals_after, evals_before)
 
 
