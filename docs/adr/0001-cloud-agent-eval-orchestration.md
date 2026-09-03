@@ -104,6 +104,19 @@ After Phase A, Python keeps a thin catalog module (proposed
 A later pure evidence helper may parse and fold already-written run artifacts.
 It must not spawn agents.
 
+That helper (PR-C) enforces evidence rules in code, not only in playbook prose.
+
+- Blinding is a file boundary. Parent emits a worker-facing task file and a
+  sealed parent ledger. Eval vocabulary in a worker-facing field refuses emit.
+- Admission is a type boundary. Untrusted worker returns stay private until
+  `admit` checks pinned digests and derives transcript digests. An admitted
+  `BlindedCandidateRun` with unverified pins is unrepresentable.
+- Named limits are computed from platform caps, sample size, waivers, and
+  judge presence. Limits that cap the verdict hold `INCONCLUSIVE`. Chats alone
+  cannot go green.
+- Each worker writes one identity-named file. Merge happens once at admit.
+  No shared mutable run log across VMs.
+
 ### What Python loses
 
 Live matrix orchestration, Codex adapters and runners, live capability review
