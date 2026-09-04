@@ -48,6 +48,8 @@ A prove-variant compares current versus candidate with one organic prompt,
 blinded arena workers, one blinded judge, and a human `EvidenceSummary`.
 `scripts/eval_evidence.py` emits, admits, and summarizes artifacts. It does
 not spawn agents. Chats alone cannot go green. Named limits are in the ADR.
+The first rehearsal is
+`evals/commit/reviews/prove-variant-draft-message.json`.
 
 ## Capture and promote
 
