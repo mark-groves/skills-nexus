@@ -29,7 +29,9 @@
         "case_kind",
         "evals_json_digest_sha256",
         "git_sha",
-        "harness"
+        "harness",
+        "model",
+        "variant_id"
       ],
       "properties": {
         "logical_skill_name": {

@@ -56,6 +56,21 @@ class EvalTypeSchemaTests(unittest.TestCase):
                     payload["properties"]["outputs"]["properties"]["declaration"]["enum"],
                     ["PASS", "ISSUES", "BLOCKED"],
                 )
+                self.assertEqual(
+                    set(payload["properties"]["pins"]["required"]),
+                    {
+                        "logical_skill_name",
+                        "skill_digest_sha256",
+                        "plugin_digest_sha256",
+                        "case_id",
+                        "case_kind",
+                        "evals_json_digest_sha256",
+                        "git_sha",
+                        "harness",
+                        "model",
+                        "variant_id",
+                    },
+                )
 
 
 if __name__ == "__main__":
