@@ -131,6 +131,8 @@ The only committed prove export is a human `EvidenceSummary` under
 
 ## What Python does
 
-`scripts/eval_cases.py` loads catalogs. A later helper may emit, admit, and
-summarize artifacts. It must not spawn agents. Orchestration stays in this
+`scripts/eval_cases.py` loads catalogs. `scripts/eval_evidence.py` emits a
+worker-facing task and a sealed ledger, admits one identity-named return
+after deriving transcript digests, and folds admitted cells into an
+`EvidenceSummary`. It does not spawn agents. Orchestration stays in this
 playbook.

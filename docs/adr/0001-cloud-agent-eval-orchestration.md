@@ -2,8 +2,9 @@
 
 ## Status
 
-Accepted. Phase A removed the Codex live matrix. This change lands the
-playbook and domain schemas. No runner code. No second Python matrix.
+Accepted. Phase A removed the Codex live matrix. Phase B landed the
+playbook and domain schemas. This change lands the evidence helper. No
+runner. No second Python matrix.
 
 ## Context
 
@@ -133,6 +134,7 @@ docs/eval-types/*.schema.json  SkillVariant, EvalCase, BlindedCandidateRun,
                                JudgeRubric, EvidenceSummary, HarnessTarget
 evals/<skill>/evals.json       case catalog (kept)
 scripts/eval_cases.py          load_eval_spec / resolve_skill / digests
+scripts/eval_evidence.py       emit / admit / summarize (no spawn)
 scripts/validate_repo.py       static floor (kept, retargeted imports)
 scripts/skill_observation/**   observation capture (kept)
 scripts/skill_triage/**        promote into evals.json (kept)
