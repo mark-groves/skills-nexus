@@ -61,7 +61,8 @@ it for validation, observation promote, and packaging. Those commands do not
 spawn agents.
 
 The Codex live matrix is gone. Behavioral proof is a Cloud Agent prove path.
-See [Evaluating skills](docs/evaluating-skills.md) and
+See the [orchestration playbook](docs/eval-orchestration.md),
+[Evaluating skills](docs/evaluating-skills.md), and
 [ADR 0001](docs/adr/0001-cloud-agent-eval-orchestration.md).
 
 The learning loop records bounded observations, then redacts, classifies, and

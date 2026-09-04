@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/mark-groves/skills-nexus/docs/eval-types/evidence-summary-v1.schema.json",
+  "title": "EvidenceSummary v1",
+  "description": "Human-authored durable record. Only export allowed under evals/<skill>/reviews/.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "skill_name",
+    "mode",
+    "aggregation",
+    "verdict",
+    "limits_held",
+    "author",
+    "notes"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "skill_name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "mode": {"enum": ["prove-variant", "swarm-slice"]},
+    "aggregation": {"enum": ["rank-all", "first-pass", "best-of"]},
+    "verdict": {"enum": ["promote", "reject", "inconclusive"]},
+    "limits_held": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "enum": [
+          "no-automatic-negative-activation",
+          "no-capopt-non-inferiority-from-chats",
+          "no-cross-harness-claim",
+          "no-auto-promote",
+          "first-pass-not-comparative-green",
+          "best-of-diagnostic-only",
+          "sample-size",
+          "missing-judge",
+          "platform-cap"
+        ]
+      }
+    },
+    "run_labels": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 32
+      }
+    },
+    "author": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100
+    },
+    "notes": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 8000
+    }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"aggregation": {"const": "first-pass"}}, "required": ["aggregation"]},
+      "then": {
+        "properties": {
+          "verdict": {"enum": ["reject", "inconclusive"]}
+        }
+      }
+    },
+    {
+      "if": {"properties": {"aggregation": {"const": "best-of"}}, "required": ["aggregation"]},
+      "then": {
+        "properties": {
+          "verdict": {"enum": ["reject", "inconclusive"]}
+        }
+      }
+    }
+  ]
+}

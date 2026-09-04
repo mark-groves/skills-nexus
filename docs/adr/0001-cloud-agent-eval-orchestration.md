@@ -2,7 +2,8 @@
 
 ## Status
 
-Proposed. Planning PR only. No runner code in this change.
+Accepted. Phase A removed the Codex live matrix. This change lands the
+playbook and domain schemas. No runner code. No second Python matrix.
 
 ## Context
 

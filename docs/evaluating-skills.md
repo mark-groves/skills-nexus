@@ -35,10 +35,11 @@ Optional companions under `evals/<skill>/` still validate when present:
 
 ## Prove path
 
-Orchestration lives in Cloud Agent playbooks. It does not live in a second
-Python matrix. The decision record is
-[ADR 0001](adr/0001-cloud-agent-eval-orchestration.md). The planned playbook
-and domain schemas land after this retirement.
+Orchestration lives in the
+[Cloud Agent eval playbook](eval-orchestration.md). It does not live in a
+second Python matrix. The decision record is
+[ADR 0001](adr/0001-cloud-agent-eval-orchestration.md). Domain schemas live
+in `docs/eval-types/`.
 
 `HarnessTarget` is `cursor-cloud-agent` only. Codex live runners, eval
 profiles, and the Codex deploy harness are gone.
