@@ -127,7 +127,8 @@ do not mount it. Each worker writes one identity-named file. Merge happens
 once at admit. No shared mutable run log across VMs.
 
 The only committed prove export is a human `EvidenceSummary` under
-`evals/<skill>/reviews/`.
+`evals/<skill>/reviews/`. The first rehearsal is
+`evals/commit/reviews/prove-variant-draft-message.json`.
 
 ## What Python does
 

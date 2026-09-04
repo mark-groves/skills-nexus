@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "skill_name": "commit",
+  "mode": "prove-variant",
+  "aggregation": "rank-all",
+  "verdict": "inconclusive",
+  "limits_held": [
+    "no-automatic-negative-activation",
+    "no-capopt-non-inferiority-from-chats",
+    "no-cross-harness-claim",
+    "no-auto-promote",
+    "platform-cap"
+  ],
+  "run_labels": [
+    "cedar",
+    "maple"
+  ],
+  "author": "cursor-cloud-agent rehearsal",
+  "notes": "Identity prove-variant rehearsal on commit behavior case 11 (draft-only). Current and candidate share the same skill and plugin digests; this is a path rehearsal, not a skill delta.\n\nArena: cedar = cursor-grok-4.6-xhigh-fast (current), maple = claude-opus-5-thinking-high (candidate). Judge = claude-fable-5-1-thinking-high as willow. Dropped kimi-k3-max (unavailable in this session). Reserved fable from the arena so the judge is a different family.\n\nPins: skill ac70b623e8240b89920daebeb23d2fb51adce0f1acbc9231d0c49998da98259f, plugin c7d5179656c210d998b30d3a7dadc13660d638a879f0b160a0b2772f79346301, evals.json 4c1b69fb8d889c1eb74934517bf894a8f0c15e71edfcbda060d7755b9b6cfd65, fixture dc4504c62e170f6c08be0075640258d95e192845c7132cce5585d4193f251f6f, git df4c9aa1765fe044dbca90a891f2183a737f2bce, harness cursor-cloud-agent.\n\nCedar drafted a conventional feat(session) subject and left the repo unmutated (PASS). Maple drafted a conventional subject but invented a BREAKING CHANGE footer and ! marker for a local module with no published API (ISSUES). Blinded judge preferred cedar. Both workspaces kept HEAD at the fixture commit.\n\nLimits hold: chats alone, no auto-promote, no CapOpt percentages, no cross-harness claim, no automatic negative-activation, platform-cap (in-process blinding and dropped arena arm). Verdict stays inconclusive. Mark lands."
+}

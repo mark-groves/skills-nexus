@@ -3,8 +3,9 @@
 ## Status
 
 Accepted. Phase A removed the Codex live matrix. Phase B landed the
-playbook and domain schemas. This change lands the evidence helper. No
-runner. No second Python matrix.
+playbook and domain schemas. Phase C landed the evidence helper. This
+change records the first prove-variant rehearsal. No runner. No second
+Python matrix.
 
 ## Context
 
