@@ -44,9 +44,10 @@ in `docs/eval-types/`.
 `HarnessTarget` is `cursor-cloud-agent` only. Codex live runners, eval
 profiles, and the Codex deploy harness are gone.
 
-A later prove-variant compares current versus candidate with one organic
-prompt, blinded arena workers, one blinded judge, and a human
-`EvidenceSummary`. Chats alone cannot go green. Named limits are in the ADR.
+A prove-variant compares current versus candidate with one organic prompt,
+blinded arena workers, one blinded judge, and a human `EvidenceSummary`.
+`scripts/eval_evidence.py` emits, admits, and summarizes artifacts. It does
+not spawn agents. Chats alone cannot go green. Named limits are in the ADR.
 
 ## Capture and promote
 

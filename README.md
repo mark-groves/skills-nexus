@@ -57,8 +57,9 @@ bash scripts/check-skills.sh
 ```
 
 `evals/<skill>/evals.json` is the case catalog. `scripts/eval_cases.py` loads
-it for validation, observation promote, and packaging. Those commands do not
-spawn agents.
+it for validation, observation promote, and packaging. `scripts/eval_evidence.py`
+emits, admits, and summarizes prove artifacts. Those commands do not spawn
+agents.
 
 The Codex live matrix is gone. Behavioral proof is a Cloud Agent prove path.
 See the [orchestration playbook](docs/eval-orchestration.md),
