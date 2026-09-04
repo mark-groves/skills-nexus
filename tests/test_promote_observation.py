@@ -25,14 +25,13 @@ promote_observation_cli = importlib.util.module_from_spec(PROMOTE_SPEC)
 assert PROMOTE_SPEC.loader is not None
 PROMOTE_SPEC.loader.exec_module(promote_observation_cli)
 
-from skill_eval import load_eval_spec  # noqa: E402
+from eval_cases import load_case_groups, load_eval_spec  # noqa: E402
 from skill_observation import (  # noqa: E402
     ObservationError,
     build_observation,
     load_draft,
     write_observation,
 )
-from skill_review import load_case_groups  # noqa: E402
 from skill_triage import (  # noqa: E402
     append_case_group_ids,
     append_eval_cases,

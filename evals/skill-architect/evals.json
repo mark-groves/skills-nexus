@@ -199,7 +199,6 @@
       "prompt": "The release-helper skill was written for older models. Write an executable, evidence-gated plan to evaluate which instructions the pinned profiles still need and whether one coherent component can be removed without weakening the publish-safety rule. Cover the required support floor, Baseline/Current/Candidate comparisons, repeats, held-back cases, both skill universes, context savings, and uncertainty. Do not run models, edit the skill, or promote a candidate.",
       "expected_behavior": "Produces a bounded capability-review plan that measures one coherent component's marginal value without confusing repository peer coverage, aggregate quality, or one successful model run with safe removal.",
       "fixtures": [
-        "fixtures/capability-review/eval-profiles.json",
         "fixtures/capability-review/skills/release-helper/SKILL.md",
         "fixtures/capability-review/evals/release-helper/evals.json"
       ],
