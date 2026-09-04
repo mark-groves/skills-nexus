@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/mark-groves/skills-nexus/docs/eval-types/harness-target-v1.schema.json",
+  "title": "HarnessTarget v1",
+  "description": "Closed prove-path harness. Codex is not a member.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "harness"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "harness": {"const": "cursor-cloud-agent"}
+  }
+}

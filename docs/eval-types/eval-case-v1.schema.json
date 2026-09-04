@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/mark-groves/skills-nexus/docs/eval-types/eval-case-v1.schema.json",
+  "title": "EvalCase v1",
+  "description": "One parent-only row from evals/<skill>/evals.json. Workers never receive this object.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "skill_name",
+    "case_id",
+    "kind",
+    "evals_json_digest_sha256"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "skill_name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "pattern": "^(?!\\.\\.?$)[^/\\\\\\u0000]+$"
+    },
+    "case_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^(?!\\.\\.?$)[^/\\\\\\u0000]+$"
+    },
+    "kind": {"enum": ["trigger", "behavior"]},
+    "query": {"type": "string", "minLength": 1, "maxLength": 4000},
+    "should_trigger": {"type": "boolean"},
+    "prompt": {"type": "string", "minLength": 1, "maxLength": 8000},
+    "expected_behavior": {"type": "string", "minLength": 1, "maxLength": 8000},
+    "fixtures": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1, "maxLength": 400}
+    },
+    "evals_json_digest_sha256": {"$ref": "#/$defs/sha256"},
+    "fixture_digest_sha256": {"$ref": "#/$defs/sha256"}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"kind": {"const": "trigger"}}, "required": ["kind"]},
+      "then": {"required": ["query", "should_trigger"]}
+    },
+    {
+      "if": {"properties": {"kind": {"const": "behavior"}}, "required": ["kind"]},
+      "then": {"required": ["prompt", "expected_behavior"]}
+    }
+  ],
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

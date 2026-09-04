@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/mark-groves/skills-nexus/docs/eval-types/blinded-candidate-run-v1.schema.json",
+  "title": "BlindedCandidateRun v1",
+  "description": "One comparable cell. Parent stamps pins. Worker returns a project-shaped note. Judge sees the sanitized label only.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "admission",
+    "pins",
+    "outputs",
+    "sanitized_label"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "admission": {
+      "const": "admitted",
+      "description": "Untrusted worker returns are private until admit. Unverified pins cannot use this const."
+    },
+    "pins": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "logical_skill_name",
+        "skill_digest_sha256",
+        "plugin_digest_sha256",
+        "case_id",
+        "case_kind",
+        "evals_json_digest_sha256",
+        "git_sha",
+        "harness"
+      ],
+      "properties": {
+        "logical_skill_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "skill_digest_sha256": {"$ref": "#/$defs/sha256"},
+        "plugin_digest_sha256": {"$ref": "#/$defs/sha256"},
+        "case_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "case_kind": {"enum": ["trigger", "behavior"]},
+        "fixture_digest_sha256": {"$ref": "#/$defs/sha256"},
+        "evals_json_digest_sha256": {"$ref": "#/$defs/sha256"},
+        "git_sha": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{7,40}$"
+        },
+        "harness": {"const": "cursor-cloud-agent"},
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160,
+          "description": "Parent-sealed. Never copy onto a judge-facing file."
+        },
+        "variant_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "description": "Parent-sealed. Never copy onto a judge-facing file."
+        }
+      }
+    },
+    "outputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "transcript_ref",
+        "transcript_digest_sha256",
+        "declaration",
+        "workspace_digest_sha256"
+      ],
+      "properties": {
+        "transcript_ref": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 400,
+          "description": "Path local to that worker workspace."
+        },
+        "transcript_digest_sha256": {"$ref": "#/$defs/sha256"},
+        "declaration": {"enum": ["PASS", "ISSUES", "BLOCKED"]},
+        "changed_file_digests": {
+          "type": "object",
+          "additionalProperties": {"$ref": "#/$defs/sha256"}
+        },
+        "workspace_digest_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "sanitized_label": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 32,
+      "pattern": "^[A-Za-z][A-Za-z0-9-]{0,31}$",
+      "description": "Judge-facing join key. No model or variant identity."
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}
