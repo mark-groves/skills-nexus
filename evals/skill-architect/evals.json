@@ -196,7 +196,7 @@
     },
     {
       "id": 7,
-      "prompt": "The release-helper skill was written for older models. Write an executable, evidence-gated plan to evaluate which instructions the pinned profiles still need and whether one coherent component can be removed without weakening the publish-safety rule. Cover the required support floor, Baseline/Current/Candidate comparisons, repeats, held-back cases, both skill universes, context savings, and uncertainty. Do not run models, edit the skill, or promote a candidate.",
+      "prompt": "The release-helper skill was written for older models. Write an executable, evidence-gated plan to decide whether one coherent component can be removed without weakening the publish-safety rule. Pin the plan to the fixture skill and its evals.json. Cover Baseline/Current/Candidate comparisons, repeats, held-back cases, both skill universes, context savings, and uncertainty. Do not run models, edit the skill, or promote a candidate.",
       "expected_behavior": "Produces a bounded capability-review plan that measures one coherent component's marginal value without confusing repository peer coverage, aggregate quality, or one successful model run with safe removal.",
       "fixtures": [
         "fixtures/capability-review/skills/release-helper/SKILL.md",
@@ -205,7 +205,7 @@
       "checks": [
         {
           "id": "capability-review-support-floor",
-          "text": "The plan establishes the required model support floor from pinned required profiles before considering observed frontier evidence",
+          "text": "The plan establishes evidence pins from the fixture SKILL.md and evals.json before considering observed frontier evidence",
           "class": "local-contract",
           "gate": "hard"
         },
@@ -213,7 +213,7 @@
         "The plan compares Baseline, Current, and Candidate in fresh equivalent contexts",
         {
           "id": "capability-review-reproducible-plan",
-          "text": "The plan names the pinned supported-floor profile, exact configured repeats, and reproducible commands or artifacts required before drawing a conclusion",
+          "text": "The plan names the pinned fixture files, exact configured repeats, and reproducible commands or artifacts required before drawing a conclusion",
           "class": "local-contract",
           "gate": "hard"
         },
