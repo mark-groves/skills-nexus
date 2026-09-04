@@ -44,57 +44,30 @@ Install every canonical skill (all bundles):
 bash scripts/deploy-skills.sh --harness cursor --all
 ```
 
-Supported local deployment targets are `agents`, `claude-code`, `codex`,
-`copilot`, `cursor`, and `kiro`. See [Deployment](docs/deployment.md).
+Supported local deployment targets are `agents`, `claude-code`, `copilot`,
+`cursor`, and `kiro`. See [Deployment](docs/deployment.md).
 
 ## Evaluate and improve skills
 
 Validate the repository contract:
 
 ```bash
+bash scripts/check-quality.sh
 bash scripts/check-skills.sh
 ```
 
-Preview an evaluation without invoking agent turns:
+`evals/<skill>/evals.json` is the case catalog. `scripts/eval_cases.py` loads
+it for validation, observation promote, and packaging. Those commands do not
+spawn agents.
 
-```bash
-python3 scripts/eval_skills.py --skill skill-architect --plan
-```
+The Codex live matrix is gone. Behavioral proof is a Cloud Agent prove path.
+See [Evaluating skills](docs/evaluating-skills.md) and
+[ADR 0001](docs/adr/0001-cloud-agent-eval-orchestration.md).
 
-Preview the bounded routine screen for a candidate:
-
-```bash
-python3 scripts/review_skill_capability.py \
-  --skill skill-architect \
-  --candidate /path/to/candidate-skill \
-  --workflow routine \
-  --plan
-```
-
-Routine screens are report-only. A positive result is only eligible for a
-human-opted full escalation; it never approves or promotes a candidate.
-
-Preview repository-owned component boundaries before running backward
-elimination:
-
-```bash
-python3 scripts/ablate_skill_components.py \
-  --skill skill-architect \
-  --case-groups /path/to/review-case-groups.json \
-  --plan
-```
-
-Evaluation suites are repository-only evidence. They are stored separately
-from runtime skills and are never included in packaged copies.
-
-The learning loop records bounded, structured observations from real executions
-into a private inbox, then redacts, classifies, and either rejects them or
-promotes accepted evidence into `evals.json`. Candidate comparison against the
-current skill remains the next proving-grounds stage before a reviewed pull
-request. See [Continuous improvement](docs/continuous-improvement.md) and the
-tracked [roadmap](ROADMAP.md). The
-[Capability optimisation](docs/capability-optimisation.md) guide defines the
-evidence contract for planned context reduction and retirement reviews.
+The learning loop records bounded observations, then redacts, classifies, and
+either rejects them or promotes accepted evidence into `evals.json`. See
+[Continuous improvement](docs/continuous-improvement.md) and the
+[roadmap](ROADMAP.md).
 
 ## Repository layout
 
@@ -102,7 +75,7 @@ evidence contract for planned context reduction and retirement reviews.
 plugins/<bundle>/    Agent Plugin packages (plugin.json + skills/<name>/)
 evals/<name>/        Repository-only trigger cases, behavior cases, and fixtures
 harnesses/           Local installation destinations for supported harnesses
-scripts/             Packaging, deployment, evaluation, and observation tools
+scripts/             Packaging, deployment, catalog load, and observation tools
 schemas/             Versioned interchange contracts for repository tooling
 tests/               Repository tooling tests
 ```

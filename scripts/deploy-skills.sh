@@ -83,7 +83,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(sys.argv[1]) / "scripts"))
-from skill_eval.core import EvalError, resolve_skill
+from eval_cases import EvalError, resolve_skill
 
 try:
     print(resolve_skill(Path(sys.argv[1]), sys.argv[2]))

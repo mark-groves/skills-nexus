@@ -1,6 +1,10 @@
 # Cursor evaluation harness spike
 
-Status: **probe complete; production Cursor adapter blocked**
+Status: **historical.** The probe script is deleted. The production Cursor
+CLI adapter stays closed. Behavioral proof moved to Cloud Agent
+orchestration. See [ADR 0001](adr/0001-cloud-agent-eval-orchestration.md).
+
+Original status: **probe complete; production Cursor adapter blocked**
 
 Decision date: 2026-08-01
 
@@ -112,12 +116,13 @@ eligibility.
 
 ## Probe boundary
 
-[`scripts/probe_cursor_eval.py`](../scripts/probe_cursor_eval.py) is deliberately
-standalone. It is not imported by `eval_skills.py`, does not change the current
-Codex runner, and cannot create production profiles or durable capability
-evidence.
+The probe script is deleted. The notes below are the historical boundary.
+Do not restore a Cursor CLI production adapter from this spike.
 
-The checked-in, credential-free paths are:
+The probe was standalone. It did not change the since-removed Codex runner
+and could not create production profiles or durable capability evidence.
+
+The checked-in, credential-free paths were:
 
 - `preflight` — captures the installed CLI/version, required flags, and fresh-home
   authentication state without a model call;
@@ -126,23 +131,10 @@ The checked-in, credential-free paths are:
 - unit tests — cover strict terminal parsing, exact model comparison, activation
   evidence, judgment validation, timeout, non-zero exit, and output containment.
 
-Run those checks with:
+The opt-in live path used a dedicated browser-login template instead of an API
+key environment variable.
 
-```bash
-python3 scripts/probe_cursor_eval.py preflight
-python3 scripts/probe_cursor_eval.py fixtures
-python3 -m unittest tests.test_probe_cursor_eval
-```
-
-The opt-in live path uses a dedicated browser-login template instead of an API
-key environment variable:
-
-```bash
-python3 scripts/probe_cursor_eval.py bootstrap-auth
-python3 scripts/probe_cursor_eval.py live --model <exact-cursor-model-id>
-```
-
-`bootstrap-auth` is interactive and must be performed only with the account
+`bootstrap-auth` was interactive and had to be performed only with the account
 owner's approval. The probe refuses a secret-bearing parent environment. Every
 prompt, redacted event stream, stderr stream, temporary home, workspace, and
 generated artifact remains under `.skill-evals/cursor-cli-probe/`, which is
@@ -166,8 +158,6 @@ path contamination, timeouts, and malformed output never become a pass.
 
 ## Follow-up boundary
 
-This ADR does not define the later adapter registry, migrate Codex, change the
-profile schema, implement a Cursor task/judge adapter, or add production
-conformance coverage. Those remain the dependent issues under #45. A later
-change may update this decision only with a sanitized, exact-version live
-summary proving every blocking property.
+This writeup does not reopen a Cursor CLI production adapter. Behavioral
+proof moved to Cloud Agent orchestration. See
+[ADR 0001](adr/0001-cloud-agent-eval-orchestration.md).

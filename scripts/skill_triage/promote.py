@@ -9,9 +9,8 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from skill_eval import EvalError, load_eval_spec
+from eval_cases import EvalError, load_case_groups, load_eval_spec
 from skill_observation import ObservationError
-from skill_review import load_case_groups
 
 UNPROMOTABLE_CLASSIFICATIONS = {"deployment", "environment"}
 _TRIGGER_INPUT_KEYS = {"query", "should_trigger"}

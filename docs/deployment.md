@@ -33,7 +33,6 @@ Every command requires `--harness`:
 | --- | --- | --- |
 | `agents` | `~/.agents/skills` | `.agents/skills` |
 | `claude-code` | `~/.claude/skills` | `.claude/skills` |
-| `codex` | `~/.agents/skills` | `.agents/skills` |
 | `copilot` | `~/.copilot/skills` | `.github/skills` |
 | `cursor` | `~/.cursor/skills` | `.cursor/skills` |
 | `kiro` | `~/.kiro/skills` | `.kiro/skills` |

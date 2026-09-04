@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from skill_eval.core import RUNTIME_EXCLUDED_NAMES, stable_digest
+from eval_cases import RUNTIME_EXCLUDED_NAMES, stable_digest
 
 MAX_INPUT_BYTES = 64 * 1024
 MAX_SIGNALS = 20
