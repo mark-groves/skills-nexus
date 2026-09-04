@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/mark-groves/skills-nexus/docs/eval-types/skill-variant-v1.schema.json",
+  "title": "SkillVariant v1",
+  "description": "Digest-pinned skill snapshot. Role ids stay parent-only.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "role",
+    "logical_skill_name",
+    "digest_sha256"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "role": {"enum": ["current", "baseline", "candidate"]},
+    "logical_skill_name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "pattern": "^(?!\\.\\.?$)[^/\\\\\\u0000]+$"
+    },
+    "digest_sha256": {"$ref": "#/$defs/sha256"},
+    "plugin_digest_sha256": {"$ref": "#/$defs/sha256"},
+    "variant_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$",
+      "description": "Parent-only. Never copy onto a worker-facing file."
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

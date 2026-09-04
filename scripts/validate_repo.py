@@ -11,20 +11,20 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from plugin_repository import PluginRepository, PluginRepositoryError
-from skill_eval.core import EvalError, load_eval_spec, resolve_skill
-from skill_review.ablation import load_component_contract
-from skill_review.core import (
+from eval_cases import (
+    EvalError,
     load_case_groups,
-    load_profile_contract,
+    load_component_contract,
+    load_eval_spec,
     load_routine_screen_contract,
+    resolve_skill,
 )
+from plugin_repository import PluginRepository, PluginRepositoryError
 
 REPO_DIR = Path(__file__).resolve().parents[1]
 PLUGINS_DIR = REPO_DIR / "plugins"
 EVALS_DIR = REPO_DIR / "evals"
 HARNESS_DIR = REPO_DIR / "harnesses"
-MODEL_PROFILES = REPO_DIR / "eval-profiles.json"
 # Compatibility alias for tests that still patch SKILLS_DIR; production uses plugins/.
 SKILLS_DIR = PLUGINS_DIR
 CLOUD_DIAGRAM_REFS = PLUGINS_DIR / "drawio" / "skills" / "cloud-diagram" / "references"
@@ -38,7 +38,7 @@ CLOUD_IMPORTER = (
 GENERATED_MARKER = "<!-- GENERATED BELOW -->"
 
 EXPECTED_HARNESS_KEYS = {"user_install_root", "project_install_root"}
-REQUIRED_HARNESSES = {"agents", "claude-code", "codex", "copilot", "cursor", "kiro"}
+REQUIRED_HARNESSES = {"agents", "claude-code", "copilot", "cursor", "kiro"}
 ALLOWED_FRONTMATTER_KEYS = {"name", "description"}
 REQUIRED_EVAL_KEYS = {"skill_name", "trigger_evals", "behavior_evals"}
 OPTIONAL_EVAL_KEYS = {"review_policy"}
@@ -607,14 +607,6 @@ def validate_generated_junk() -> None:
             fail(f"Tracked generated junk under __pycache__: {rel}")
         if rel.endswith(".pyc"):
             fail(f"Tracked generated junk .pyc file: {rel}")
-
-
-def validate_model_profiles() -> None:
-    """Validate the checked-in versioned model-profile contract."""
-    try:
-        load_profile_contract(MODEL_PROFILES)
-    except EvalError as exc:
-        fail(str(exc))
 
 
 def validate_harness_manifests() -> dict[str, dict[str, str]]:
@@ -1434,7 +1426,6 @@ def validate_handoff_smoke_tests() -> None:
 def main() -> int:
     valid_skills = validate_skills_root()
     harnesses = validate_harness_manifests()
-    validate_model_profiles()
     validate_generated_junk()
     validate_deploy_script(valid_skills, harnesses)
     validate_handoff_smoke_tests()

@@ -9,7 +9,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from skill_eval.core import EvalError, runtime_skill_copy
+from eval_cases import EvalError, runtime_skill_copy
 
 
 def build_parser() -> argparse.ArgumentParser:

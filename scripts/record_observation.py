@@ -7,7 +7,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from skill_eval.core import EvalError, discover_repository_skills, resolve_skill
+from eval_cases import EvalError, discover_repository_skills, resolve_skill
 from skill_observation import ObservationError, build_observation, load_draft, write_observation
 
 REPO_ROOT = Path(__file__).resolve().parents[1]

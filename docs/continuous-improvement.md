@@ -18,18 +18,17 @@ Capability optimisation
 model or runtime progression
    -> documented redundancy hypothesis
    -> reduced candidate
-   -> protected, full-suite, and required-profile gates
-   -> current-versus-candidate non-inferiority proof
+   -> protected and full-suite gates on a Cloud Agent prove path
+   -> current-versus-candidate comparison
    -> reviewed pull request
 ```
 
 Both paths publish and observe again after review. A context reduction does not
 require a fabricated failure; it requires stronger comparative evidence that
 the proposed reduction preserves supported behavior. See the
-[capability-optimisation contract](capability-optimisation.md) for the context
-budgets, model profiles, skill universes, evidence gates, verdicts, and
-retirement criteria. That contract describes planned tooling and does not
-change current evaluator behavior.
+[capability-optimisation contract](capability-optimisation.md) for gate
+vocabulary, skill universes, and retirement criteria. Live CapOpt runners
+are gone. The Cloud Agent prove path owns later comparison work.
 
 ## Observation boundary
 
@@ -65,7 +64,7 @@ provenance, marks the record untrusted, and writes a private file with mode
   "schema_version": 1,
   "source": {"kind": "agent", "external_run_id": "run-123"},
   "runtime": {
-    "harness": "codex",
+    "harness": "cursor",
     "harness_version": null,
     "model": "example-model",
     "invocation": "automatic",
@@ -197,10 +196,10 @@ written. The proving sequence is:
 6. Produce a report containing the observation identifier, digests, results,
    limitations, and reproduction commands.
 
-The existing evaluator already provides fresh contexts, paired baseline runs,
-label-blinded grading, fixtures, repeats, and preserved evidence. Candidate
-comparison extends that model; it does not replace skill-versus-baseline
-measurement.
+The Cloud Agent prove path owns current-versus-candidate comparison. See
+[Evaluating skills](evaluating-skills.md) and
+[ADR 0001](adr/0001-cloud-agent-eval-orchestration.md). Static catalog load
+stays in `scripts/eval_cases.py`.
 
 ## Promotion
 

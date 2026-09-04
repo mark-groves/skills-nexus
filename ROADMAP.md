@@ -64,7 +64,7 @@ human-opted escalation.
 - [x] Add protected checks, skill-specific non-inferiority rules, and
       optimisation gates (#26).
 - [x] Run required and observed Codex model profiles and export bounded durable
-      summaries (#27).
+      summaries (#27). Retired with the Codex live matrix.
 - [x] Evaluate coherent component marginal value with protected component
       boundaries and combined-candidate verification (#28).
 - [x] Add a one-hour routine screen before the complete escalation matrix
@@ -90,7 +90,9 @@ Cursor CLI production adapters and the Multi-harness evaluations v1 — Cursor
 milestone (#45, #50–#53) were closed as not planned. The repository is pivoting
 to companion [Agent Plugins](https://agent-plugins.org/) bundles (canonical
 under `plugins/`) with Cursor Cloud Agents as the foundry operator. Static
-validation remains the quality floor; live Codex matrices are demoted.
+validation remains the quality floor; the Codex live matrix is removed.
+Behavioral proof is the Cloud Agent prove path in
+[ADR 0001](docs/adr/0001-cloud-agent-eval-orchestration.md).
 
 ## Phase 5b — Agent Plugin companion bundles
 
