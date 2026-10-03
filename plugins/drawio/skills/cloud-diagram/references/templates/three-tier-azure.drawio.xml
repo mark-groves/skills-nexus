@@ -7,17 +7,17 @@
 
         <!-- Subscription -->
         <mxCell id="subscription" value="Azure Subscription" style="swimlane;startSize=30;fillColor=none;strokeColor=#0078D4;dashed=0;container=1;collapsible=0;pointerEvents=0;fontColor=#0078D4;fontSize=12;fontStyle=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
-          <mxGeometry x="40" y="40" width="1520" height="1000" as="geometry" />
+          <mxGeometry x="40" y="40" width="1520" height="920" as="geometry" />
         </mxCell>
 
         <!-- Resource Group -->
         <mxCell id="rg" value="Resource Group" style="swimlane;startSize=30;fillColor=none;strokeColor=#CBCBCB;dashed=1;dashPattern=5 5;container=1;collapsible=0;pointerEvents=0;fontColor=#333333;fontSize=12;fontStyle=1;whiteSpace=wrap;html=1;" vertex="1" parent="subscription">
-          <mxGeometry x="40" y="50" width="1440" height="910" as="geometry" />
+          <mxGeometry x="40" y="50" width="1440" height="830" as="geometry" />
         </mxCell>
 
         <!-- VNet -->
         <mxCell id="vnet" value="Virtual Network 10.0.0.0/16" style="swimlane;startSize=30;fillColor=none;strokeColor=#3B8BBA;strokeWidth=4;dashed=0;container=1;collapsible=0;pointerEvents=0;fontColor=#3B8BBA;fontSize=12;fontStyle=1;whiteSpace=wrap;html=1;" vertex="1" parent="rg">
-          <mxGeometry x="40" y="50" width="1360" height="820" as="geometry" />
+          <mxGeometry x="40" y="50" width="1360" height="740" as="geometry" />
         </mxCell>
 
         <!-- Frontend Subnet -->
@@ -42,7 +42,7 @@
 
         <!-- Data Subnet -->
         <mxCell id="subnet-data" value="Data Subnet 10.0.3.0/24" style="swimlane;startSize=30;fillColor=none;strokeColor=#3B8BBA;dashed=1;dashPattern=5 5;container=1;collapsible=0;pointerEvents=0;fontColor=#3B8BBA;fontSize=11;fontStyle=1;whiteSpace=wrap;html=1;" vertex="1" parent="vnet">
-          <mxGeometry x="40" y="550" width="1280" height="220" as="geometry" />
+          <mxGeometry x="40" y="550" width="1280" height="170" as="geometry" />
         </mxCell>
 
         <!-- Azure SQL -->
@@ -51,8 +51,8 @@
         </mxCell>
 
         <!-- Users (outside cloud) -->
-        <mxCell id="users" value="Users" style="shape=mxgraph.azure.user;whiteSpace=wrap;html=1;fillColor=#0078D4;strokeColor=#ffffff;fontColor=#232F3E;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center;" vertex="1" parent="1">
-          <mxGeometry x="780" y="1080" width="50" height="50" as="geometry" />
+        <mxCell id="users" value="Users" style="aspect=fixed;html=1;points=[];align=center;image;fontSize=11;image=img/lib/azure2/identity/Users.svg;verticalLabelPosition=bottom;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="780" y="980" width="50" height="50" as="geometry" />
         </mxCell>
 
         <!-- Edge: Users to App Gateway -->

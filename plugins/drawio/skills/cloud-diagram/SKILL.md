@@ -100,9 +100,7 @@ product icon (AWS `VPC`, `Availability Zone`, `Account`; Azure
 over guessing. Do not invent stencil names or azure2 paths. Never use
 `Virtual_Networks.svg` or `Subnet.svg` as the VNet/subnet boundary.
 
-**Full catalog body** (`<!-- GENERATED BELOW -->` onward): load or Grep
-only when lookup misses and the service is uncommon. Never require the
-full megabyte dump in context for common services.
+A lookup miss stops that service. Do not open the generated catalog body.
 
 Multi-cloud: repeat lookup per provider.
 
@@ -170,8 +168,8 @@ When the example does not suggest otherwise (`xml-rules.md`):
 
 Follow `xml-rules.md`.
 
-- Use lookup/catalog styles only. Generic rounded rectangle **only**
-  after lookup and catalog search both miss.
+- Use the style lookup returns. A miss stops that service. Do not open
+  the generated catalog body, and do not draw a generic rectangle.
 - For GCP hits, insert `--card` XML (or identical Service Card markup).
   Raw catalog styles are icon children only.
 - Every edge needs `<mxGeometry relative="1" as="geometry" />`.
