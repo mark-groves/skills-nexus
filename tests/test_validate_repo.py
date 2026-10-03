@@ -653,7 +653,6 @@ class ValidateRepoSkillLayoutTests(unittest.TestCase):
             root = Path(temp_dir)
             plugins_dir = root / "plugins"
             for bundle, skills in {
-                "git-workflow": ("commit", "pr"),
                 "drawio": ("cloud-diagram", "drawio-shapes"),
                 "skill-architect": ("skill-architect",),
             }.items():
@@ -679,8 +678,6 @@ class ValidateRepoSkillLayoutTests(unittest.TestCase):
                     )
             evals_dir = root / "evals"
             for skill in (
-                "commit",
-                "pr",
                 "cloud-diagram",
                 "drawio-shapes",
                 "skill-architect",
@@ -699,7 +696,7 @@ class ValidateRepoSkillLayoutTests(unittest.TestCase):
 
         self.assertEqual(
             valid_skills,
-            ["cloud-diagram", "commit", "drawio-shapes", "pr", "skill-architect"],
+            ["cloud-diagram", "drawio-shapes", "skill-architect"],
         )
         self.assertEqual(validate_repo.ERRORS, [])
 
@@ -714,7 +711,7 @@ class ValidateRepoPortabilityTests(unittest.TestCase):
     def test_validate_portability_rejects_sibling_skill_refs(self) -> None:
         with tempfile.TemporaryDirectory(dir=REPO_DIR) as temp_dir:
             temp_root = Path(temp_dir)
-            sibling_dir = temp_root / "commit"
+            sibling_dir = temp_root / "neighbor"
             sibling_dir.mkdir()
             skill_dir = temp_root / "sibling-ref-skill"
             skill_dir.mkdir()
@@ -728,7 +725,7 @@ class ValidateRepoPortabilityTests(unittest.TestCase):
                     ---
                     # Example
 
-                    Run ../commit/scripts/helper.py before continuing.
+                    Run ../neighbor/scripts/helper.py before continuing.
                     """
                 ),
                 encoding="utf-8",

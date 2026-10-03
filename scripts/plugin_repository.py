@@ -21,7 +21,6 @@ SAFE_SEGMENT_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$")
 # Validation oracle for locked companion bundles. Operational membership is
 # still derived from on-disk plugin trees after this oracle passes.
 EXPECTED_BUNDLES: Mapping[str, frozenset[str]] = {
-    "git-workflow": frozenset({"commit", "pr"}),
     "drawio": frozenset({"cloud-diagram", "drawio-shapes"}),
     "skill-architect": frozenset({"skill-architect"}),
 }

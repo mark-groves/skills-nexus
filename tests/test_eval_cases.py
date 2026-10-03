@@ -296,22 +296,22 @@ class EvalCatalogTests(unittest.TestCase):
             self.assertFalse(destination.exists())
 
     def test_resolve_skill_accepts_plugin_short_name(self) -> None:
-        skill_dir = resolve_skill(REPO_DIR, "commit")
-        self.assertEqual(skill_dir.name, "commit")
+        skill_dir = resolve_skill(REPO_DIR, "cloud-diagram")
+        self.assertEqual(skill_dir.name, "cloud-diagram")
         self.assertTrue((skill_dir / "SKILL.md").is_file())
 
     def test_checked_in_catalog_and_companions_load(self) -> None:
-        skill_dir = resolve_skill(REPO_DIR, "commit")
+        skill_dir = resolve_skill(REPO_DIR, "cloud-diagram")
         spec = load_eval_spec(skill_dir, REPO_DIR / "evals")
         groups = load_case_groups(
-            REPO_DIR / "evals" / "commit" / "capability-case-groups.json",
+            REPO_DIR / "evals" / "cloud-diagram" / "capability-case-groups.json",
             spec,
         )
         self.assertGreater(len(spec.trigger_cases), 0)
         self.assertGreater(len(spec.behavior_cases), 0)
         self.assertTrue(any(group.kind == "development" for group in groups))
         contract = load_component_contract(
-            REPO_DIR / "evals" / "commit" / "components.json",
+            REPO_DIR / "evals" / "cloud-diagram" / "components.json",
             skill_dir,
         )
         self.assertGreater(len(contract.components), 0)

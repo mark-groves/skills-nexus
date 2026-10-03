@@ -65,9 +65,8 @@ class PluginRepositoryTests(unittest.TestCase):
                 {bundle.value for bundle in repository.plugins},
                 set(EXPECTED_BUNDLES),
             )
-            self.assertEqual(repository.owner_of("commit"), BundleId("git-workflow"))
-            self.assertEqual(repository.owner_of("pr"), BundleId("git-workflow"))
             self.assertEqual(repository.owner_of("cloud-diagram"), BundleId("drawio"))
+            self.assertEqual(repository.owner_of("drawio-shapes"), BundleId("drawio"))
             self.assertEqual(
                 repository.skill("skill-architect").source_dir,
                 (root / "plugins/skill-architect/skills/skill-architect").resolve(),
@@ -77,8 +76,8 @@ class PluginRepositoryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             _write_locked_repo(root)
-            (root / "plugins/git-workflow/skills/pr").rename(root / "pr-moved")
-            with self.assertRaisesRegex(PluginRepositoryError, "git-workflow"):
+            (root / "plugins/drawio/skills/drawio-shapes").rename(root / "shapes-moved")
+            with self.assertRaisesRegex(PluginRepositoryError, "drawio"):
                 PluginRepository.load(root)
 
     def test_load_rejects_symlink_escape(self) -> None:
@@ -87,7 +86,7 @@ class PluginRepositoryTests(unittest.TestCase):
             _write_locked_repo(root)
             outside = root / "outside.txt"
             outside.write_text("secret\n", encoding="utf-8")
-            target = root / "plugins/git-workflow/skills/commit/leak.txt"
+            target = root / "plugins/drawio/skills/cloud-diagram/leak.txt"
             target.symlink_to(outside)
             with self.assertRaisesRegex(PluginRepositoryError, "symlink"):
                 PluginRepository.load(root)
@@ -96,7 +95,7 @@ class PluginRepositoryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             _write_locked_repo(root)
-            manifest = root / "plugins/git-workflow/plugin.json"
+            manifest = root / "plugins/drawio/plugin.json"
             payload = json.loads(manifest.read_text(encoding="utf-8"))
             payload["$schema"] = "https://example.invalid/schema.json"
             manifest.write_text(json.dumps(payload), encoding="utf-8")
@@ -108,10 +107,8 @@ class PluginRepositoryTests(unittest.TestCase):
             root = Path(temp_dir)
             plugins = root / "plugins"
             plugins.mkdir()
-            _write_plugin(plugins, "git-workflow", {"commit", "pr"})
             _write_plugin(plugins, "drawio", {"cloud-diagram", "drawio-shapes"})
-            # Illegal second owner for commit inside skill-architect slot.
-            _write_plugin(plugins, "skill-architect", {"commit"})
+            _write_plugin(plugins, "skill-architect", {"cloud-diagram"})
             with self.assertRaisesRegex(PluginRepositoryError, "owned by both|skills must be"):
                 PluginRepository.load(root)
 
