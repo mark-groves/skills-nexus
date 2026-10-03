@@ -520,8 +520,8 @@ def resolve_skill(repo_root: Path, selector: str) -> Path:
     matches = [path for path in discover_repository_skills(repo_root) if path.name == selector]
     if not matches:
         raise EvalError(
-            f"No skill matches {selector!r}. Use a short name such as 'commit', "
-            "a repository path such as 'plugins/git-workflow/skills/commit', "
+            f"No skill matches {selector!r}. Use a short name such as 'cloud-diagram', "
+            "a repository path such as 'plugins/drawio/skills/cloud-diagram', "
             "or a skill directory path."
         )
     if len(matches) > 1:

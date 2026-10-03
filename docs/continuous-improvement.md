@@ -71,21 +71,21 @@ provenance, marks the record untrusted, and writes a private file with mode
     "activation": "activated"
   },
   "task": {
-    "category": "git",
-    "summary": "Prepared a commit from a mixed working tree."
+    "category": "authoring",
+    "summary": "Separated runtime instructions from repository eval evidence."
   },
   "outcome": "partial",
   "signals": [
     {
       "kind": "instruction_confusion",
-      "observation": "The agent reconsidered the same grouping twice.",
-      "instruction_ref": "SKILL.md: Split decision",
-      "evidence_excerpt": "Two consecutive planning steps revisited the grouping.",
-      "diagnosis": "The split-commit stop condition was unclear.",
+      "observation": "The agent copied an eval fixture into the skill directory.",
+      "instruction_ref": "SKILL.md: Design the boundaries",
+      "evidence_excerpt": "The draft placed evals.json inside the skill package.",
+      "diagnosis": "The split between runtime files and repository evidence was unclear.",
       "diagnosis_confidence": "medium"
     }
   ],
-  "suggested_change": "Add one positive and one negative grouping example."
+  "suggested_change": "Add one file that stays in the skill and one file that stays under evals/."
 }
 ```
 
@@ -93,7 +93,7 @@ Record it against the exact canonical skill that ran:
 
 ```bash
 python3 scripts/record_observation.py \
-  --skill commit \
+  --skill skill-architect \
   --input /path/to/observation.json
 ```
 
@@ -135,7 +135,7 @@ Classifications are `instruction`, `trigger`, `script`, `reference`,
 
 ```bash
 python3 scripts/classify_observation.py \
-  --input .skill-feedback/inbox/commit/<observation-id>.json \
+  --input .skill-feedback/inbox/skill-architect/<observation-id>.json \
   --class instruction
 ```
 
@@ -143,7 +143,7 @@ To inspect a redacted copy without classifying:
 
 ```bash
 python3 scripts/redact_observation.py \
-  --input .skill-feedback/inbox/commit/<observation-id>.json
+  --input .skill-feedback/inbox/skill-architect/<observation-id>.json
 ```
 
 If the report is not reproducible, or is not a skill defect, close it without
@@ -151,7 +151,7 @@ editing `evals.json`:
 
 ```bash
 python3 scripts/reject_observation.py \
-  --input .skill-feedback/inbox/commit/<observation-id>.json \
+  --input .skill-feedback/inbox/skill-architect/<observation-id>.json \
   --disposition insufficient \
   --reason "Excerpt does not reproduce against the current skill."
 ```
@@ -166,13 +166,13 @@ be promoted.
 
 ```bash
 python3 scripts/promote_observation.py \
-  --input .skill-feedback/inbox/commit/<observation-id>.json \
-  --reason "Stopping condition is ambiguous and reproducible." \
-  --trigger-query "split these changes into two commits" \
+  --input .skill-feedback/inbox/skill-architect/<observation-id>.json \
+  --reason "The runtime and evidence boundary is ambiguous and reproducible." \
+  --trigger-query "turn this runbook into a skill" \
   --should-trigger true \
-  --behavior-prompt "/commit split the staged Python and docs changes" \
-  --expected-behavior "Stops after one split decision and does not regroup." \
-  --check "States the split stop condition once"
+  --behavior-prompt "/skill-architect keep eval fixtures out of the runtime package" \
+  --expected-behavior "Leaves evals and observations outside the skill directory." \
+  --check "States that repository evidence stays outside the published skill"
 ```
 
 `load_eval_spec` must accept the updated suite before the write replaces

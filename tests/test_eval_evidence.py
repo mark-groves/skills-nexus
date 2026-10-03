@@ -32,11 +32,11 @@ def valid_spec(**overrides: object) -> dict[str, object]:
         "run_id": "commit-draft",
         "mode": "prove-variant",
         "aggregation": "rank-all",
-        "skill_name": "commit",
+        "skill_name": "cloud-diagram",
         "git_sha": "a7489e0",
         "case": {
             "schema_version": 1,
-            "skill_name": "commit",
+            "skill_name": "cloud-diagram",
             "case_id": "11",
             "kind": "behavior",
             "prompt": "Draft the commit message for these changes, but do not stage or commit.",
@@ -48,7 +48,7 @@ def valid_spec(**overrides: object) -> dict[str, object]:
             {
                 "schema_version": 1,
                 "role": "current",
-                "logical_skill_name": "commit",
+                "logical_skill_name": "cloud-diagram",
                 "digest_sha256": sha("skill"),
                 "plugin_digest_sha256": sha("plugin"),
                 "variant_id": "current",
@@ -72,7 +72,7 @@ def valid_spec(**overrides: object) -> dict[str, object]:
                 "variant_id": "current",
                 "goal": "Draft a conventional commit message for the staged readme typo.",
                 "prompt": "The readme has a staged typo fix. Write the commit message I should use. Do not change the repository.",
-                "install_root": "project/skills/commit",
+                "install_root": "project/skills/cloud-diagram",
                 "note_path": "project/notes/cedar.json",
             }
         ],
@@ -87,7 +87,7 @@ def valid_spec(**overrides: object) -> dict[str, object]:
 class VocabTests(unittest.TestCase):
     def test_word_boundary_keeps_latest_and_catches_evals(self) -> None:
         self.assertEqual(forbidden_vocab("use the latest draft"), ())
-        self.assertEqual(forbidden_vocab("project/evals/commit"), ("evals",))
+        self.assertEqual(forbidden_vocab("project/evals/cloud-diagram"), ("evals",))
         self.assertEqual(forbidden_vocab("spawn the candidate"), ("candidate",))
 
 
@@ -120,7 +120,7 @@ class EmitTests(unittest.TestCase):
 
             path_spec = valid_spec()
             bad_path = dict(workers[0])
-            bad_path["install_root"] = "project/evals/commit"
+            bad_path["install_root"] = "project/evals/cloud-diagram"
             path_spec["workers"] = [bad_path]
             with self.assertRaises(EvidenceError):
                 emit(path_spec, run_dir / "other")

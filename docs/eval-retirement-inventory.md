@@ -105,11 +105,8 @@ Harness-neutral case data stays. Codex pilot writeups go.
 | Path | Action |
 | --- | --- |
 | `evals/cloud-diagram/` | KEEP cases and companions. |
-| `evals/commit/` evals, fixtures, components, groups, routine screen, case markdown | KEEP. |
 | `evals/drawio-shapes/` | KEEP. |
-| `evals/pr/` | KEEP. |
 | `evals/skill-architect/` evals, fixtures, components, groups, routine screen | KEEP. |
-| `evals/commit/reviews/issue-29-pilot.md` | QUARANTINE. Codex pilot scrap. |
 | `evals/skill-architect/reviews/issue-29-pilot.md` | QUARANTINE. |
 | `evals/skill-architect/reviews/issue-39-sources-rerun.md` | QUARANTINE. |
 | `evals/skill-architect/fixtures/capability-review/eval-profiles.json` | QUARANTINE or rewrite. Codex profile fixture. |

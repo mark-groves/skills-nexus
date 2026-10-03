@@ -4,7 +4,7 @@ Canonical runtime skills live under `plugins/<bundle>/skills/<name>/` inside an
 [Agent Plugin](https://agent-plugins.org/) package. Each skill directory is a
 self-contained package that can be copied, packaged, or installed by a
 compatible agent client. Companion skills that should always install together
-share one plugin (`git-workflow`, `drawio`, or `skill-architect`).
+share one plugin (`drawio`).
 
 Skills Nexus follows the common Agent Skills package shape and authoring
 principles, but its canonical metadata contract is intentionally smaller than

@@ -14,7 +14,6 @@ hooks stay outside the portable plugin package.
 
 | Plugin | Skills |
 | --- | --- |
-| `git-workflow` | `commit`, `pr` |
 | `drawio` | `cloud-diagram`, `drawio-shapes` |
 | `skill-architect` | `skill-architect` |
 
@@ -25,7 +24,7 @@ symlink out of the repo; Cursor rejects that.
 
 ```bash
 mkdir -p ~/.cursor/plugins/local
-rsync -a --delete "$PWD/plugins/git-workflow/" ~/.cursor/plugins/local/git-workflow/
+rsync -a --delete "$PWD/plugins/drawio/" ~/.cursor/plugins/local/drawio/
 ```
 
 For harness skill-root installs during development, the local helper expands a
@@ -34,8 +33,8 @@ skill selector to its owning companion bundle:
 ```bash
 git clone https://github.com/mark-groves/skills-nexus.git
 cd skills-nexus
-bash scripts/deploy-skills.sh --harness cursor --skill commit
-# installs commit and pr together
+bash scripts/deploy-skills.sh --harness cursor --skill cloud-diagram
+# installs cloud-diagram and drawio-shapes together
 ```
 
 Install every canonical skill (all bundles):

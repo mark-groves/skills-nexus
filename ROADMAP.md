@@ -78,13 +78,9 @@ human-opted escalation.
 Issue #29 completed the first Codex-scoped pilots, but Capability Optimisation
 v1 remains unverified because no useful reduction passed every gate. The
 `skill-architect` pilot bounded a marginal review but retained the component
-when evidence coverage was incomplete. The `commit` pilot rejected a Candidate
-that removed protected safety prose; protected hard failures were observed
-alongside quality and coverage failures, while fresh exact-suite evidence found
-worse dynamic input-token use in both universes despite a smaller static
-package. That is not a clean single-cause protected-regression proof. A future
-positive pilot must also preserve held-back behavior and avoid overstating
-Codex evidence as cross-harness support.
+when evidence coverage was incomplete. A future positive pilot must also
+preserve held-back behavior and avoid overstating Codex evidence as
+cross-harness support.
 
 Cursor CLI production adapters and the Multi-harness evaluations v1 — Cursor
 milestone (#45, #50–#53) were closed as not planned. The repository is pivoting
@@ -96,8 +92,8 @@ Behavioral proof is the Cloud Agent prove path in
 
 ## Phase 5b — Agent Plugin companion bundles
 
-- [x] Lock packaging topology (Option A) and companion bundles: `git-workflow`,
-      `drawio`, `skill-architect`.
+- [x] Lock packaging topology (Option A) and companion bundles: `drawio`,
+      `skill-architect`.
 - [x] Scaffold `PluginRepository` with pinned Agent Plugins schema and fixture
       tests (pre-cutover).
 - [x] Move canonical skills under `plugins/<bundle>/skills/<name>/` with

@@ -11,14 +11,13 @@ symlink into the repo. Cursor rejects those external symlink targets.
 
 ```bash
 mkdir -p ~/.cursor/plugins/local
-rsync -a --delete "$PWD/plugins/git-workflow/" ~/.cursor/plugins/local/git-workflow/
 rsync -a --delete "$PWD/plugins/drawio/" ~/.cursor/plugins/local/drawio/
 rsync -a --delete "$PWD/plugins/skill-architect/" ~/.cursor/plugins/local/skill-architect/
 ```
 
 Reload the Cursor window. Check Customize → Plugins, or the Cursor Plugins log
-for `loadUserLocalPlugin <name> loaded`. `git-workflow` loads `commit` and
-`pr`; `drawio` loads `cloud-diagram` and `drawio-shapes`.
+for `loadUserLocalPlugin <name> loaded`. `drawio` loads `cloud-diagram` and
+`drawio-shapes`. `skill-architect` loads `skill-architect`.
 
 ## Local harness skill-root helper
 
@@ -40,13 +39,14 @@ Every command requires `--harness`:
 ```bash
 bash scripts/deploy-skills.sh \
   --harness cursor \
-  --skill commit
+  --skill cloud-diagram
 
 bash scripts/deploy-skills.sh --harness agents --all
 ```
 
-`--skill commit` installs both `commit` and `pr`. Bundle paths such as
-`plugins/git-workflow/skills/commit` are also accepted as selectors.
+`--skill cloud-diagram` installs both `cloud-diagram` and `drawio-shapes`.
+Bundle paths such as `plugins/drawio/skills/cloud-diagram` are also accepted
+as selectors.
 Harness-specific metadata and install locations are adapter concerns; there are
 no separate harness-owned copies of the skill source.
 
@@ -55,7 +55,7 @@ no separate harness-owned copies of the skill source.
 User scope is the default:
 
 ```bash
-bash scripts/deploy-skills.sh --harness claude-code --skill commit
+bash scripts/deploy-skills.sh --harness claude-code --skill cloud-diagram
 ```
 
 Project scope installs beneath the project root:
@@ -63,7 +63,7 @@ Project scope installs beneath the project root:
 ```bash
 bash scripts/deploy-skills.sh \
   --harness copilot \
-  --skill pr \
+  --skill drawio-shapes \
   --scope project \
   --project-root /path/to/project
 ```
