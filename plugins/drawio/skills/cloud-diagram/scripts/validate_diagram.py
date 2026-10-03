@@ -28,8 +28,8 @@ from shape_catalog import (  # noqa: E402
 
 PROVIDER_TOKENS = {
     "aws": ("mxgraph.aws4",),
-    # azure2 icons plus swimlane architecture groups (Subnet, VNet, …).
-    "azure": ("img/lib/azure2", "swimlane;"),
+    # Product icons. Swimlane groups count only through the Azure group fingerprint.
+    "azure": ("img/lib/azure2",),
     # Positive GCP detection requires gcp2 or a catalog-backed data:image icon.
     "gcp": ("mxgraph.gcp2",),
 }
@@ -103,6 +103,8 @@ def _gcp_catalog_image_tokens() -> frozenset[str]:
 def _style_has_provider_evidence(style: str, provider: str) -> bool:
     if any(token in style for token in PROVIDER_TOKENS.get(provider, ())):
         return True
+    if provider == "azure" and extract_identity_tokens("azure", style):
+        return True
     if provider == "gcp":
         catalog = _gcp_catalog_image_tokens()
         return any(match.group(0) in catalog for match in _GCP_IMAGE_TOKEN_RE.finditer(style))
@@ -111,6 +113,10 @@ def _style_has_provider_evidence(style: str, provider: str) -> bool:
 
 def _joined_has_provider_evidence(joined_styles: str, provider: str) -> bool:
     if any(token in joined_styles for token in PROVIDER_TOKENS.get(provider, ())):
+        return True
+    if provider == "azure" and any(
+        extract_identity_tokens("azure", style) for style in joined_styles.split("\n") if style
+    ):
         return True
     if provider == "gcp":
         catalog = _gcp_catalog_image_tokens()
@@ -360,11 +366,12 @@ def collect_issues(
         if cell.get("edge") != "1":
             continue
         geometry = _geometry(cell)
-        valid_geometry = geometry is not None and (
-            geometry.get("relative") == "1" or geometry.get("as") == "geometry"
-        )
-        if not valid_geometry:
-            issues.append(f"edge {cell.get('id', '<unknown>')}: missing mxGeometry child")
+        edge_id = cell.get("id", "<unknown>")
+        if geometry is None:
+            issues.append(f"edge {edge_id}: missing mxGeometry child")
+            continue
+        if geometry.get("relative") != "1":
+            issues.append(f'edge {edge_id}: mxGeometry must set relative="1"')
 
     issues.extend(_overlap_issues(cells))
     styles = [cell.get("style", "") for cell in cells]

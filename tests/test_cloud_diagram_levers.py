@@ -355,6 +355,116 @@ class CloudDiagramLeversTest(unittest.TestCase):
             issues = collect_issues(diagram, "aws", ["VPC"])
         self.assertIn("missing provider shape for VPC", issues)
 
+    def _write_diagram(self, name: str, body: str) -> tuple[tempfile.TemporaryDirectory[str], Path]:
+        directory = tempfile.TemporaryDirectory()
+        diagram = Path(directory.name) / name
+        diagram.write_text(body, encoding="utf-8")
+        return directory, diagram
+
+    def _vertex_diagram(self, style: str, value: str) -> str:
+        return f"""\
+<mxfile><diagram><mxGraphModel><root>
+  <mxCell id="0" />
+  <mxCell id="1" parent="0" />
+  <mxCell id="node" value="{value}" style="{style}" vertex="1" parent="1">
+    <mxGeometry x="0" y="0" width="280" height="200" as="geometry" />
+  </mxCell>
+</root></mxGraphModel></diagram></mxfile>
+"""
+
+    def test_validate_distinguishes_shared_aws_security_group_icon(self) -> None:
+        public = resolve_shape("aws", "Public Subnet")
+        private = resolve_shape("aws", "Private Subnet")
+        security = resolve_shape("aws", "Security Group")
+        assert public is not None and private is not None and security is not None
+        cases = (
+            (public["style"], "Public Subnet", "Security Group"),
+            (private["style"], "Private Subnet", "Security Group"),
+            (security["style"], "Security Group", "Public Subnet"),
+        )
+        for style, value, required in cases:
+            directory, diagram = self._write_diagram(
+                "shared-group.drawio",
+                self._vertex_diagram(style, value),
+            )
+            with directory:
+                issues = collect_issues(diagram, "aws", [required])
+            self.assertIn(f"missing provider shape for {required}", issues)
+
+        directory, diagram = self._write_diagram(
+            "security-group.drawio",
+            self._vertex_diagram(security["style"], "Security Group"),
+        )
+        with directory:
+            issues = collect_issues(diagram, "aws", ["Security Group"])
+        self.assertEqual(issues, [])
+
+    def test_validate_requires_relative_edge_geometry(self) -> None:
+        xml = """\
+<mxfile><diagram><mxGraphModel><root>
+  <mxCell id="0" />
+  <mxCell id="1" parent="0" />
+  <mxCell id="a" value="A" style="rounded=1;" vertex="1" parent="1">
+    <mxGeometry x="0" y="0" width="40" height="40" as="geometry" />
+  </mxCell>
+  <mxCell id="b" value="B" style="rounded=1;" vertex="1" parent="1">
+    <mxGeometry x="80" y="0" width="40" height="40" as="geometry" />
+  </mxCell>
+  <mxCell id="e1" edge="1" source="a" target="b" parent="1">
+    <mxGeometry as="geometry" />
+  </mxCell>
+</root></mxGraphModel></diagram></mxfile>
+"""
+        directory, diagram = self._write_diagram("flat-edge.drawio", xml)
+        with directory:
+            issues = collect_issues(diagram)
+        self.assertIn('edge e1: mxGeometry must set relative="1"', issues)
+
+    def test_validate_ignores_bare_swimlane_as_azure_evidence(self) -> None:
+        xml = """\
+<mxfile><diagram><mxGraphModel><root>
+  <mxCell id="0" />
+  <mxCell id="1" parent="0" />
+  <mxCell id="lane" value="Lane" style="swimlane;html=1;" vertex="1" parent="1">
+    <mxGeometry x="0" y="0" width="200" height="120" as="geometry" />
+  </mxCell>
+</root></mxGraphModel></diagram></mxfile>
+"""
+        directory, diagram = self._write_diagram("bare-swimlane.drawio", xml)
+        with directory:
+            issues = collect_issues(diagram, "azure")
+        self.assertIn("no provider shape tokens found for azure", issues)
+
+    def test_validate_three_tier_starters(self) -> None:
+        starters = (
+            (
+                "three-tier-aws.drawio.xml",
+                "aws",
+                ["ALB", "EC2", "RDS", "VPC", "Internet Gateway", "NAT Gateway"],
+            ),
+            (
+                "three-tier-azure.drawio.xml",
+                "azure",
+                [
+                    "App Service",
+                    "Azure SQL",
+                    "Application Gateway",
+                    "VNet",
+                    "Subnet",
+                    "Resource Group",
+                    "Subscription",
+                ],
+            ),
+            (
+                "three-tier-gcp.drawio.xml",
+                "gcp",
+                ["Cloud Load Balancing", "Cloud Run", "Cloud SQL"],
+            ),
+        )
+        for filename, provider, services in starters:
+            issues = collect_issues(REFERENCES / "templates" / filename, provider, services)
+            self.assertEqual(issues, [], filename)
+
     def test_validate_three_tier_azure(self) -> None:
         path = REFERENCES / "templates" / "three-tier-azure.drawio.xml"
         issues = collect_issues(
