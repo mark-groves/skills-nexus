@@ -23,7 +23,6 @@ glyph inside a heavy dark square that reads as a service tile.
 
 Resolve services with `scripts/lookup_shape.py --provider aws <name>`
 or `references/common-shapes.json` first. Do not invent stencil names.
-On a confirmed miss, use a labeled generic rounded rectangle.
 
 When a title appears twice (header group vs generated product icon),
 lookup keeps the group/container style. That covers `VPC`,

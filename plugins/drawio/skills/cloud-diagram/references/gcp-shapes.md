@@ -154,8 +154,7 @@ python3 scripts/lookup_shape.py --provider gcp --card "<name>"
 ```
 
 Do not invent stencil names. Do not paste the raw catalog `style` as a
-standalone vertex. On a confirmed miss, use a labeled generic rounded
-rectangle.
+standalone vertex.
 
 ## GCP colour palette
 

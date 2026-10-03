@@ -56,11 +56,7 @@ def main(argv: list[str] | None = None) -> int:
 
     shape = resolve_shape(args.provider, args.query, common)
     if shape is None:
-        print(
-            f"MISS: {args.provider!r} {args.query!r}. "
-            "Confirmed miss only → labeled generic rounded rectangle.",
-            file=sys.stderr,
-        )
+        print(f"MISS: {args.provider!r} {args.query!r}.", file=sys.stderr)
         return 2
 
     if args.card:

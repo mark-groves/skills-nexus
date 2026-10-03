@@ -178,7 +178,34 @@ class CloudDiagramLeversTest(unittest.TestCase):
             text=True,
         )
         self.assertEqual(proc.returncode, 2)
-        self.assertIn("labeled generic rounded rectangle", proc.stderr)
+        self.assertIn("MISS:", proc.stderr)
+        self.assertNotIn("generic rounded rectangle", proc.stderr)
+
+    def test_lookup_named_services(self) -> None:
+        cases = (
+            ("aws", "kms", "Key Management Service", "resIcon=mxgraph.aws4.key_management_service"),
+            (
+                "aws",
+                "iam",
+                "Identity & Access Management",
+                "resIcon=mxgraph.aws4.identity_and_access_management",
+            ),
+            ("aws", "sql", "RDS", "resIcon=mxgraph.aws4.rds"),
+            ("azure", "storage", "Storage Accounts", "img/lib/azure2/storage/"),
+        )
+        for provider, query, title, marker in cases:
+            with self.subTest(provider=provider, query=query):
+                hit = resolve_shape(provider, query)
+                assert hit is not None
+                self.assertEqual(hit["title"], title)
+                self.assertIn(marker, hit["style"])
+
+    def test_lookup_whole_word_beats_shorter_substring(self) -> None:
+        hit = resolve_shape("aws", "cloud")
+        assert hit is not None
+        self.assertEqual(hit["title"], "AWS Cloud")
+        self.assertEqual(hit["kind"], "group")
+        self.assertIn("grIcon=mxgraph.aws4.group_aws_cloud", hit["style"])
 
     def test_lookup_cli_json(self) -> None:
         proc = subprocess.run(
