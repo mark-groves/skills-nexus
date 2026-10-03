@@ -1,6 +1,6 @@
 # Azure Shape Catalog for draw.io
 
-A complete catalog of 613 unique Azure2 service shapes for draw.io
+A complete catalog of 668 unique Azure2 service shapes for draw.io
 diagram generation using SVG image references.
 
 ## Shape naming convention
@@ -119,6 +119,16 @@ strokeColor=#333333;strokeWidth=1;fontSize=11;
 
 ## AI and ML
 
+### AI Foundry
+
+- **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/ai_machine_learning/AI_Foundry.svg;`
+- **Size:** 64x68
+
+### AI Foundry IQ
+
+- **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/ai_machine_learning/AI_Foundry_IQ.svg;`
+- **Size:** 68x68
+
 ### AI Studio
 
 - **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/ai_machine_learning/AI_Studio.svg;`
@@ -133,6 +143,11 @@ strokeColor=#333333;strokeWidth=1;fontSize=11;
 
 - **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/ai_machine_learning/Azure_Applied_AI.svg;`
 - **Size:** 68x52
+
+### Azure Machine Learning
+
+- **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/ai_machine_learning/Azure_Machine_Learning.svg;`
+- **Size:** 68x59
 
 ### Batch AI
 
@@ -183,6 +198,46 @@ strokeColor=#333333;strokeWidth=1;fontSize=11;
 
 - **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/ai_machine_learning/Form_Recognizers.svg;`
 - **Size:** 63x68
+
+### Foundry Agent Service
+
+- **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/ai_machine_learning/Foundry_Agent_Service.svg;`
+- **Size:** 61x68
+
+### Foundry Application
+
+- **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/ai_machine_learning/Foundry_Application.svg;`
+- **Size:** 68x68
+
+### Foundry Control Plane
+
+- **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/ai_machine_learning/Foundry_Control_Plane.svg;`
+- **Size:** 68x68
+
+### Foundry Labs
+
+- **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/ai_machine_learning/Foundry_Labs.svg;`
+- **Size:** 63x68
+
+### Foundry Local
+
+- **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/ai_machine_learning/Foundry_Local.svg;`
+- **Size:** 66x68
+
+### Foundry Models
+
+- **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/ai_machine_learning/Foundry_Models.svg;`
+- **Size:** 68x68
+
+### Foundry Project
+
+- **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/ai_machine_learning/Foundry_Project.svg;`
+- **Size:** 68x56
+
+### FRD QA
+
+- **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/ai_machine_learning/FRD_QA.svg;`
+- **Size:** 62x68
 
 ### Genomics
 
@@ -248,6 +303,11 @@ strokeColor=#333333;strokeWidth=1;fontSize=11;
 
 - **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/ai_machine_learning/Personalizers.svg;`
 - **Size:** 68x55
+
+### Planetary Computer Pro
+
+- **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/ai_machine_learning/Planetary_Computer_Pro.svg;`
+- **Size:** 68x68
 
 ### QnA Makers
 
@@ -518,6 +578,11 @@ strokeColor=#333333;strokeWidth=1;fontSize=11;
 - **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/compute/Availability_Sets.svg;`
 - **Size:** 68x68
 
+### Azure Linux
+
+- **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/compute/Azure_Linux.svg;`
+- **Size:** 66x68
+
 ### Batch Accounts
 
 - **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/compute/Batch_Accounts.svg;`
@@ -633,6 +698,11 @@ strokeColor=#333333;strokeWidth=1;fontSize=11;
 - **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/compute/Restore_Points_Collections.svg;`
 - **Size:** 68x56
 
+### Scheduled Actions
+
+- **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/compute/Scheduled_Actions.svg;`
+- **Size:** 68x68
+
 ### Service Fabric Clusters
 
 - **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/compute/Service_Fabric_Clusters.svg;`
@@ -646,6 +716,11 @@ strokeColor=#333333;strokeWidth=1;fontSize=11;
 ### Spring Cloud
 
 - **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/compute/Azure_Spring_Cloud.svg;`
+- **Size:** 68x68
+
+### Stage Maps
+
+- **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/compute/Stage_Maps.svg;`
 - **Size:** 68x68
 
 ### Virtual Machine
@@ -675,15 +750,35 @@ strokeColor=#333333;strokeWidth=1;fontSize=11;
 
 ## Containers
 
+### AKS Network Policy
+
+- **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/containers/AKS_Network_Policy.svg;`
+- **Size:** 68x62
+
 ### Container Registries
 
 - **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/containers/Container_Registries.svg;`
 - **Size:** 68x61
 
+### Container Storage
+
+- **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/containers/Azure_Container_Storage.svg;`
+- **Size:** 68x68
+
+### Kubernetes Hub
+
+- **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/containers/Kubernetes_Hub.svg;`
+- **Size:** 68x68
+
 ### Red Hat OpenShift
 
 - **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/containers/Azure_Red_Hat_OpenShift.svg;`
 - **Size:** 68x68
+
+### Service Groups
+
+- **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/containers/Service_Groups.svg;`
+- **Size:** 68x64
 
 ## CXP
 
@@ -698,6 +793,16 @@ strokeColor=#333333;strokeWidth=1;fontSize=11;
 - **Size:** 49x68
 
 ## Databases
+
+### Azure DocumentDB
+
+- **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/databases/Azure_DocumentDB.svg;`
+- **Size:** 51x68
+
+### Azure Managed Redis
+
+- **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/databases/Azure_Managed_Redis.svg;`
+- **Size:** 68x68
 
 ### Cache Redis
 
@@ -779,6 +884,11 @@ strokeColor=#333333;strokeWidth=1;fontSize=11;
 - **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/databases/SQL_Database.svg;`
 - **Size:** 48x64
 
+### SQL Database Fleet Manager
+
+- **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/databases/SQL_Database_Fleet_Manager.svg;`
+- **Size:** 56x68
+
 ### SQL Edge
 
 - **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/databases/Azure_SQL_Edge.svg;`
@@ -835,6 +945,11 @@ strokeColor=#333333;strokeWidth=1;fontSize=11;
 
 - **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/devops/Application_Insights.svg;`
 - **Size:** 44x63
+
+### Azure App Testing
+
+- **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/devops/Azure_App_Testing.svg;`
+- **Size:** 68x68
 
 ### Change Analysis
 
@@ -1213,6 +1328,11 @@ strokeColor=#333333;strokeWidth=1;fontSize=11;
 - **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/general/Recent.svg;`
 - **Size:** 68x68
 
+### Region Management
+
+- **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/general/Region_Management.svg;`
+- **Size:** 59x68
+
 ### Reservations
 
 - **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/general/Reservations.svg;`
@@ -1370,6 +1490,16 @@ strokeColor=#333333;strokeWidth=1;fontSize=11;
 
 ## Hybrid and Multicloud
 
+### AI at Edge
+
+- **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/hybrid_multicloud/AI_at_Edge.svg;`
+- **Size:** 68x68
+
+### Azure Local
+
+- **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/hybrid_multicloud/Azure_Local.svg;`
+- **Size:** 68x67
+
 ### Azure Operator 5G Core
 
 - **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/hybrid_multicloud/Azure_Operator_5G_Core.svg;`
@@ -1394,6 +1524,16 @@ strokeColor=#333333;strokeWidth=1;fontSize=11;
 
 - **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/hybrid_multicloud/Azure_Programmable_Connectivity.svg;`
 - **Size:** 68x68
+
+### Edge Storage Accelerator
+
+- **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/hybrid_multicloud/Edge_Storage_Accelerator.svg;`
+- **Size:** 68x68
+
+### Workload Orchestration
+
+- **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/hybrid_multicloud/Workload_Orchestration.svg;`
+- **Size:** 68x66
 
 ## Identity
 
@@ -1497,6 +1637,11 @@ strokeColor=#333333;strokeWidth=1;fontSize=11;
 - **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/identity/Entra_Verified_ID.svg;`
 - **Size:** 68x60
 
+### External ID
+
+- **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/identity/External_ID.svg;`
+- **Size:** 68x68
+
 ### External Identities
 
 - **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/identity/External_Identities.svg;`
@@ -1564,6 +1709,11 @@ strokeColor=#333333;strokeWidth=1;fontSize=11;
 
 ## Integration
 
+### AI Gateway
+
+- **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/integration/AI_Gateway.svg;`
+- **Size:** 68x68
+
 ### API for FHIR
 
 - **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/integration/Azure_API_for_FHIR.svg;`
@@ -1619,6 +1769,11 @@ strokeColor=#333333;strokeWidth=1;fontSize=11;
 - **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/integration/Logic_Apps_Custom_Connector.svg;`
 - **Size:** 68x68
 
+### Logic Apps Template
+
+- **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/integration/Logic_Apps_Template.svg;`
+- **Size:** 68x68
+
 ### Partner Namespace
 
 - **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/integration/Partner_Namespace.svg;`
@@ -1633,6 +1788,11 @@ strokeColor=#333333;strokeWidth=1;fontSize=11;
 
 - **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/integration/Partner_Topic.svg;`
 - **Size:** 68x61
+
+### PubSub
+
+- **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/integration/Azure_PubSub.svg;`
+- **Size:** 68x68
 
 ### Relays
 
@@ -1721,6 +1881,11 @@ strokeColor=#333333;strokeWidth=1;fontSize=11;
 - **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/intune/eBooks.svg;`
 - **Size:** 68x60
 
+### Engage Center Connect
+
+- **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/intune/Engage_Center_Connect.svg;`
+- **Size:** 68x54
+
 ### Exchange Access
 
 - **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/intune/Exchange_Access.svg;`
@@ -1766,6 +1931,11 @@ strokeColor=#333333;strokeWidth=1;fontSize=11;
 ### Digital Twins
 
 - **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/iot/Digital_Twins.svg;`
+- **Size:** 68x68
+
+### Hybrid Connectivity Hub
+
+- **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/iot/Hybrid_Connectivity_Hub.svg;`
 - **Size:** 68x68
 
 ### Industrial IoT
@@ -1880,6 +2050,11 @@ strokeColor=#333333;strokeWidth=1;fontSize=11;
 - **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/management_governance/Education.svg;`
 - **Size:** 67x52
 
+### Landing Zone
+
+- **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/management_governance/Landing_Zone.svg;`
+- **Size:** 68x68
+
 ### Lighthouse
 
 - **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/management_governance/Azure_Lighthouse.svg;`
@@ -1949,6 +2124,11 @@ strokeColor=#333333;strokeWidth=1;fontSize=11;
 
 - **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/management_governance/Service_Catalog_MAD.svg;`
 - **Size:** 56x68
+
+### Service Group Relationships
+
+- **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/management_governance/Service_Group_Relationships.svg;`
+- **Size:** 61x68
 
 ### Service Providers
 
@@ -2020,6 +2200,11 @@ strokeColor=#333333;strokeWidth=1;fontSize=11;
 
 ## Networking
 
+### Access Point
+
+- **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/networking/Azure_Access_Point.svg;`
+- **Size:** 68x67
+
 ### Application Gateway Containers
 
 - **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/networking/Application_Gateway_Containers.svg;`
@@ -2050,6 +2235,11 @@ strokeColor=#333333;strokeWidth=1;fontSize=11;
 - **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/networking/Connections.svg;`
 - **Size:** 68x68
 
+### DDoS Custom Policy
+
+- **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/networking/DDoS_Custom_Policy.svg;`
+- **Size:** 68x66
+
 ### DDoS Protection Plans
 
 - **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/networking/DDoS_Protection_Plans.svg;`
@@ -2074,6 +2264,11 @@ strokeColor=#333333;strokeWidth=1;fontSize=11;
 
 - **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/networking/DNS_Zones.svg;`
 - **Size:** 64x64
+
+### Edge Actions
+
+- **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/networking/Edge_Actions.svg;`
+- **Size:** 68x54
 
 ### ExpressRoute Circuits
 
@@ -2130,6 +2325,11 @@ strokeColor=#333333;strokeWidth=1;fontSize=11;
 - **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/networking/NAT.svg;`
 - **Size:** 68x68
 
+### Network Foundation Hub
+
+- **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/networking/Network_Foundation_Hub.svg;`
+- **Size:** 68x68
+
 ### Network Interfaces
 
 - **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/networking/Network_Interfaces.svg;`
@@ -2139,6 +2339,11 @@ strokeColor=#333333;strokeWidth=1;fontSize=11;
 
 - **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/networking/Network_Security_Groups.svg;`
 - **Size:** 56x68
+
+### Network Security Hub
+
+- **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/networking/Network_Security_Hub.svg;`
+- **Size:** 63x68
 
 ### Network Watcher
 
@@ -2265,6 +2470,16 @@ strokeColor=#333333;strokeWidth=1;fontSize=11;
 - **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/networking/Virtual_WANs.svg;`
 - **Size:** 65x64
 
+### VNet Appliance
+
+- **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/networking/VNet_Appliance.svg;`
+- **Size:** 68x68
+
+### VPN Client Windows
+
+- **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/networking/VPN_Client_Windows.svg;`
+- **Size:** 59x68
+
 ### Web Application Firewall Policies (WAF)
 
 - **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/networking/Web_Application_Firewall_Policies_WAF.svg;`
@@ -2347,6 +2562,11 @@ strokeColor=#333333;strokeWidth=1;fontSize=11;
 - **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/other/AVS_VM.svg;`
 - **Size:** 68x63
 
+### Azure Enclaves
+
+- **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/other/Azure_Enclaves.svg;`
+- **Size:** 61x68
+
 ### AzureAttestation
 
 - **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/other/AzureAttestation.svg;`
@@ -2371,6 +2591,11 @@ strokeColor=#333333;strokeWidth=1;fontSize=11;
 
 - **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/other/Bare_Metal_Infrastructure.svg;`
 - **Size:** 68x64
+
+### Breeze
+
+- **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/other/Breeze.svg;`
+- **Size:** 68x68
 
 ### Business Process Tracking
 
@@ -2427,6 +2652,11 @@ strokeColor=#333333;strokeWidth=1;fontSize=11;
 - **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/other/Confidential_Ledger.svg;`
 - **Size:** 68x68
 
+### Consumption Commitment
+
+- **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/other/Azure_Consumption_Commitment.svg;`
+- **Size:** 67x68
+
 ### Container App Environments
 
 - **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/other/Container_App_Environments.svg;`
@@ -2456,6 +2686,16 @@ strokeColor=#333333;strokeWidth=1;fontSize=11;
 
 - **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/other/Data_Collection_Rules.svg;`
 - **Size:** 67x68
+
+### Data Sharing
+
+- **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/other/Azure_Data_Sharing.svg;`
+- **Size:** 68x48
+
+### Data Transfer
+
+- **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/other/Azure_Data_Transfer.svg;`
+- **Size:** 68x58
 
 ### Database Instance for SAP
 
@@ -2602,6 +2842,11 @@ strokeColor=#333333;strokeWidth=1;fontSize=11;
 - **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/other/Azure_Dev_Tunnels.svg;`
 - **Size:** 68x68
 
+### Disconnected Operations
+
+- **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/other/Disconnected_Operations.svg;`
+- **Size:** 68x63
+
 ### Disk Pool
 
 - **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/other/Disk_Pool.svg;`
@@ -2722,6 +2967,11 @@ strokeColor=#333333;strokeWidth=1;fontSize=11;
 - **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/other/MedTech_Service.svg;`
 - **Size:** 68x61
 
+### Microsoft Discovery
+
+- **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/other/Microsoft_Discovery.svg;`
+- **Size:** 68x66
+
 ### Mission Landing Zone
 
 - **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/other/Mission_Landing_Zone.svg;`
@@ -2807,6 +3057,11 @@ strokeColor=#333333;strokeWidth=1;fontSize=11;
 - **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/other/Private_Mobile_Network.svg;`
 - **Size:** 68x48
 
+### Prometheus
+
+- **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/other/Prometheus.svg;`
+- **Size:** 68x68
+
 ### Quotas
 
 - **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/other/Azure_Quotas.svg;`
@@ -2820,6 +3075,11 @@ strokeColor=#333333;strokeWidth=1;fontSize=11;
 ### Reserved Capacity Groups
 
 - **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/other/Reserved_Capacity_Groups.svg;`
+- **Size:** 58x68
+
+### Resiliency
+
+- **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/other/Resiliency.svg;`
 - **Size:** 58x68
 
 ### Resource Guard
@@ -3145,6 +3405,11 @@ strokeColor=#333333;strokeWidth=1;fontSize=11;
 - **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/storage/Data_Shares.svg;`
 - **Size:** 64x55
 
+### Data Virtualization
+
+- **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/storage/Data_Virtualization.svg;`
+- **Size:** 68x68
+
 ### Fileshare
 
 - **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/storage/Azure_Fileshare.svg;`
@@ -3185,6 +3450,11 @@ strokeColor=#333333;strokeWidth=1;fontSize=11;
 - **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/storage/Storage_Explorer.svg;`
 - **Size:** 58x68
 
+### Storage Hubs
+
+- **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/storage/Storage_Hubs.svg;`
+- **Size:** 68x68
+
 ### Storage Sync Services
 
 - **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/storage/Storage_Sync_Services.svg;`
@@ -3196,6 +3466,11 @@ strokeColor=#333333;strokeWidth=1;fontSize=11;
 - **Size:** 48x64
 
 ## Web
+
+### Agentic Web Apps
+
+- **Style:** `aspect=fixed;html=1;shape=image;points=[];align=center;image;fontSize=12;image=img/lib/azure2/web/Agentic_Web_Apps.svg;`
+- **Size:** 68x59
 
 ### API Center
 
