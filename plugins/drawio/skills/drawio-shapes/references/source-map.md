@@ -25,7 +25,7 @@ contents API's 100KB limit. Use the git blob endpoint instead:
 ```bash
 # Step 1: get the blob SHA
 sha=$(env GH_TOKEN= gh api \
-  "repos/jgraph/drawio/contents/src/main/webapp/js/diagramly/sidebar/<FILE>?ref=dev" \
+  "repos/jgraph/drawio/contents/src/main/webapp/js/diagramly/sidebar/<FILE>?ref=24b76c2cbd55d88e354042e8d329a2e4708972bc" \
   -q '.sha')
 
 # Step 2: download via blob API (no size limit)
@@ -39,9 +39,13 @@ If `gh auth status` reports a broken local token, keep `env GH_TOKEN=`
 in place for public-repo fetches so bad credentials do not poison
 anonymous API access.
 
+Downloads are pinned to commit `24b76c2cbd55d88e354042e8d329a2e4708972bc`
+(draw.io 31.7.0, 2026-10-01). Do not use the moving dev branch.
+
 ## GCP libraries
 
-GCP has three generations of shape libraries in draw.io:
+GCP has four sidebar generations in draw.io. This extractor reads
+GCP2 and GCPIcons. It records GCP3 and the original GCP sidebar as skips.
 
 ### GCPIcons (newest, current)
 
@@ -98,7 +102,15 @@ duplicates by raw name alone; preserve the visual variants.
   networking, product_cards, storage_databases)
 - **Palette prefix:** `gcp`
 - **Notes:** Mostly superseded by GCP2. Only defines product card
-  palette in the JS; actual shapes are in the stencil XMLs.
+  palette in the JS; actual shapes are in the stencil XMLs. The
+  extractor records this file as a skip.
+
+### GCP3 (skipped)
+
+- **File:** `Sidebar-GCP3.js`
+- **Notes:** Google Cloud Platform 2026. About 45 category and core
+  glyphs. The extractor records this file as a skip. Do not replace GCP2
+  with it.
 
 ## AWS library
 
@@ -109,16 +121,22 @@ duplicates by raw name alone; preserve the visual variants.
 - **Shape encoding:** Mostly resolved style-string expressions that
   expand to `shape=mxgraph.aws4.*` or
   `shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.*`
-- **Stencil directory:** `src/main/webapp/stencils/aws4/`
+- **Stencil file:** `src/main/webapp/stencils/aws4.xml`
 - **Template functions:** `createVertexTemplateEntry()`,
   `addAWS4Palette()`, and various helper functions
 - **Notes:** Treat AWS4 as its own parsing path. A naive "find base64"
   extractor will misread style suffixes as fake payloads.
 
-### AWS3 / AWS3D (legacy)
+### AWS4b (skipped)
+
+- **File:** `Sidebar-AWS4b.js`
+- **Notes:** AWS18. The extractor records this file as a skip. It is not
+  the AWS4 catalog. `addAWS4b` must not be parsed as AWS4.
+
+### AWS3 / AWS3D (legacy, skipped)
 
 - **Files:** `Sidebar-AWS3.js`, `Sidebar-AWS3D.js`
-- **Notes:** Superseded by AWS4.
+- **Notes:** Superseded by AWS4. The extractor records both files as skips.
 
 ## Azure library
 
@@ -135,10 +153,10 @@ duplicates by raw name alone; preserve the visual variants.
   `r * <scale>` and should be converted back to pixel dimensions for
   catalogs
 
-### Azure (legacy)
+### Azure (legacy, skipped)
 
 - **File:** `Sidebar-Azure.js`
-- **Notes:** Superseded by Azure2.
+- **Notes:** Superseded by Azure2. The extractor records this file as a skip.
 
 ## Shape encoding patterns
 
