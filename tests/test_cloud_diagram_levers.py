@@ -940,11 +940,12 @@ class CloudDiagramLeversTest(unittest.TestCase):
             hit = resolve_shape("gcp", title)
             assert hit is not None
             new_token = extract_identity_tokens("gcp", hit["style"])[0]
+            new_digest = hashlib.sha256(new_token.encode()).hexdigest()[:16]
             self.assertTrue(
                 any(
                     f"cell {cell_id}" in warning
                     and f"legacy GCP icon for {title}" in warning
-                    and new_token[:60] in warning
+                    and f"current token sha256:{new_digest}" in warning
                     for warning in warnings
                 ),
                 warnings,
