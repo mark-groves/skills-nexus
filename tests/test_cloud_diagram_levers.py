@@ -455,7 +455,7 @@ class CloudDiagramLeversTest(unittest.TestCase):
     def test_validate_identity_variants(self) -> None:
         identities = FIXTURES / "identities"
         aws_vpc = ["vpc", "security group", "ec2"]
-        cases = (
+        cases: tuple[tuple[str, str, list[str] | None, list[str]], ...] = (
             ("aws-sg-lowercase-hex", "aws", aws_vpc, []),
             ("aws-sg-tinted-fill", "aws", aws_vpc, []),
             (
