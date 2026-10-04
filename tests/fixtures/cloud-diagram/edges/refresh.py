@@ -39,11 +39,14 @@ def export_stripped(diagram: Path, out_svg: Path) -> None:
 
 
 def refresh_starters() -> None:
+    # draw.io randomises gradient ids per export, so unchanged starters keep their SVG.
+    previous = json.loads(MANIFEST.read_text(encoding="utf-8")) if MANIFEST.exists() else {}
     digests = {}
     for name in STARTERS:
         starter = TEMPLATES / f"{name}.drawio.xml"
-        export_stripped(starter, HERE / f"{name}.svg")
         digests[name] = hashlib.sha256(starter.read_bytes()).hexdigest()
+        if previous.get(name) != digests[name] or not (HERE / f"{name}.svg").exists():
+            export_stripped(starter, HERE / f"{name}.svg")
     MANIFEST.write_text(json.dumps(digests, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
