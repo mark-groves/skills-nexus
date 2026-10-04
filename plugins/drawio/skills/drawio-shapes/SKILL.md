@@ -178,9 +178,10 @@ GCPIcons uses 100 or 200), and the extractor applies that value. The
 generation script must deduplicate and clean up:
 
 1. **Deduplicate within a library family.** When the same `### Entry`
-   name appears multiple times within the same family, keep only the
-   entry with the smallest area. Do not merge away variants from
-   different active families.
+   name appears multiple times within the same family, keep one entry:
+   a Service Card glyph first, then a plain icon, then a
+   `product_card_logo` stencil, and the smallest area within a tier.
+   Do not merge away variants from different active families.
 2. **Keep native sizes.** Do not square or clamp sizes. Consumers fit
    the native `WxH` into their own display box and keep its aspect.
 3. **Remove empty categories.** If all entries in a category were

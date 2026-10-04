@@ -62,3 +62,5 @@ gcp	pubsub	Pub/Sub
 gcp	looker	Looker
 gcp	kms	MISS
 gcp	security groups	MISS
+gcp	healthcare api	Healthcare API
+gcp	kubernetes	Kubernetes

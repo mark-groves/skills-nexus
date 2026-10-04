@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from pathlib import Path
@@ -19,6 +20,7 @@ PROVIDER_FILES = {
 
 COMMON_SHAPES_PATH = REFERENCES_ROOT / "common-shapes.json"
 COMMON_SHAPES_SEED_PATH = REFERENCES_ROOT / "common-shapes.seed.json"
+GCP_LEGACY_TOKENS_PATH = REFERENCES_ROOT / "gcp-legacy-tokens.json"
 
 _STYLE_RE = re.compile(r"- \*\*Style:\*\* `(.+)`\s*$")
 # Capture leading WxH; Azure headers append notes like "(adjust to content)".
@@ -314,6 +316,15 @@ def extract_identity_tokens(provider: str, style: str | None) -> list[str]:
         images = _GCP_IMAGE_RE.findall(style)
         return images or _GCP_SHAPE_RE.findall(style)
     raise ValueError(f"Unsupported provider: {provider}")
+
+
+def token_digest(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def load_gcp_legacy_tokens(path: Path = GCP_LEGACY_TOKENS_PATH) -> dict[str, str]:
+    """Map digests of retired GCP icon tokens to the catalog title that replaced them."""
+    return dict(json.loads(path.read_text(encoding="utf-8"))["tokens"])
 
 
 def load_common_shapes(path: Path = COMMON_SHAPES_PATH) -> dict[str, Any]:

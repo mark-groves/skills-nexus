@@ -199,6 +199,38 @@ class GenerateFailClosedTests(unittest.TestCase):
         self.assertIn(f"image/svg+xml,{card_svg};`\n- **Size:** 30x30", fragment)
         self.assertNotIn(plain_svg, fragment)
 
+    def test_image_icon_beats_a_same_named_product_card_logo(self) -> None:
+        image_svg = "PHN2Zz5rOHM8L3N2Zz4="
+        self.rewrite(
+            "GCP2_extracted.json",
+            categories={
+                "GeneralIcons": [],
+                "ProductCards": [
+                    {
+                        "name": "Kubernetes",
+                        "type": "product_card_logo",
+                        "stencil_name": "kubernetes_logo",
+                        "width": 45,
+                        "height": 44,
+                    }
+                ],
+                "IconsOpenSourceIcons": [
+                    {
+                        "name": "Kubernetes",
+                        "type": "vertex_icon",
+                        "base64_svg": image_svg,
+                        "width": 46,
+                        "height": 46,
+                    }
+                ],
+            },
+        )
+        completed = self.generate("gcp")
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        fragment = (self.out / "gcp-shapes.generated.md").read_text(encoding="utf-8")
+        self.assertIn(f"image/svg+xml,{image_svg};`\n- **Size:** 46x46", fragment)
+        self.assertNotIn("kubernetes_logo", fragment)
+
     def test_gcpicons_semicolon_fixture_generates_its_entry(self) -> None:
         self.extract_into(SIDEBARS / "gcpicons-semicolon.js", "GCPIcons_extracted.json")
         completed = self.generate("gcp")

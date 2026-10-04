@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
 import subprocess
 import sys
@@ -20,9 +21,16 @@ if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
 from build_common_shapes import build  # noqa: E402
+from build_gcp_legacy_tokens import build as build_gcp_legacy_tokens  # noqa: E402
 from gcp_card import emit_gcp_service_card  # noqa: E402
-from shape_catalog import resolve_shape  # noqa: E402
-from validate_diagram import _parse_xml, collect_issues  # noqa: E402
+from shape_catalog import (  # noqa: E402
+    GCP_LEGACY_TOKENS_PATH,
+    PROVIDER_FILES,
+    extract_identity_tokens,
+    parse_catalog,
+    resolve_shape,
+)
+from validate_diagram import _parse_xml, collect_findings, collect_issues  # noqa: E402
 
 
 class CloudDiagramLeversTest(unittest.TestCase):
@@ -886,6 +894,110 @@ class CloudDiagramLeversTest(unittest.TestCase):
             any("no provider shape tokens found for gcp" in issue for issue in issues),
             issues,
         )
+
+    def test_lookup_gcp_open_source_products_are_card_icons(self) -> None:
+        for query in ("Kubernetes", "Istio", "TensorFlow", "Forseti Security"):
+            with self.subTest(query=query):
+                hit = resolve_shape("gcp", query)
+                assert hit is not None
+                self.assertEqual((hit["title"], hit["kind"]), (query, "gcp_card_icon"))
+
+    def test_lookup_gcp_titles_without_a_trailing_semicolon(self) -> None:
+        for query in (
+            "Healthcare API",
+            "Document AI Warehouse",
+            "Visual Inspection AI",
+            "Application Integration",
+        ):
+            with self.subTest(query=query):
+                hit = resolve_shape("gcp", query.lower())
+                assert hit is not None
+                self.assertEqual((hit["title"], hit["kind"]), (query, "gcp_card_icon"))
+
+    def test_gcp_legacy_tokens_map_to_current_titles(self) -> None:
+        legacy = json.loads(GCP_LEGACY_TOKENS_PATH.read_text(encoding="utf-8"))["tokens"]
+        catalog = parse_catalog(PROVIDER_FILES["gcp"])
+        current = {
+            hashlib.sha256(token.encode()).hexdigest()
+            for entry in catalog.values()
+            for token in extract_identity_tokens("gcp", entry["style"])
+        }
+        self.assertIn("Looker", legacy.values())
+        self.assertFalse(current.intersection(legacy))
+        for title in legacy.values():
+            with self.subTest(title=title):
+                self.assertTrue(
+                    extract_identity_tokens("gcp", catalog[title]["style"])[0].startswith(
+                        "image=data:image/svg+xml,"
+                    )
+                )
+
+    def test_build_gcp_legacy_tokens_maps_or_refuses(self) -> None:
+        old = "image=data:image/svg+xml,PHN2Zz5vbGQ8L3N2Zz4="
+        catalog = "### {title}\n\n- **Style:** `shape=image;{token};`\n- **Size:** 40x40\n\n"
+        with tempfile.TemporaryDirectory() as directory:
+            old_catalog = Path(directory) / "old.md"
+            out = Path(directory) / "legacy.json"
+            old_catalog.write_text(
+                catalog.format(title="Looker (GCPIcons)", token=old), encoding="utf-8"
+            )
+            payload = build_gcp_legacy_tokens(old_catalog, "fixture", out)
+            self.assertEqual(
+                payload,
+                {
+                    "source": "fixture",
+                    "tokens": {hashlib.sha256(old.encode()).hexdigest(): "Looker"},
+                },
+            )
+            old_catalog.write_text(
+                catalog.format(title="Retired Product", token=old), encoding="utf-8"
+            )
+            with self.assertRaisesRegex(RuntimeError, "Retired Product"):
+                build_gcp_legacy_tokens(old_catalog, "fixture", out)
+
+    def test_validate_upgrades_legacy_gcp_tokens_with_a_warning(self) -> None:
+        diagram = FIXTURES / "gcp-legacy-cards.drawio"
+        issues, warnings = collect_findings(diagram, "gcp", ["Looker", "Healthcare API"])
+        self.assertEqual(issues, [])
+        self.assertEqual(len(warnings), 2, warnings)
+        for cell_id, title in (("icon-0", "Looker"), ("icon-1", "Healthcare API")):
+            hit = resolve_shape("gcp", title)
+            assert hit is not None
+            new_token = extract_identity_tokens("gcp", hit["style"])[0]
+            new_digest = hashlib.sha256(new_token.encode()).hexdigest()[:16]
+            self.assertTrue(
+                any(
+                    f"cell {cell_id}" in warning
+                    and f"legacy GCP icon for {title}" in warning
+                    and f"current token sha256:{new_digest}" in warning
+                    for warning in warnings
+                ),
+                warnings,
+            )
+
+    def test_validate_cli_prints_legacy_warnings_and_passes(self) -> None:
+        proc = subprocess.run(
+            [
+                sys.executable,
+                str(SCRIPTS / "validate_diagram.py"),
+                str(FIXTURES / "gcp-legacy-cards.drawio"),
+                "--provider",
+                "gcp",
+                "--require-services",
+                "looker,healthcare api",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn("OK ", proc.stdout)
+        self.assertEqual(proc.stderr.count("WARNING: "), 2, proc.stderr)
+        self.assertNotIn("ERROR", proc.stderr)
+
+    def test_validate_flags_legacy_gcp_tokens_in_aws_diagram(self) -> None:
+        issues = collect_issues(FIXTURES / "gcp-legacy-cards.drawio", "aws")
+        self.assertIn("foreign provider shape token for aws: GCP catalog image", issues)
 
     def test_azure_starter_users_icon_is_on_page(self) -> None:
         path = REFERENCES / "templates" / "three-tier-azure.drawio.xml"
