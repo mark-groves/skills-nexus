@@ -20,6 +20,24 @@ INSTALLER = (
     / "install-drawio-cli.sh"
 )
 WRAPPER = REPO_ROOT / "scripts" / "install-drawio-cli.sh"
+SOURCE_MAP = (
+    REPO_ROOT / "plugins" / "drawio" / "skills" / "drawio-shapes" / "references" / "source-map.md"
+)
+
+
+def installer_default_version() -> str:
+    match = re.search(
+        r'DRAWIO_VERSION="\$\{DRAWIO_VERSION:-([0-9.]+)\}"',
+        INSTALLER.read_text(encoding="utf-8"),
+    )
+    assert match is not None, "installer default DRAWIO_VERSION not found"
+    return match.group(1)
+
+
+def pinned_sidebar_version() -> str:
+    match = re.search(r"\(draw\.io ([0-9.]+), ", SOURCE_MAP.read_text(encoding="utf-8"))
+    assert match is not None, "draw.io pin not found in source-map.md"
+    return match.group(1)
 
 
 class InstallDrawioCliTests(unittest.TestCase):
@@ -31,6 +49,10 @@ class InstallDrawioCliTests(unittest.TestCase):
             "plugins/drawio/skills/cloud-diagram/scripts/install-drawio-cli.sh",
             wrapper,
         )
+
+    def test_installer_matches_pinned_sidebar_release(self) -> None:
+        """Stencils newer than the CLI (e.g. sustainability, s3_files) export blank."""
+        self.assertEqual(installer_default_version(), pinned_sidebar_version())
 
     def test_marker_write_avoids_root_shell_interpolation(self) -> None:
         source = INSTALLER.read_text(encoding="utf-8")
@@ -93,7 +115,7 @@ class InstallDrawioCliTests(unittest.TestCase):
             )
             self.assertEqual(completed.returncode, 0, completed.stderr)
             self.assertIn("already installed", completed.stdout)
-            self.assertIn("31.1.5", completed.stdout)
+            self.assertIn(installer_default_version(), completed.stdout)
         finally:
             if previous is None:
                 subprocess.run(
