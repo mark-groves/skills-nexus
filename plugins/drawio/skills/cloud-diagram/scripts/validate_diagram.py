@@ -46,6 +46,9 @@ PROVIDER_LIBRARY_TOKENS = {
     "gcp": ("mxgraph.gcp2",),
 }
 
+# A bare requirement that any one of these lookups satisfies.
+_AWS_SUBNETS = ("public subnet", "private subnet")
+REQUIREMENT_ALTERNATIVES = {"aws": {"subnet": _AWS_SUBNETS, "subnets": _AWS_SUBNETS}}
 _GCP_IMAGE_TOKEN_RE = re.compile(r"image=data:image/svg\+xml,[^;\s]+")
 _GCP_CATALOG_IMAGE_TOKENS: frozenset[str] | None = None
 
@@ -429,12 +432,19 @@ def collect_findings(
             }
             required_shapes: list[dict] = []
             for service_name in require_services:
-                shape = resolve_shape(provider, service_name, common)
-                if shape is None:
+                names = REQUIREMENT_ALTERNATIVES.get(provider, {}).get(
+                    normalize_query(service_name), (service_name,)
+                )
+                shapes = [
+                    shape for name in names if (shape := resolve_shape(provider, name, common))
+                ]
+                if len(shapes) != len(names):
                     issues.append(f"unknown required service for lookup: {service_name}")
                     continue
-                required_shapes.append(shape)
-                expected_tokens = set(extract_identity_tokens(provider, shape.get("style")))
+                expected_tokens: set[str] = set()
+                for shape in shapes:
+                    required_shapes.append(shape)
+                    expected_tokens.update(extract_identity_tokens(provider, shape.get("style")))
                 if not expected_tokens.intersection(actual_tokens):
                     issues.append(f"missing provider shape for {service_name}")
             issues.extend(_generic_shape_issues(cells, provider, required_shapes))
