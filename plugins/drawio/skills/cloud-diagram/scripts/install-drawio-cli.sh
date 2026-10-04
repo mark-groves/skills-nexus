@@ -4,11 +4,11 @@
 # Bundled with cloud-diagram so deployed skills can bootstrap without the repo.
 set -euo pipefail
 
-DRAWIO_VERSION="${DRAWIO_VERSION:-31.1.5}"
+DRAWIO_VERSION="${DRAWIO_VERSION:-31.7.0}"
 DRAWIO_DEB="drawio-amd64-${DRAWIO_VERSION}.deb"
 DRAWIO_URL="https://github.com/jgraph/drawio-desktop/releases/download/v${DRAWIO_VERSION}/${DRAWIO_DEB}"
 # Pin the upstream .deb so a poisoned cache/path cannot be installed.
-DRAWIO_SHA256="${DRAWIO_SHA256:-93c2d86e418d120179b547409e5a1d3f5fba58f409b033077206cca96a5edc3d}"
+DRAWIO_SHA256="${DRAWIO_SHA256:-eb9695e208fcc5ccfbfc496aa8ab2f52a273297d83715de2177b231c172c13de}"
 MARKER="/usr/local/share/drawio-cli.version"
 
 if [[ ! "${DRAWIO_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
@@ -78,7 +78,7 @@ run_drawio_version() {
 }
 
 # Always probe the official binary (never trust MARKER alone — it can go stale).
-# Electron may dump dbus noise on stdout before the real "31.1.5" line.
+# Electron may dump dbus noise on stdout before the real "31.7.0" line.
 probe_installed_version() {
   is_official_drawio || return 1
   run_drawio_version | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+' | head -n 1
