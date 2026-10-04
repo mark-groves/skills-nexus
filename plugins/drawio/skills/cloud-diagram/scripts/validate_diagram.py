@@ -51,6 +51,7 @@ _AWS_SUBNETS = ("public subnet", "private subnet")
 REQUIREMENT_ALTERNATIVES = {"aws": {"subnet": _AWS_SUBNETS, "subnets": _AWS_SUBNETS}}
 _GCP_IMAGE_TOKEN_RE = re.compile(r"image=data:image/svg\+xml,[^;\s]+")
 _GCP_CATALOG_IMAGE_TOKENS: frozenset[str] | None = None
+_AZURE_GROUP_IDENTITIES: frozenset[str] | None = None
 
 
 def _parse_xml(path: Path) -> ET.Element:
@@ -130,10 +131,35 @@ def _upgrade_legacy_gcp_tokens(cells: list[ET.Element]) -> list[str]:
     return warnings
 
 
+def _azure_group_identities() -> frozenset[str]:
+    """Lazy-load the swimlane fingerprints the Azure catalog and common shapes define."""
+    global _AZURE_GROUP_IDENTITIES
+    if _AZURE_GROUP_IDENTITIES is None:
+        styles = [entry["style"] for entry in parse_catalog(PROVIDER_FILES["azure"]).values()]
+        services = load_common_shapes()["providers"]["azure"]["services"].values()
+        styles.extend(service.get("style") for service in services)
+        _AZURE_GROUP_IDENTITIES = frozenset(
+            token
+            for style in styles
+            for token in extract_identity_tokens("azure", style)
+            if token.startswith("azure.group:")
+        )
+    return _AZURE_GROUP_IDENTITIES
+
+
+def _azure_evidence(style: str) -> bool:
+    """A generic swimlane is not Azure evidence; only a known Azure group fingerprint is."""
+    known = _azure_group_identities()
+    return any(
+        token in known or not token.startswith("azure.group:")
+        for token in extract_identity_tokens("azure", style)
+    )
+
+
 def _style_has_provider_evidence(style: str, provider: str) -> bool:
     if any(token in style for token in PROVIDER_TOKENS.get(provider, ())):
         return True
-    if provider == "azure" and extract_identity_tokens("azure", style):
+    if provider == "azure" and _azure_evidence(style):
         return True
     if provider == "gcp":
         catalog = _gcp_catalog_image_tokens()
@@ -145,7 +171,7 @@ def _joined_has_provider_evidence(joined_styles: str, provider: str) -> bool:
     if any(token in joined_styles for token in PROVIDER_TOKENS.get(provider, ())):
         return True
     if provider == "azure" and any(
-        extract_identity_tokens("azure", style) for style in joined_styles.split("\n") if style
+        _azure_evidence(style) for style in joined_styles.split("\n") if style
     ):
         return True
     if provider == "gcp":
