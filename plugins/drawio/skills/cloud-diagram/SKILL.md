@@ -231,6 +231,17 @@ If `export_diagram.sh` exits non-zero because drawio is missing, Step 8
 is the quality gate. Say aesthetic export is unavailable. Do **not**
 post third-party headless PNGs as visual proof for AWS, Azure, or GCP.
 
+Then check the routed edges against the review SVG:
+
+```bash
+python3 scripts/check_edge_crossings.py "<Filename>" "<stem>.review.svg"
+```
+
+It exits 1 for each edge that draw.io routes through an icon or card the
+edge does not connect to. Fix with exit/entry points and waypoints
+(`<Array as="points">`) around the icons, or move the endpoints. Small
+glyphs centred on a line count as annotations, not crossings.
+
 Read the review image. Check overlaps, blank icons, crossings, labels,
 hierarchy, spacing. Fix and re-export at most twice. Delete review
 artifacts when done.
