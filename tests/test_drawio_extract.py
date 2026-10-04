@@ -47,7 +47,13 @@ class DrawioExtractTest(unittest.TestCase):
         }
         self.assertEqual(
             sizes,
-            {"Clock": (100, 100), "Biomedical Trio": (100, 68), "AI Hub": (38, 40)},
+            {
+                "Clock": (100, 100),
+                "Biomedical Trio": (100, 68),
+                "AI Hub": (38, 40),
+                "Cloud Functions": (30, 24),
+                "Kubernetes": (45, 44),
+            },
         )
 
     def test_aws_unresolved_vertex_calls_are_counted(self) -> None:

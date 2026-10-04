@@ -114,7 +114,7 @@ class CloudDiagramLeversTest(unittest.TestCase):
         assert hit is not None
         self.assertEqual(hit["kind"], "gcp_card_icon")
         self.assertIn("data:image/svg+xml", hit["style"])
-        self.assertEqual(hit["size"], "30x30")
+        self.assertEqual((hit["catalog_size"], hit["size"]), ("27x30", "27x30"))
 
     def test_lookup_azure_aks(self) -> None:
         hit = resolve_shape("azure", "AKS")
@@ -230,7 +230,7 @@ class CloudDiagramLeversTest(unittest.TestCase):
         cases = (
             ("gcp", "Clock", "100x100", "50x50"),
             ("gcp", "Biomedical Trio", "100x68", "50x34"),
-            ("gcp", "AI Hub (GCPIcons)", "38x40", "29x30"),
+            ("gcp", "AI Hub (GCPIcons)", "38x40", "28x30"),
             ("azure", "Azure SQL", "48x64", "38x50"),
             ("aws", "EC2", "78x78", "50x50"),
         )
