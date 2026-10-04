@@ -80,7 +80,7 @@ def _compile_patterns(lib_prefix):
         # Base64 SVG with image= prefix via variable: n + 'image=data:...,BASE64;'
         "var_image_b64": re.compile(
             r"this\.createVertexTemplateEntry\("
-            rf"n \+ 'image=data:image/svg\+xml,({BASE64_SVG_PREFIX}[A-Za-z0-9+/=]+);',\s*"
+            rf"n \+ 'image=data:image/svg\+xml,({BASE64_SVG_PREFIX}[A-Za-z0-9+/=]+);?',\s*"
             r"(s \* [\d.]+),\s*(s \* [\d.]+),\s*'([^']*)'"
         ),
         # Inline full style with base64 SVG
