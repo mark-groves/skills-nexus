@@ -21,6 +21,7 @@ if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
 from build_common_shapes import build  # noqa: E402
+from build_gcp_legacy_tokens import build as build_gcp_legacy_tokens  # noqa: E402
 from gcp_card import emit_gcp_service_card  # noqa: E402
 from shape_catalog import (  # noqa: E402
     GCP_LEGACY_TOKENS_PATH,
@@ -930,6 +931,29 @@ class CloudDiagramLeversTest(unittest.TestCase):
                         "image=data:image/svg+xml,"
                     )
                 )
+
+    def test_build_gcp_legacy_tokens_maps_or_refuses(self) -> None:
+        old = "image=data:image/svg+xml,PHN2Zz5vbGQ8L3N2Zz4="
+        catalog = "### {title}\n\n- **Style:** `shape=image;{token};`\n- **Size:** 40x40\n\n"
+        with tempfile.TemporaryDirectory() as directory:
+            old_catalog = Path(directory) / "old.md"
+            out = Path(directory) / "legacy.json"
+            old_catalog.write_text(
+                catalog.format(title="Looker (GCPIcons)", token=old), encoding="utf-8"
+            )
+            payload = build_gcp_legacy_tokens(old_catalog, "fixture", out)
+            self.assertEqual(
+                payload,
+                {
+                    "source": "fixture",
+                    "tokens": {hashlib.sha256(old.encode()).hexdigest(): "Looker"},
+                },
+            )
+            old_catalog.write_text(
+                catalog.format(title="Retired Product", token=old), encoding="utf-8"
+            )
+            with self.assertRaisesRegex(RuntimeError, "Retired Product"):
+                build_gcp_legacy_tokens(old_catalog, "fixture", out)
 
     def test_validate_upgrades_legacy_gcp_tokens_with_a_warning(self) -> None:
         diagram = FIXTURES / "gcp-legacy-cards.drawio"

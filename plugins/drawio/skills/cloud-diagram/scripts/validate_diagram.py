@@ -21,9 +21,11 @@ from shape_catalog import (  # noqa: E402
     PROVIDER_FILES,
     extract_identity_tokens,
     load_common_shapes,
+    load_gcp_legacy_tokens,
     normalize_query,
     parse_catalog,
     resolve_shape,
+    token_digest,
 )
 
 PROVIDER_TOKENS = {
@@ -98,6 +100,31 @@ def _gcp_catalog_image_tokens() -> frozenset[str]:
                     tokens.add(token)
         _GCP_CATALOG_IMAGE_TOKENS = frozenset(tokens)
     return _GCP_CATALOG_IMAGE_TOKENS
+
+
+def _upgrade_legacy_gcp_tokens(cells: list[ET.Element]) -> list[str]:
+    """Swap retired GCP icon tokens for the current ones and warn per cell."""
+    legacy = load_gcp_legacy_tokens()
+    catalog: dict | None = None
+    warnings: list[str] = []
+    for cell in cells:
+        style = cell.get("style", "")
+        upgraded = style
+        for token in dict.fromkeys(_GCP_IMAGE_TOKEN_RE.findall(style)):
+            title = legacy.get(token_digest(token))
+            if title is None:
+                continue
+            catalog = catalog or parse_catalog(PROVIDER_FILES["gcp"])
+            current = extract_identity_tokens("gcp", catalog[title]["style"])[0]
+            upgraded = upgraded.replace(token, current)
+            warnings.append(
+                f"cell {cell.get('id', '<unknown>')}: legacy GCP icon for {title} "
+                f"(sha256:{token_digest(token)[:16]}); replace it with the current token "
+                f'sha256:{token_digest(current)[:16]} from lookup_shape.py --provider gcp --card "{title}"'
+            )
+        if upgraded != style:
+            cell.set("style", upgraded)
+    return warnings
 
 
 def _style_has_provider_evidence(style: str, provider: str) -> bool:
@@ -355,12 +382,23 @@ def collect_issues(
     require_services: list[str] | None = None,
     allow_providers: list[str] | None = None,
 ) -> list[str]:
+    return collect_findings(diagram, provider, require_services, allow_providers)[0]
+
+
+def collect_findings(
+    diagram: Path,
+    provider: str | None = None,
+    require_services: list[str] | None = None,
+    allow_providers: list[str] | None = None,
+) -> tuple[list[str], list[str]]:
+    """Return (issues, warnings); warnings never fail validation."""
     try:
         root = _parse_xml(diagram)
     except (OSError, ValueError, expat.ExpatError) as err:
-        return [f"could not parse diagram: {err}"]
+        return [f"could not parse diagram: {err}"], []
 
     cells = [cell for cell in root.iter() if cell.tag.rsplit("}", 1)[-1] == "mxCell"]
+    warnings = _upgrade_legacy_gcp_tokens(cells)
     issues: list[str] = []
     for cell in cells:
         if cell.get("edge") != "1":
@@ -404,7 +442,7 @@ def collect_issues(
                 issues.extend(_gcp_service_card_issues(cells, required_shapes))
             if provider == "azure":
                 issues.extend(_azure_group_issues(cells, required_shapes, actual_tokens))
-    return issues
+    return issues, warnings
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -418,12 +456,14 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 2
-    issues = collect_issues(
+    issues, warnings = collect_findings(
         args.diagram,
         args.provider,
         required or None,
         allow_providers=allowed or None,
     )
+    for warning in warnings:
+        print(f"WARNING: {warning}", file=sys.stderr)
     if issues:
         for issue in issues:
             print(f"ERROR: {issue}", file=sys.stderr)

@@ -205,6 +205,12 @@ Fix reported errors (missing edge geometry, overlaps, missing provider
 tokens, foreign-provider tokens, GCP services not in Service Cards,
 generics while a lookup hit exists). Re-run until clean.
 
+A `WARNING: ... legacy GCP icon` line means a cell carries a GCP icon
+from a catalog older than the pinned sidebars. Validation still passes.
+Replace that icon with the `--card` lookup the warning names.
+`references/gcp-legacy-tokens.json` lists the retired tokens. Rebuild it
+with `scripts/build_gcp_legacy_tokens.py` after a GCP catalog refresh.
+
 ## Step 9 — Visual review (optional)
 
 Prefer the official draw.io / diagrams.net CLI only. Use the fail-closed
