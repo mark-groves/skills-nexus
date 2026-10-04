@@ -33,7 +33,9 @@ def export_stripped(diagram: Path, out_svg: Path) -> None:
             ["bash", str(SKILL / "scripts" / "export_diagram.sh"), str(diagram), str(raw)],
             check=True,
         )
-        out_svg.write_text(_DATA_HREF_RE.sub(r'\1"', raw.read_text(encoding="utf-8")), encoding="utf-8")
+        out_svg.write_text(
+            _DATA_HREF_RE.sub(r'\1"', raw.read_text(encoding="utf-8")), encoding="utf-8"
+        )
 
 
 def refresh_starters() -> None:
@@ -52,7 +54,7 @@ def main(argv: list[str]) -> int:
     if len(argv) % 2:
         print("usage: refresh.py [DRAWIO NAME]...", file=sys.stderr)
         return 2
-    for diagram, name in zip(argv[0::2], argv[1::2]):
+    for diagram, name in zip(argv[0::2], argv[1::2], strict=True):
         source = Path(diagram)
         shutil.copyfile(source, HERE / f"{name}.drawio")
         export_stripped(source, HERE / f"{name}.svg")

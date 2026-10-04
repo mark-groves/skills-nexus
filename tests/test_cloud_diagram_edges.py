@@ -17,7 +17,9 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = REPO_ROOT / "plugins" / "drawio" / "skills" / "cloud-diagram" / "scripts"
-TEMPLATES = REPO_ROOT / "plugins" / "drawio" / "skills" / "cloud-diagram" / "references" / "templates"
+TEMPLATES = (
+    REPO_ROOT / "plugins" / "drawio" / "skills" / "cloud-diagram" / "references" / "templates"
+)
 EDGES = Path(__file__).resolve().parent / "fixtures" / "cloud-diagram" / "edges"
 
 if str(SCRIPTS) not in sys.path:
