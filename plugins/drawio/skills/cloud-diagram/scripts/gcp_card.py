@@ -55,6 +55,14 @@ def card_width_for_label(name: str, category: str) -> int:
     return 190
 
 
+def card_icon_size(size: str | None) -> tuple[int, int]:
+    """Icon box inside the 60px card; the sidebar centres it on x=30."""
+    match = re.fullmatch(r"(\d+)x(\d+)", size or "")
+    if match is None:
+        return 30, 30
+    return int(match.group(1)), int(match.group(2))
+
+
 def gcp_card_icon_style(image_token: str) -> str:
     token = image_token if image_token.startswith("image=") else f"image={image_token}"
     return f"{_ICON_STYLE_PREFIX}{token};"
@@ -80,7 +88,7 @@ def emit_gcp_service_card(
     """Return two mxCell elements for a GCP Service Card.
 
     Lookup styles are standalone catalog icons. Agents must not paste them
-    as 30x30 vertices — wrap them with this emitter (or equivalent XML).
+    as standalone vertices — wrap them with this emitter (or equivalent XML).
     """
     if shape.get("kind") != "gcp_card_icon":
         raise ValueError(
@@ -105,6 +113,7 @@ def emit_gcp_service_card(
     width = card_width_for_label(primary, secondary)
     label = gcp_card_label(primary, secondary)
     icon_style = gcp_card_icon_style(image_token)
+    icon_w, icon_h = card_icon_size(shape.get("size"))
 
     return (
         f'<mxCell id="{html.escape(card_id, quote=True)}" value="" '
@@ -115,8 +124,8 @@ def emit_gcp_service_card(
         f'<mxCell id="{html.escape(icon_id, quote=True)}" value="{label}"\n'
         f'    style="{icon_style}"\n'
         f'    vertex="1" parent="{html.escape(card_id, quote=True)}">\n'
-        f'  <mxGeometry width="30" height="30" relative="1" as="geometry">\n'
-        f'    <mxPoint x="15" y="15" as="offset" />\n'
+        f'  <mxGeometry width="{icon_w:g}" height="{icon_h:g}" relative="1" as="geometry">\n'
+        f'    <mxPoint x="{30 - icon_w / 2:g}" y="{(60 - icon_h) / 2:g}" as="offset" />\n'
         f"  </mxGeometry>\n"
         f"</mxCell>"
     )

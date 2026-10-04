@@ -114,7 +114,7 @@ class CloudDiagramLeversTest(unittest.TestCase):
         assert hit is not None
         self.assertEqual(hit["kind"], "gcp_card_icon")
         self.assertIn("data:image/svg+xml", hit["style"])
-        self.assertEqual(hit["size"], "30x30")
+        self.assertEqual((hit["catalog_size"], hit["size"]), ("27x30", "27x30"))
 
     def test_lookup_azure_aks(self) -> None:
         hit = resolve_shape("azure", "AKS")
@@ -225,6 +225,43 @@ class CloudDiagramLeversTest(unittest.TestCase):
         result = json.loads(proc.stdout)
         self.assertEqual(result["id"], "blob")
         self.assertIn("img/lib/azure2/storage/", result["style"])
+
+    def test_lookup_sizes_follow_the_sidebar(self) -> None:
+        cases = (
+            ("gcp", "Clock", "100x100", "50x50"),
+            ("gcp", "Biomedical Trio", "100x68", "50x34"),
+            ("gcp", "AI Hub (GCPIcons)", "38x40", "28x30"),
+            ("azure", "Azure SQL", "48x64", "38x50"),
+            ("aws", "EC2", "78x78", "50x50"),
+        )
+        for provider, query, catalog_size, size in cases:
+            with self.subTest(provider=provider, query=query):
+                proc = subprocess.run(
+                    [
+                        sys.executable,
+                        str(SCRIPTS / "lookup_shape.py"),
+                        "--provider",
+                        provider,
+                        "--json",
+                        query,
+                    ],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(proc.returncode, 0, proc.stderr)
+                result = json.loads(proc.stdout)
+                self.assertEqual((result["catalog_size"], result["size"]), (catalog_size, size))
+
+    def test_lookup_text_prints_catalog_size(self) -> None:
+        proc = subprocess.run(
+            [sys.executable, str(SCRIPTS / "lookup_shape.py"), "--provider", "gcp", "Clock"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn("size: 50x50\ncatalog_size: 100x100\n", proc.stdout)
 
     def test_validate_three_tier_aws(self) -> None:
         path = REFERENCES / "templates" / "three-tier-aws.drawio.xml"
@@ -798,6 +835,17 @@ class CloudDiagramLeversTest(unittest.TestCase):
         self.assertIn('x="40"', proc.stdout)
         self.assertIn('y="80"', proc.stdout)
         self.assertIn("Ingest", proc.stdout)
+
+    def test_card_icon_keeps_native_aspect_like_the_sidebar(self) -> None:
+        shape = resolve_shape("gcp", "Cloud Functions")
+        assert shape is not None
+        self.assertEqual(shape["size"], "30x24")
+        card = emit_gcp_service_card(shape, cell_id="card-fn")
+        self.assertIn(
+            '<mxGeometry width="30" height="24" relative="1" as="geometry">\n'
+            '    <mxPoint x="15" y="18" as="offset" />',
+            card,
+        )
 
     def test_emit_gcp_service_card_ids_unique_per_coordinates(self) -> None:
         pubsub = resolve_shape("gcp", "Pub/Sub")

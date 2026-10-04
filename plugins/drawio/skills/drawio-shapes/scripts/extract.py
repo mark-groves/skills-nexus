@@ -14,6 +14,7 @@ import json
 import re
 import sys
 from pathlib import Path
+from typing import Any
 
 KNOWN_LIBRARIES = {"GCPIcons", "GCP2", "AWS4", "Azure2"}
 SKIPPED_LIBRARIES = {
@@ -57,6 +58,10 @@ AWS_STYLE_ENTRY_RE = re.compile(
     re.S,
 )
 STRING_VAR_RE = re.compile(r"^\s*var\s+([A-Za-z_]\w*)\s*=\s*(.+?);\s*$", re.M)
+# GCP palettes scale entries by their own numeric `var s` (GCP2 uses 1,
+# GCPIcons uses 100 or 200). Fixtures without one keep the 100 base.
+NUMERIC_S_RE = re.compile(r"^\s*var\s+s\s*=\s*([\d.]+)\s*;", re.M)
+UNDECLARED_S_BASE_SIZE = 100
 
 
 # ---------------------------------------------------------------------------
@@ -106,7 +111,8 @@ def _compile_patterns(lib_prefix):
         # Product card set with base64 icon variable
         "product_card": re.compile(
             rf"icon = '([A-Za-z0-9+/=]+);';\s*"
-            rf"this\.add{lib_prefix}UserProductCardSet\('([^']+)'"
+            rf"this\.add{lib_prefix}UserProductCardSet\('([^']+)',"
+            r"\s*[\d.]+,\s*[\d.]+,\s*[\d.]+,\s*([\d.]+),\s*([\d.]+)"
         ),
         # Service card: this.addXServiceCard('Name', 'stencil', w, h, ...)
         "service_card": re.compile(
@@ -119,7 +125,7 @@ def _compile_patterns(lib_prefix):
         ),
         # Product card set (logo-based stencil)
         "product_card_logo": re.compile(
-            rf"this\.add{lib_prefix}ProductCardSet\('([^']+)',\s*'([^']+)'"
+            rf"this\.add{lib_prefix}ProductCardSet\('([^']+)',\s*'([^']+)',\s*([\d.]+),\s*([\d.]+)"
         ),
         # Edge templates
         "edge": re.compile(
@@ -402,7 +408,12 @@ def extract_section(section, patterns, stencil_namespace):
     """Extract all shapes from a single palette section."""
     icons = []
     seen_names = set()
-    base_icon_size = 100
+    declared_s = NUMERIC_S_RE.search(section)
+    dims: dict[str, Any] = (
+        {"numeric_vars": {"s": float(declared_s.group(1))}}
+        if declared_s
+        else {"base_size": UNDECLARED_S_BASE_SIZE}
+    )
 
     def _add(entry):
         icons.append(entry)
@@ -415,7 +426,7 @@ def extract_section(section, patterns, stencil_namespace):
                 "name": name,
                 "type": "vertex_icon",
                 "base64_svg": b64.rstrip(";"),
-                **build_dimension_fields(w, h, base_size=base_icon_size),
+                **build_dimension_fields(w, h, **dims),
             }
         )
 
@@ -427,7 +438,7 @@ def extract_section(section, patterns, stencil_namespace):
                 "name": name,
                 "type": "vertex_icon",
                 "base64_svg": b64,
-                **build_dimension_fields(w, h, base_size=base_icon_size),
+                **build_dimension_fields(w, h, **dims),
             }
         )
 
@@ -439,7 +450,7 @@ def extract_section(section, patterns, stencil_namespace):
                 "name": name,
                 "type": "vertex_icon",
                 "base64_svg": b64,
-                **build_dimension_fields(w, h, base_size=base_icon_size),
+                **build_dimension_fields(w, h, **dims),
             }
         )
 
@@ -451,7 +462,7 @@ def extract_section(section, patterns, stencil_namespace):
                 "name": name,
                 "type": "vertex_icon",
                 "base64_svg": b64,
-                **build_dimension_fields(w, h, base_size=base_icon_size),
+                **build_dimension_fields(w, h, **dims),
             }
         )
 
@@ -463,7 +474,7 @@ def extract_section(section, patterns, stencil_namespace):
                 "name": name,
                 "type": "stencil",
                 "stencil_name": f"{stencil_namespace}.{stencil}",
-                **build_dimension_fields(w, h, base_size=base_icon_size),
+                **build_dimension_fields(w, h, **dims),
             }
         )
 
@@ -477,18 +488,19 @@ def extract_section(section, patterns, stencil_namespace):
                 "name": name,
                 "type": "stencil",
                 "stencil_name": shape,
-                **build_dimension_fields(w, h, base_size=base_icon_size),
+                **build_dimension_fields(w, h, **dims),
             }
         )
 
     # Product card sets with base64 icon
     for m in patterns["product_card"].finditer(section):
-        b64, name = m.groups()
+        b64, name, icon_w, icon_h = m.groups()
         _add(
             {
                 "name": clean_name(name),
                 "type": "product_card",
                 "base64_svg": b64,
+                **build_dimension_fields(icon_w, icon_h),
             }
         )
 
@@ -517,13 +529,16 @@ def extract_section(section, patterns, stencil_namespace):
         )
 
     # Product card sets (logo-based)
+    # Logo icons are 45px scaled by the call's scaleX / scaleY.
     for m in patterns["product_card_logo"].finditer(section):
-        name, stencil = m.groups()
+        name, stencil, scale_x, scale_y = m.groups()
         _add(
             {
                 "name": clean_name(name),
                 "type": "product_card_logo",
                 "stencil_name": f"{stencil_namespace}.{stencil}",
+                "width": int(round(45 * float(scale_x))),
+                "height": int(round(45 * float(scale_y))),
             }
         )
 

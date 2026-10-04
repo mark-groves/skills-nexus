@@ -172,18 +172,17 @@ style pattern and add it to the generation script.
 
 The extraction produces entries from multiple sidebar library
 sections, so the same service often appears in several categories
-with different sizes (e.g. a 50x50 icon version and a 1050x1050
-"Icons:" category version). The generation script must deduplicate
-and normalize:
+with different sizes. Sizes are the sidebar's own pixel sizes. Each
+GCP palette scales its entries by its own `var s` (GCP2 uses 1,
+GCPIcons uses 100 or 200), and the extractor applies that value. The
+generation script must deduplicate and clean up:
 
 1. **Deduplicate within a library family.** When the same `### Entry`
    name appears multiple times within the same family, keep only the
-   entry with the smallest dimensions (closest to 50x50). Do not merge
-   away variants from different active families.
-2. **Normalize oversized icons.** Any entry in an "Icons: ..."
-   category with dimensions >100px on either axis should be set to
-   50x50. These entries have the same SVG data as the smaller
-   versions but were exported at diagram-template scale.
+   entry with the smallest area. Do not merge away variants from
+   different active families.
+2. **Keep native sizes.** Do not square or clamp sizes. Consumers fit
+   the native `WxH` into their own display box and keep its aspect.
 3. **Remove empty categories.** If all entries in a category were
    removed as duplicates, remove the entire `## Category` section.
 4. **Remove double blank lines.** Collapse any consecutive blank

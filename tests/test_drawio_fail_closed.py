@@ -167,6 +167,38 @@ class GenerateFailClosedTests(unittest.TestCase):
             [line for line in fragment.splitlines() if line.startswith("### ")], ["### EC2"]
         )
 
+    def test_card_glyph_beats_a_smaller_plain_icon(self) -> None:
+        card_svg, plain_svg = "PHN2Zz5jYXJkPC9zdmc+", "PHN2Zz5wbGFpbjwvc3ZnPg=="
+        self.rewrite(
+            "GCP2_extracted.json",
+            categories={
+                "GeneralIcons": [],
+                "Compute": [
+                    {
+                        "name": "Cloud GPUs",
+                        "type": "product_card",
+                        "base64_svg": card_svg,
+                        "width": 30,
+                        "height": 30,
+                    }
+                ],
+                "IconsCompute": [
+                    {
+                        "name": "Cloud GPUs",
+                        "type": "vertex_icon",
+                        "base64_svg": plain_svg,
+                        "width": 20,
+                        "height": 20,
+                    }
+                ],
+            },
+        )
+        completed = self.generate("gcp")
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        fragment = (self.out / "gcp-shapes.generated.md").read_text(encoding="utf-8")
+        self.assertIn(f"image/svg+xml,{card_svg};`\n- **Size:** 30x30", fragment)
+        self.assertNotIn(plain_svg, fragment)
+
     def test_gcpicons_semicolon_fixture_generates_its_entry(self) -> None:
         self.extract_into(SIDEBARS / "gcpicons-semicolon.js", "GCPIcons_extracted.json")
         completed = self.generate("gcp")
