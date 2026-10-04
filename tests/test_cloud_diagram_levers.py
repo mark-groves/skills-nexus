@@ -452,6 +452,39 @@ class CloudDiagramLeversTest(unittest.TestCase):
             issues = collect_issues(diagram, "aws", ["Security Group"])
         self.assertEqual(issues, [])
 
+    def test_validate_identity_variants(self) -> None:
+        identities = FIXTURES / "identities"
+        aws_vpc = ["vpc", "security group", "ec2"]
+        cases = (
+            ("aws-sg-lowercase-hex", "aws", aws_vpc, []),
+            ("aws-sg-tinted-fill", "aws", aws_vpc, []),
+            (
+                "aws-sg-drawn-as-subnet",
+                "aws",
+                aws_vpc,
+                ["missing provider shape for security group"],
+            ),
+            ("aws-private-only-subnets", "aws", ["vpc", "subnet", "ec2"], []),
+            ("aws-private-only-subnets", "aws", ["vpc", "subnets", "ec2"], []),
+            (
+                "aws-private-only-subnets",
+                "aws",
+                ["vpc", "public subnet", "ec2"],
+                ["missing provider shape for public subnet"],
+            ),
+            (
+                "azure-generic-container-swimlane",
+                "azure",
+                None,
+                ["no provider shape tokens found for azure"],
+            ),
+            ("azure-vnet-lowercase-hex", "azure", ["vnet"], []),
+        )
+        for name, provider, required, expected in cases:
+            with self.subTest(name=name, required=required):
+                issues = collect_issues(identities / f"{name}.drawio", provider, required)
+                self.assertEqual(issues, expected)
+
     def test_validate_requires_relative_edge_geometry(self) -> None:
         xml = """\
 <mxfile><diagram><mxGraphModel><root>
