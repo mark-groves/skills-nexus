@@ -32,7 +32,10 @@ _AWS_SHAPE_RE = re.compile(r"shape=mxgraph\.aws4\.[A-Za-z0-9_]+")
 # Shared shell shapes are not service identities; prefer resIcon/grIcon.
 _AWS_GENERIC_SHAPES = frozenset({"mxgraph.aws4.resourceIcon", "mxgraph.aws4.group"})
 _AWS_SHARED_GROUP_ICON = "mxgraph.aws4.group_security_group"
-_AWS_SHARED_GROUP_KEYS = ("strokeColor", "fillColor", "dashed")
+# Stroke and dash alone separate Public Subnet, Private Subnet and Security
+# Group; fillColor is left out because authors tint it freely.
+_AWS_SHARED_GROUP_KEYS = ("strokeColor", "dashed")
+_HEX_COLOR_RE = re.compile(r"#[0-9A-Fa-f]{3,8}")
 _AZURE_IMAGE_RE = re.compile(r"image=img/lib/azure2/[^;]+")
 # Distinguishing swimlane markers only. Optional dashPattern / fillColor
 # vary across templates and must not break identity matching (Subnet vs
@@ -214,6 +217,10 @@ def parse_catalog(path: Path) -> dict[str, CatalogEntry]:
     return entries
 
 
+def _marker_value(value: str) -> str:
+    return value.upper() if _HEX_COLOR_RE.fullmatch(value) else value
+
+
 def _azure_group_identity(style: str) -> str | None:
     """Fingerprint Azure swimlane containers that lack azure2 image tokens."""
     if not (style.startswith("swimlane") or ";swimlane;" in style):
@@ -224,7 +231,7 @@ def _azure_group_identity(style: str) -> str | None:
     for key in _AZURE_GROUP_MARKER_KEYS:
         match = re.search(rf"(?:^|;){re.escape(key)}=([^;]+)", style)
         if match:
-            markers.append(f"{key}={match.group(1)}")
+            markers.append(f"{key}={_marker_value(match.group(1))}")
     if not markers:
         return None
     return "azure.group:" + ";".join(markers)
@@ -269,7 +276,7 @@ def _aws_group_identity(style: str, identity: str) -> str:
     if identity != _AWS_SHARED_GROUP_ICON:
         return identity
     markers = [
-        f"{key}={value}"
+        f"{key}={_marker_value(value)}"
         for key in _AWS_SHARED_GROUP_KEYS
         if (value := _style_value(style, key)) is not None
     ]
