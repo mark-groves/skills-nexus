@@ -5,7 +5,7 @@
     "aws": {
       "services": {
         "alb": {
-          "aliases": ["alb", "application load balancer", "application_load_balancer", "elb"],
+          "aliases": ["alb", "application load balancer", "application_load_balancer", "elb", "load balancer"],
           "title": "Elastic Load Balancing",
           "kind": "icon",
           "style_patches": {
@@ -58,12 +58,12 @@
           "kind": "icon"
         },
         "s3": {
-          "aliases": ["s3", "simple storage service", "simple storage service (s3)"],
+          "aliases": ["s3", "simple storage service", "simple storage service (s3)", "s3 bucket"],
           "title": "Simple Storage Service (S3)",
           "kind": "icon"
         },
         "lambda": {
-          "aliases": ["lambda", "aws lambda"],
+          "aliases": ["lambda", "aws lambda", "function", "lambda function"],
           "title": "Lambda",
           "kind": "icon"
         },
@@ -131,6 +131,16 @@
           "aliases": ["kms", "key management service"],
           "title": "Key Management Service",
           "kind": "icon"
+        },
+        "cloudwatch": {
+          "aliases": ["cloudwatch", "amazon cloudwatch", "monitor", "monitoring"],
+          "title": "CloudWatch",
+          "kind": "icon"
+        },
+        "quick": {
+          "aliases": ["quicksight", "amazon quicksight", "quick suite"],
+          "title": "Quick",
+          "kind": "icon"
         }
       }
     },
@@ -157,7 +167,7 @@
           "kind": "icon"
         },
         "app_gateway": {
-          "aliases": ["app gateway", "application gateway", "application gateways"],
+          "aliases": ["app gateway", "application gateway", "application gateways", "gateway"],
           "title": "Application Gateways",
           "kind": "icon"
         },
