@@ -6,6 +6,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -1061,6 +1062,29 @@ class CloudDiagramLeversTest(unittest.TestCase):
             self.assertIn(starter, text)
         self.assertNotIn("templates/aws/", text)
         self.assertNotIn("templates/gcp/", text)
+
+    def test_every_template_is_an_indexed_starter(self) -> None:
+        index = (REFERENCES / "example-index.md").read_text(encoding="utf-8")
+        skill = (REFERENCES.parent / "SKILL.md").read_text(encoding="utf-8")
+        templates = REFERENCES / "templates"
+        unlisted = sorted(
+            str(path.relative_to(REFERENCES))
+            for path in templates.rglob("*")
+            if path.is_file() and str(path.relative_to(REFERENCES)) not in index + skill
+        )
+        self.assertEqual(unlisted, [])
+
+    def test_skill_docs_cite_only_existing_paths(self) -> None:
+        skill_root = REFERENCES.parent
+        missing = []
+        for doc in sorted(skill_root.rglob("*.md")):
+            for cited in re.findall(
+                r"`((?:references|scripts|templates)/[^`\s<>*]*)`", doc.read_text(encoding="utf-8")
+            ):
+                base = REFERENCES if cited.startswith("templates/") else skill_root
+                if not (base / cited).exists():
+                    missing.append(f"{doc.relative_to(skill_root)}: {cited}")
+        self.assertEqual(missing, [])
 
     def test_skill_does_not_open_generated_catalog_on_miss(self) -> None:
         skill = REPO_ROOT / "plugins" / "drawio" / "skills" / "cloud-diagram" / "SKILL.md"

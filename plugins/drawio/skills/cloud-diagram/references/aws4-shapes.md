@@ -106,7 +106,8 @@ jettySize=auto;html=1;endArrow=open;endFill=0;strokeWidth=2;
 - Use `rounded=0;` for AWS edge routing.
 - Stroke colour: `#545B64` (AWS dark grey) or `#808080` (neutral).
 - For fan-out patterns, use `edgeStyle=elbowEdgeStyle;`.
-- See `references/templates/aws/` examples for style guidance.
+- See `references/templates/three-tier-aws.drawio.xml` as a
+  style reference.
 
 ---
 
