@@ -16,6 +16,14 @@ import sys
 from pathlib import Path
 
 KNOWN_LIBRARIES = {"GCPIcons", "GCP2", "AWS4", "Azure2"}
+SKIPPED_LIBRARIES = {
+    "GCP3": "GCP3 is the 2026 category glyph set, not the GCP2 catalog.",
+    "AWS4b": "AWS4b is the AWS18 set, not the AWS4 catalog.",
+    "AWS3": "AWS3 is legacy. AWS4 is the catalog.",
+    "AWS3D": "AWS3D is legacy. AWS4 is the catalog.",
+    "Azure": "The original Azure sidebar is legacy. Azure2 is the catalog.",
+    "GCP": "The original GCP sidebar is legacy. GCP2 is the catalog.",
+}
 BASE64_SVG_PREFIX = r"(?:PHN2Zy|PD94bWw)"
 PALETTE_PREFIX_RE = re.compile(r"Sidebar\.prototype\.add(\w+)Palette\s*=\s*function\([^)]*\)\s*\{")
 AZURE_PALETTE_CALL_RE = re.compile(
@@ -61,39 +69,39 @@ def _compile_patterns(lib_prefix):
     return {
         # Base64 SVG concatenated via variable: (n|s1) + 'BASE64;'
         "var_b64": re.compile(
-            rf"this\.createVertexTemplateEntry\(\s*(?:n|s1) \+ '({BASE64_SVG_PREFIX}[A-Za-z0-9+/=]+)',\s*"
-            r"s \* ([\d.]+),\s*s \* ([\d.]+),\s*'[^']*',\s*'([^']+)'"
+            rf"this\.createVertexTemplateEntry\(\s*(?:n|s1)\s*\+\s*'({BASE64_SVG_PREFIX}[A-Za-z0-9+/=]+)(?:;[^']*)?',\s*"
+            r"(s \* [\d.]+),\s*(s \* [\d.]+),\s*'[^']*',\s*'([^']+)'"
         ),
         # Base64 SVG with image= prefix via variable: n + 'image=data:...,BASE64;'
         "var_image_b64": re.compile(
             r"this\.createVertexTemplateEntry\("
             rf"n \+ 'image=data:image/svg\+xml,({BASE64_SVG_PREFIX}[A-Za-z0-9+/=]+);',\s*"
-            r"s \* ([\d.]+),\s*s \* ([\d.]+),\s*'([^']*)'"
+            r"(s \* [\d.]+),\s*(s \* [\d.]+),\s*'([^']*)'"
         ),
         # Inline full style with base64 SVG
         "inline_b64": re.compile(
             r"this\.createVertexTemplateEntry\(\s*"
             r"'[^']*image=data:image/svg\+xml,"
             rf"({BASE64_SVG_PREFIX}[A-Za-z0-9+/=]+);',\s*"
-            r"s \* ([\d.]+),\s*s \* ([\d.]+),\s*'[^']*',\s*'([^']+)'"
+            r"(s \* [\d.]+),\s*(s \* [\d.]+),\s*'[^']*',\s*'([^']+)'"
         ),
         # Inline editableCssRules style with base64 SVG (GCPIcons Generic etc.)
         "inline_editable_b64": re.compile(
             r"this\.createVertexTemplateEntry\(\s*"
             r"'editableCssRules=[^,]+,"
             rf"({BASE64_SVG_PREFIX}[A-Za-z0-9+/=]+);',\s*"
-            r"s \* ([\d.]+),\s*s \* ([\d.]+),\s*'[^']*',\s*'([^']+)'"
+            r"(s \* [\d.]+),\s*(s \* [\d.]+),\s*'[^']*',\s*'([^']+)'"
         ),
         # Stencil reference via variable: n + 'stencil_name'
         "var_stencil": re.compile(
             r"this\.createVertexTemplateEntry\(n \+ '(\w+)',\s*"
-            r"s \* ([\d.]+),\s*s \* ([\d.]+),\s*null,\s*'([^']+)'"
+            r"(s \* [\d.]+),\s*(s \* [\d.]+),\s*null,\s*'([^']+)'"
         ),
         # Stencil reference inlined in full style string
         "inline_stencil": re.compile(
             r"this\.createVertexTemplateEntry\("
             r"'([^']+shape=(?:mxgraph\.\w+\.\w+|ellipse)[^']*)',\s*"
-            r"s \* ([\d.]+),\s*s \* ([\d.]+),\s*null,\s*'([^']+)'"
+            r"(s \* [\d.]+),\s*(s \* [\d.]+),\s*null,\s*'([^']+)'"
         ),
         # Product card set with base64 icon variable
         "product_card": re.compile(
@@ -146,12 +154,24 @@ def detect_library(content):
     """Detect the library type from the sidebar JS content."""
     if "addGCPIconsPalette" in content:
         return "GCPIcons"
+    if "addGCP3Palette" in content:
+        return "GCP3"
     if "addGCP2Palette" in content:
         return "GCP2"
+    if "addGoogleCloudPlatformCardsPalette" in content or "addGCPPalette" in content:
+        return "GCP"
+    if "addAWS4bPalette" in content:
+        return "AWS4b"
     if "addAWS4Palette" in content or "addAWS4" in content:
         return "AWS4"
+    if "addAWS3DPalette" in content:
+        return "AWS3D"
+    if "addAWS3Palette" in content:
+        return "AWS3"
     if "addAzure2Palette" in content or "addAzure2" in content:
         return "Azure2"
+    if "addAzurePalette" in content:
+        return "Azure"
     return "Unknown"
 
 
@@ -345,6 +365,7 @@ def extract_azure_section(section, category_name, azure_context):
 def extract_aws_section(section, stencil_namespace):
     """Extract AWS4 entries with resolved full style strings."""
     icons = []
+    calls = section.count("createVertexTemplateEntry(")
     style_vars = extract_string_variables(section, {"gn": stencil_namespace})
     numeric_vars = {"s": 1, "w": 100, "h": 100, "w2": 78}
 
@@ -374,7 +395,7 @@ def extract_aws_section(section, stencil_namespace):
 
         icons.append(entry)
 
-    return icons
+    return icons, calls - len(icons)
 
 
 def extract_section(section, patterns, stencil_namespace):
@@ -551,30 +572,38 @@ def extract_file(filepath):
     print(f"Palette prefix: {prefix}")
     print(f"Stencil namespace: {stencil_ns}")
 
-    categories = extract_categories(content, prefix)
-    print(f"Categories: {len(categories)}")
-
-    sections = split_by_palette(content, prefix)
-    patterns = _compile_patterns(prefix)
-    azure_context = extract_azure_context(content) if lib == "Azure2" else None
-
+    skipped = 0
     result = {}
-    for i in range(1, len(sections), 2):
-        cat_name = sections[i]
-        section = sections[i + 1]
-        if lib == "Azure2":
-            icons = extract_azure_section(section, cat_name, azure_context)
-        elif lib == "AWS4":
-            icons = extract_aws_section(section, stencil_ns)
-        else:
-            icons = extract_section(section, patterns, stencil_ns)
-        result[cat_name] = icons
+    skip_reason = SKIPPED_LIBRARIES.get(lib)
+    if skip_reason:
+        skipped = content.count("createVertexTemplateEntry(")
+        print("Categories: 0")
+    else:
+        categories = extract_categories(content, prefix)
+        print(f"Categories: {len(categories)}")
+        sections = split_by_palette(content, prefix)
+        patterns = _compile_patterns(prefix)
+        azure_context = extract_azure_context(content) if lib == "Azure2" else None
+
+        for i in range(1, len(sections), 2):
+            cat_name = sections[i]
+            section = sections[i + 1]
+            if lib == "Azure2":
+                icons = extract_azure_section(section, cat_name, azure_context)
+            elif lib == "AWS4":
+                icons, section_skipped = extract_aws_section(section, stencil_ns)
+                skipped += section_skipped
+            else:
+                icons = extract_section(section, patterns, stencil_ns)
+            result[cat_name] = icons
 
     return {
         "source": f"jgraph/drawio {Path(filepath).name}",
         "library": lib,
         "stencil_namespace": stencil_ns,
         "categories": result,
+        "skipped": skipped,
+        "skip_reason": skip_reason,
     }
 
 
@@ -636,11 +665,14 @@ def main():
 
     data = extract_file(filepath)
 
-    if not args.quiet:
+    total = sum(len(icons) for icons in data["categories"].values())
+    if data.get("skip_reason"):
+        print(f"Skipped library {data['library']}. {data['skip_reason']}")
+        print(f"Skipped vertex calls: {data['skipped']}")
+    elif not args.quiet:
         print_summary(data)
 
-    total = sum(len(icons) for icons in data["categories"].values())
-    if data["library"] in KNOWN_LIBRARIES and total == 0:
+    if not data.get("skip_reason") and data["library"] in KNOWN_LIBRARIES and total == 0:
         print(
             (
                 f"Error: extracted 0 entries from known library "
@@ -649,6 +681,9 @@ def main():
             file=sys.stderr,
         )
         sys.exit(1)
+
+    if data["skipped"] and not data.get("skip_reason"):
+        print(f"Skipped {data['skipped']} vertex calls.")
 
     errors = verify_base64(data)
     if errors == 0:

@@ -41,7 +41,7 @@ gitignored and may not exist in a fresh checkout:
 mkdir -p working
 
 # Get the blob SHA
-sha=$(env GH_TOKEN= gh api repos/jgraph/drawio/contents/src/main/webapp/js/diagramly/sidebar/<FILE>?ref=dev -q '.sha')
+sha=$(env GH_TOKEN= gh api repos/jgraph/drawio/contents/src/main/webapp/js/diagramly/sidebar/<FILE>?ref=24b76c2cbd55d88e354042e8d329a2e4708972bc -q '.sha')
 
 # Download via blob API (bypasses 100KB limit)
 env GH_TOKEN= gh api repos/jgraph/drawio/git/blobs/$sha -q '.content' | base64 -d > working/<FILE>
@@ -75,6 +75,9 @@ If a category returns 0 results, the file format may have changed.
 See "Adapting to new encoding patterns" below.
 If the extractor returns 0 total entries for a known library, treat
 that as a hard failure and update the patterns before proceeding.
+GCP3, AWS4b, and the legacy AWS3, AWS3D, Azure, and GCP sidebars are
+recorded skips. A skip is not a parse failure. AWS4 prints a count of
+vertex calls it could not resolve.
 
 ## Step 4 — Output the catalog
 
