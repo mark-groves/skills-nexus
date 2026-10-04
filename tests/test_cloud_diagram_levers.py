@@ -836,6 +836,17 @@ class CloudDiagramLeversTest(unittest.TestCase):
         self.assertIn('y="80"', proc.stdout)
         self.assertIn("Ingest", proc.stdout)
 
+    def test_card_icon_keeps_native_aspect_like_the_sidebar(self) -> None:
+        shape = resolve_shape("gcp", "Cloud Functions")
+        assert shape is not None
+        self.assertEqual(shape["size"], "30x24")
+        card = emit_gcp_service_card(shape, cell_id="card-fn")
+        self.assertIn(
+            '<mxGeometry width="30" height="24" relative="1" as="geometry">\n'
+            '    <mxPoint x="15" y="18" as="offset" />',
+            card,
+        )
+
     def test_emit_gcp_service_card_ids_unique_per_coordinates(self) -> None:
         pubsub = resolve_shape("gcp", "Pub/Sub")
         assert pubsub is not None
