@@ -105,9 +105,15 @@
 
         <!-- Edge: Users to Load Balancer -->
         <mxCell id="edge-users-lb" value="HTTPS:443"
-            style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;labelBackgroundColor=none;startFill=1;startSize=4;endArrow=blockThin;endFill=1;endSize=4;jettySize=auto;orthogonalLoop=1;strokeColor=#4284F3;strokeWidth=2;fontSize=12;fontColor=#000000;align=left;dashed=0;"
+            style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;labelBackgroundColor=none;startFill=1;startSize=4;endArrow=blockThin;endFill=1;endSize=4;jettySize=auto;orthogonalLoop=1;strokeColor=#4284F3;strokeWidth=2;fontSize=12;fontColor=#000000;align=left;dashed=0;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;"
             edge="1" source="card-users" target="card-lb" parent="1">
-          <mxGeometry relative="1" as="geometry" />
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1260" y="1105" />
+              <mxPoint x="1260" y="150" />
+              <mxPoint x="820" y="150" />
+            </Array>
+          </mxGeometry>
         </mxCell>
 
         <!-- Edge: Load Balancer to Cloud Run -->
