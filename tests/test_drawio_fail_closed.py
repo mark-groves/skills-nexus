@@ -111,9 +111,7 @@ class GenerateFailClosedTests(unittest.TestCase):
         self.out = self.tmp / "out"
 
     def extract_into(self, sidebar: Path, name: str) -> None:
-        completed = run(
-            "python3", str(EXTRACT), str(sidebar), "-q", "-o", str(self.inputs / name)
-        )
+        completed = run("python3", str(EXTRACT), str(sidebar), "-q", "-o", str(self.inputs / name))
         self.assertEqual(completed.returncode, 0, completed.stderr)
 
     def generate(self, *providers: str) -> subprocess.CompletedProcess[str]:
@@ -144,7 +142,9 @@ class GenerateFailClosedTests(unittest.TestCase):
         self.rewrite("GCPIcons_extracted.json", library="Unknown", categories={})
         completed = self.generate("gcp")
         self.assertNotEqual(completed.returncode, 0)
-        self.assertIn("GCPIcons_extracted.json has library Unknown, expected GCPIcons", completed.stderr)
+        self.assertIn(
+            "GCPIcons_extracted.json has library Unknown, expected GCPIcons", completed.stderr
+        )
 
     def test_empty_input_is_refused(self) -> None:
         self.rewrite("GCPIcons_extracted.json", categories={"Generic": []})
@@ -163,7 +163,9 @@ class GenerateFailClosedTests(unittest.TestCase):
         completed = self.generate("aws")
         self.assertEqual(completed.returncode, 0, completed.stderr)
         fragment = (self.out / "aws4-shapes.generated.md").read_text(encoding="utf-8")
-        self.assertEqual([line for line in fragment.splitlines() if line.startswith("### ")], ["### EC2"])
+        self.assertEqual(
+            [line for line in fragment.splitlines() if line.startswith("### ")], ["### EC2"]
+        )
 
     def test_gcpicons_semicolon_fixture_generates_its_entry(self) -> None:
         self.extract_into(SIDEBARS / "gcpicons-semicolon.js", "GCPIcons_extracted.json")

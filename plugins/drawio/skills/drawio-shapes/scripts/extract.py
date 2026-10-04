@@ -664,6 +664,13 @@ def main():
         sys.exit(1)
 
     data = extract_file(filepath)
+    if data["library"] == "Unknown":
+        print(
+            f"Error: Unknown library in {filepath} ({filepath.stat().st_size} bytes). "
+            "No known draw.io palette was found; the download may be empty or truncated.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
     total = sum(len(icons) for icons in data["categories"].values())
     if data.get("skip_reason"):

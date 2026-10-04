@@ -284,7 +284,16 @@ def categories_from_source(source: dict, input_dir: Path) -> list[tuple[str, lis
         "extracted JSON (run scripts/extract.py first or use --input-dir)",
     )
     data = json.loads(source_path.read_text(encoding="utf-8"))
+    name = source["filename"]
+    if data.get("skip_reason"):
+        raise RuntimeError(
+            f"{name} is a skip record for {data.get('library')}, not {source['family']} shapes"
+        )
+    if data.get("library") != source["family"]:
+        raise RuntimeError(f"{name} has library {data.get('library')}, expected {source['family']}")
     categories = list(data["categories"].items())
+    if not any(entries for _, entries in categories):
+        raise RuntimeError(f"{name} has 0 entries; re-run scripts/extract.py on a good sidebar")
     start_category = source.get("start_category")
     if not start_category:
         return categories
@@ -444,18 +453,22 @@ def main() -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     try:
-        for provider_key in normalize_provider_args(args.providers):
-            stats = build_fragment(provider_key, input_dir)
-            fragment_path = output_dir / stats["fragment_name"]
-            fragment_path.write_text(stats["text"], encoding="utf-8")
-            print(
-                f"{stats['library']}: {stats['total_before']} -> {stats['final_count']} "
-                f"entries, removed {stats['removed_duplicates']} duplicates, "
-                f"removed {stats['removed_categories']} empty categories, "
-                f"wrote {fragment_path}"
-            )
+        built = [
+            build_fragment(provider_key, input_dir)
+            for provider_key in normalize_provider_args(args.providers)
+        ]
     except RuntimeError as err:
-        raise SystemExit(str(err)) from None
+        raise SystemExit(f"Error: {err}") from None
+
+    for stats in built:
+        fragment_path = output_dir / stats["fragment_name"]
+        fragment_path.write_text(stats["text"], encoding="utf-8")
+        print(
+            f"{stats['library']}: {stats['total_before']} -> {stats['final_count']} "
+            f"entries, removed {stats['removed_duplicates']} duplicates, "
+            f"removed {stats['removed_categories']} empty categories, "
+            f"wrote {fragment_path}"
+        )
 
 
 if __name__ == "__main__":
