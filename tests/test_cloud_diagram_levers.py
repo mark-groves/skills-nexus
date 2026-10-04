@@ -191,8 +191,8 @@ class CloudDiagramLeversTest(unittest.TestCase):
         self.assertNotIn("generic rounded rectangle", proc.stderr)
 
     def test_lookup_golden_queries(self) -> None:
-        golden = FIXTURES / "lookup-golden.tsv"
-        for row in csv.DictReader(golden.open(encoding="utf-8"), delimiter="\t"):
+        golden = (FIXTURES / "lookup-golden.tsv").read_text(encoding="utf-8")
+        for row in csv.DictReader(golden.splitlines(), delimiter="\t"):
             with self.subTest(provider=row["provider"], query=row["query"]):
                 hit = resolve_shape(row["provider"], row["query"])
                 self.assertEqual(hit["title"] if hit else "MISS", row["expected"])
@@ -451,6 +451,39 @@ class CloudDiagramLeversTest(unittest.TestCase):
         with directory:
             issues = collect_issues(diagram, "aws", ["Security Group"])
         self.assertEqual(issues, [])
+
+    def test_validate_identity_variants(self) -> None:
+        identities = FIXTURES / "identities"
+        aws_vpc = ["vpc", "security group", "ec2"]
+        cases: tuple[tuple[str, str, list[str] | None, list[str]], ...] = (
+            ("aws-sg-lowercase-hex", "aws", aws_vpc, []),
+            ("aws-sg-tinted-fill", "aws", aws_vpc, []),
+            (
+                "aws-sg-drawn-as-subnet",
+                "aws",
+                aws_vpc,
+                ["missing provider shape for security group"],
+            ),
+            ("aws-private-only-subnets", "aws", ["vpc", "subnet", "ec2"], []),
+            ("aws-private-only-subnets", "aws", ["vpc", "subnets", "ec2"], []),
+            (
+                "aws-private-only-subnets",
+                "aws",
+                ["vpc", "public subnet", "ec2"],
+                ["missing provider shape for public subnet"],
+            ),
+            (
+                "azure-generic-container-swimlane",
+                "azure",
+                None,
+                ["no provider shape tokens found for azure"],
+            ),
+            ("azure-vnet-lowercase-hex", "azure", ["vnet"], []),
+        )
+        for name, provider, required, expected in cases:
+            with self.subTest(name=name, required=required):
+                issues = collect_issues(identities / f"{name}.drawio", provider, required)
+                self.assertEqual(issues, expected)
 
     def test_validate_requires_relative_edge_geometry(self) -> None:
         xml = """\
