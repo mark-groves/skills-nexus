@@ -56,6 +56,15 @@ class DrawioExtractTest(unittest.TestCase):
             },
         )
 
+    def test_gcp2_image_without_trailing_semicolon_extracts(self) -> None:
+        data = extract.extract_file(SIDEBARS / "gcp2-image-no-semicolon.js")
+        self.assertEqual(_names(data), ["Document AI", "Healthcare API"])
+        healthcare = data["categories"]["IconsAIAndMachineLearning"][1]
+        self.assertEqual(
+            healthcare["base64_svg"], "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciLz4="
+        )
+        self.assertEqual((healthcare["width"], healthcare["height"]), (34, 42))
+
     def test_aws_unresolved_vertex_calls_are_counted(self) -> None:
         data = extract.extract_file(SIDEBARS / "aws4-unresolved.js")
         self.assertEqual(data["library"], "AWS4")
