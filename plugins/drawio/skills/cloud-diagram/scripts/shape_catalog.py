@@ -67,6 +67,16 @@ def _token_matches(query_token: str, title_token: str) -> bool:
     )
 
 
+def _same_words(query: str, name: str) -> bool:
+    """Equal ignoring case, punctuation, and a trailing plural s per word."""
+    if normalize_query(name) == query:
+        return True
+    query_tokens, name_tokens = _query_tokens(query), _query_tokens(name)
+    return len(query_tokens) == len(name_tokens) > 0 and all(
+        _token_matches(q, n) for q, n in zip(query_tokens, name_tokens, strict=True)
+    )
+
+
 def _extra_title_tokens(query: str, title: str) -> int | None:
     """Title words left over once every query word matched one, or None."""
     query_tokens = _query_tokens(query)
@@ -326,7 +336,7 @@ def resolve_shape(
     services = common.get("providers", {}).get(provider, {}).get("services", {})
     for service_id, service in services.items():
         names = [service_id, service.get("title", ""), *service.get("aliases", [])]
-        if normalized in {normalize_query(name) for name in names if name}:
+        if any(_same_words(normalized, name) for name in names if name):
             return {"provider": provider, "id": service_id, **service}
 
     ranked = [
