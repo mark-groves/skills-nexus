@@ -21,7 +21,7 @@ if str(SCRIPTS) not in sys.path:
 from build_common_shapes import build  # noqa: E402
 from gcp_card import emit_gcp_service_card  # noqa: E402
 from shape_catalog import resolve_shape  # noqa: E402
-from validate_diagram import collect_issues  # noqa: E402
+from validate_diagram import _parse_xml, collect_issues  # noqa: E402
 
 
 class CloudDiagramLeversTest(unittest.TestCase):
@@ -830,6 +830,42 @@ class CloudDiagramLeversTest(unittest.TestCase):
             any("no provider shape tokens found for gcp" in issue for issue in issues),
             issues,
         )
+
+    def test_azure_starter_users_icon_is_on_page(self) -> None:
+        path = REFERENCES / "templates" / "three-tier-azure.drawio.xml"
+        root = _parse_xml(path)
+        model = next(
+            element for element in root.iter() if element.tag.rsplit("}", 1)[-1] == "mxGraphModel"
+        )
+        page_height = float(model.get("pageHeight", "0"))
+        users = next(
+            cell
+            for cell in root.iter()
+            if cell.tag.rsplit("}", 1)[-1] == "mxCell" and cell.get("id") == "users"
+        )
+        style = users.get("style", "")
+        self.assertIn("img/lib/azure2/identity/Users.svg", style)
+        self.assertNotIn("mxgraph.azure.user", style)
+        geometry = next(child for child in users if child.tag.rsplit("}", 1)[-1] == "mxGeometry")
+        bottom = float(geometry.get("y", "0")) + float(geometry.get("height", "0"))
+        self.assertLessEqual(bottom, page_height)
+
+    def test_example_index_lists_only_the_three_starters(self) -> None:
+        text = (REFERENCES / "example-index.md").read_text(encoding="utf-8")
+        for starter in (
+            "templates/three-tier-aws.drawio.xml",
+            "templates/three-tier-azure.drawio.xml",
+            "templates/three-tier-gcp.drawio.xml",
+        ):
+            self.assertIn(starter, text)
+        self.assertNotIn("templates/aws/", text)
+        self.assertNotIn("templates/gcp/", text)
+
+    def test_skill_does_not_open_generated_catalog_on_miss(self) -> None:
+        skill = REPO_ROOT / "plugins" / "drawio" / "skills" / "cloud-diagram" / "SKILL.md"
+        text = skill.read_text(encoding="utf-8")
+        self.assertNotIn("when lookup misses", text)
+        self.assertIn("A lookup miss stops that service", text)
 
 
 if __name__ == "__main__":
