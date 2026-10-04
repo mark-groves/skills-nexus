@@ -48,7 +48,7 @@
           "kind": "icon"
         },
         "rds": {
-          "aliases": ["rds", "relational database service"],
+          "aliases": ["rds", "relational database service", "sql"],
           "title": "RDS",
           "kind": "icon"
         },
@@ -121,6 +121,16 @@
           "aliases": ["nat", "nat gateway"],
           "title": "NAT Gateway",
           "kind": "icon"
+        },
+        "iam": {
+          "aliases": ["iam", "identity and access management"],
+          "title": "Identity & Access Management",
+          "kind": "icon"
+        },
+        "kms": {
+          "aliases": ["kms", "key management service"],
+          "title": "Key Management Service",
+          "kind": "icon"
         }
       }
     },
@@ -142,7 +152,7 @@
           "kind": "icon"
         },
         "blob": {
-          "aliases": ["blob", "blob storage", "storage account", "storage accounts"],
+          "aliases": ["blob", "blob storage", "storage", "storage account", "storage accounts"],
           "title": "Storage Accounts",
           "kind": "icon"
         },

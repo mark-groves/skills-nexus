@@ -41,7 +41,6 @@ The full list of azure2 category folders:
 
 Resolve services with `scripts/lookup_shape.py --provider azure <name>`
 or `references/common-shapes.json` first. Do not invent azure2 paths.
-On a confirmed miss, use a labeled generic rounded rectangle.
 
 When `Subnet` or `VNet` / `Virtual Network` appears as both a swimlane
 group and an azure2 product icon, lookup keeps the swimlane container.

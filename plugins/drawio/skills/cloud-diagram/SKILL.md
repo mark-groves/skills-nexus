@@ -252,8 +252,7 @@ Report the Filename path.
 
 - **Never invent services** beyond what the user specified or what is
   strictly required for stated connectivity.
-- **Never invent shape names.** Lookup and catalog only. Confirmed miss
-  → labeled generic rounded rectangle.
+- **Never invent shape names.** Lookup and catalog only.
 - **Never embed secrets** (IPs, account IDs, ARNs, keys) without
   explicit confirmation.
 - **Never execute IaC.** Parse Terraform/CloudFormation/Bicep for

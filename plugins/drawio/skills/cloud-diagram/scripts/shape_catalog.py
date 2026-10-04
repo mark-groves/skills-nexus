@@ -52,6 +52,29 @@ def normalize_query(value: str) -> str:
     return " ".join(value.strip().lower().split())
 
 
+def _query_tokens(value: str) -> list[str]:
+    return re.findall(r"[a-z0-9]+", normalize_query(value))
+
+
+def _token_matches(query_token: str, title_token: str) -> bool:
+    return (
+        query_token == title_token
+        or title_token == f"{query_token}s"
+        or query_token == f"{title_token}s"
+    )
+
+
+def _title_covers_query(query: str, title: str) -> bool:
+    query_tokens = _query_tokens(query)
+    if not query_tokens:
+        return False
+    title_tokens = _query_tokens(title)
+    return all(
+        any(_token_matches(query_token, title_token) for title_token in title_tokens)
+        for query_token in query_tokens
+    )
+
+
 def is_container_style(style: str | None) -> bool:
     """True for group/swimlane styles used as architecture boundaries."""
     if not style:
@@ -263,11 +286,15 @@ def resolve_shape(
         for title, entry in catalog.items()
         if normalize_query(title) == normalized and entry["style"]
     ]
-    matches = exact or [
+    substring_matches = [
         (title, entry)
         for title, entry in catalog.items()
         if normalized in normalize_query(title) and entry["style"]
     ]
+    whole_word_matches = [
+        item for item in substring_matches if _title_covers_query(normalized, item[0])
+    ]
+    matches = exact or whole_word_matches or substring_matches
     if not matches:
         return None
     title, entry = min(matches, key=lambda item: (len(item[0]), item[0].lower()))
