@@ -30,24 +30,22 @@ files, download methods, and shape encoding formats.
 
 ## Step 2 — Download the sidebar JS file
 
-Use the GitHub API via `gh` to download — the files are too large for
-the contents API, so use the git blob endpoint. If `gh auth status`
-shows a broken local token, retry the public fetch with `env GH_TOKEN=`
-to bypass the bad credential. Create the skill-local working directory
-first because it is
-gitignored and may not exist in a fresh checkout:
+Run the bundled fetch script once per file:
 
 ```bash
-mkdir -p working
-
-# Get the blob SHA
-sha=$(env GH_TOKEN= gh api repos/jgraph/drawio/contents/src/main/webapp/js/diagramly/sidebar/<FILE>?ref=24b76c2cbd55d88e354042e8d329a2e4708972bc -q '.sha')
-
-# Download via blob API (bypasses 100KB limit)
-env GH_TOKEN= gh api repos/jgraph/drawio/git/blobs/$sha -q '.content' | base64 -d > working/<FILE>
+bash scripts/fetch_sidebar.sh <FILE>
 ```
 
-Save downloaded files to the skill-local working directory.
+It downloads `<FILE>` at draw.io commit
+`24b76c2cbd55d88e354042e8d329a2e4708972bc` through the `gh` git blob
+endpoint. It writes to the gitignored skill-local working directory.
+It sends an empty `GH_TOKEN` so a broken local token cannot block
+anonymous reads.
+
+The script fails closed. A `gh` error, an empty body, or a body whose
+git blob hash differs from the pinned SHA exits non-zero. The existing
+`working/<FILE>` stays untouched in each case. Stop on a non-zero exit.
+Do not extract a stale or partial file.
 
 ## Step 3 — Extract shapes
 

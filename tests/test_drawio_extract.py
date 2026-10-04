@@ -57,6 +57,9 @@ class DrawioExtractTest(unittest.TestCase):
         source_map = (DRAWIO_SHAPES / "references" / "source-map.md").read_text(encoding="utf-8")
         self.assertIn(PIN, skill)
         self.assertIn(PIN, source_map)
+        self.assertIn(
+            PIN, (DRAWIO_SHAPES / "scripts" / "fetch_sidebar.sh").read_text(encoding="utf-8")
+        )
         self.assertNotIn("?ref=dev", skill)
         self.assertNotIn("?ref=dev", source_map)
         self.assertIn("`src/main/webapp/stencils/aws4.xml`", source_map)

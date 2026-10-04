@@ -20,24 +20,13 @@ src/main/webapp/stencils/
 ## Downloading files
 
 Sidebar JS files are typically 200KB-600KB, exceeding the GitHub
-contents API's 100KB limit. Use the git blob endpoint instead:
+contents API's 100KB limit. `scripts/fetch_sidebar.sh <FILE>` reads
+the blob SHA from the contents API, downloads the blob, and checks
+`git hash-object` against that SHA before it replaces
+`working/<FILE>`. Any failure exits non-zero and keeps the old copy.
 
-```bash
-# Step 1: get the blob SHA
-sha=$(env GH_TOKEN= gh api \
-  "repos/jgraph/drawio/contents/src/main/webapp/js/diagramly/sidebar/<FILE>?ref=24b76c2cbd55d88e354042e8d329a2e4708972bc" \
-  -q '.sha')
-
-# Step 2: download via blob API (no size limit)
-env GH_TOKEN= gh api "repos/jgraph/drawio/git/blobs/$sha" \
-  -q '.content' | base64 -d > "working/<FILE>"
-```
-
-Write downloaded files into the skill-local working directory.
-
-If `gh auth status` reports a broken local token, keep `env GH_TOKEN=`
-in place for public-repo fetches so bad credentials do not poison
-anonymous API access.
+The script runs `gh` with an empty `GH_TOKEN` so a broken local token
+does not poison anonymous API access.
 
 Downloads are pinned to commit `24b76c2cbd55d88e354042e8d329a2e4708972bc`
 (draw.io 31.7.0, 2026-10-01). Do not use the moving dev branch.
