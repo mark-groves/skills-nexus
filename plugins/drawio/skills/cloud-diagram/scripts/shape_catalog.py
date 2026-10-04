@@ -29,6 +29,8 @@ _AWS_GR_ICON_RE = re.compile(r"grIcon=mxgraph\.aws4\.[A-Za-z0-9_]+")
 _AWS_SHAPE_RE = re.compile(r"shape=mxgraph\.aws4\.[A-Za-z0-9_]+")
 # Shared shell shapes are not service identities; prefer resIcon/grIcon.
 _AWS_GENERIC_SHAPES = frozenset({"mxgraph.aws4.resourceIcon", "mxgraph.aws4.group"})
+_AWS_SHARED_GROUP_ICON = "mxgraph.aws4.group_security_group"
+_AWS_SHARED_GROUP_KEYS = ("strokeColor", "fillColor", "dashed")
 _AZURE_IMAGE_RE = re.compile(r"image=img/lib/azure2/[^;]+")
 # Distinguishing swimlane markers only. Optional dashPattern / fillColor
 # vary across templates and must not break identity matching (Subnet vs
@@ -217,12 +219,32 @@ def extract_tokens(provider: str, title: str, style: str | None) -> list[str]:
     raise ValueError(f"Unsupported provider: {provider}")
 
 
+def _style_value(style: str, key: str) -> str | None:
+    match = re.search(rf"(?:^|;){re.escape(key)}=([^;]*)", style)
+    if match is None:
+        return None
+    return match.group(1)
+
+
+def _aws_group_identity(style: str, identity: str) -> str:
+    if identity != _AWS_SHARED_GROUP_ICON:
+        return identity
+    markers = [
+        f"{key}={value}"
+        for key in _AWS_SHARED_GROUP_KEYS
+        if (value := _style_value(style, key)) is not None
+    ]
+    if not markers:
+        return identity
+    return identity + ";" + ";".join(markers)
+
+
 def _aws_identity_tokens(style: str) -> list[str]:
     """Canonical AWS identities from grIcon=, resIcon=, and non-generic shape=."""
     identities: list[str] = []
     seen: set[str] = set()
     for token in _AWS_GR_ICON_RE.findall(style):
-        identity = token.removeprefix("grIcon=")
+        identity = _aws_group_identity(style, token.removeprefix("grIcon="))
         if identity not in seen:
             seen.add(identity)
             identities.append(identity)
