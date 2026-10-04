@@ -191,8 +191,8 @@ class CloudDiagramLeversTest(unittest.TestCase):
         self.assertNotIn("generic rounded rectangle", proc.stderr)
 
     def test_lookup_golden_queries(self) -> None:
-        golden = FIXTURES / "lookup-golden.tsv"
-        for row in csv.DictReader(golden.open(encoding="utf-8"), delimiter="\t"):
+        golden = (FIXTURES / "lookup-golden.tsv").read_text(encoding="utf-8")
+        for row in csv.DictReader(golden.splitlines(), delimiter="\t"):
             with self.subTest(provider=row["provider"], query=row["query"]):
                 hit = resolve_shape(row["provider"], row["query"])
                 self.assertEqual(hit["title"] if hit else "MISS", row["expected"])
