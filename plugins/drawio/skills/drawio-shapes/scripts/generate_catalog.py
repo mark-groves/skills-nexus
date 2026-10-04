@@ -169,12 +169,15 @@ PROVIDERS: dict[str, dict[str, Any]] = {
 }
 
 # GCP diagrams draw services as Service Cards, so a card's own glyph beats
-# a same-named plain icon regardless of size.
-CARD_TYPES = frozenset({"product_card", "product_card_logo"})
-
-
-def is_card_glyph(category: str, entry: dict) -> bool:
-    return entry["type"] in CARD_TYPES or "ProductCard" in category
+# a same-named plain icon regardless of size. A ProductCardSet logo is a
+# standalone mxgraph.gcp2.*_logo stencil that cannot sit in a Service Card,
+# so it only wins a name no image icon has.
+def dedupe_tier(category: str, entry: dict) -> int:
+    if entry["type"] == "product_card_logo":
+        return 2
+    if entry["type"] == "product_card" or "ProductCard" in category:
+        return 0
+    return 1
 
 
 ALIASES = {
@@ -353,7 +356,7 @@ def dedupe_entries(
                 {
                     "category": category,
                     "entry": entry,
-                    "rank": (not is_card_glyph(category, entry), width * height),
+                    "rank": (dedupe_tier(category, entry), width * height),
                     "index": len(flattened),
                     "key": (entry["family"], entry["name"]),
                 }
