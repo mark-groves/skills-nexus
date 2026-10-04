@@ -42,6 +42,7 @@ _AZURE_GROUP_MARKER_KEYS = (
 )
 _GCP_IMAGE_RE = re.compile(r"image=data:image/svg\+xml,[^;]+")
 _GCP_SHAPE_RE = re.compile(r"(?:shape=)?mxgraph\.gcp2\.[A-Za-z0-9_]+")
+_SUBSTRING_ONLY = 1_000
 
 
 class CatalogEntry(TypedDict):
@@ -66,15 +67,41 @@ def _token_matches(query_token: str, title_token: str) -> bool:
     )
 
 
-def _title_covers_query(query: str, title: str) -> bool:
+def _same_words(query: str, name: str) -> bool:
+    """Equal ignoring case, punctuation, and a trailing plural s per word."""
+    if normalize_query(name) == query:
+        return True
+    query_tokens, name_tokens = _query_tokens(query), _query_tokens(name)
+    return len(query_tokens) == len(name_tokens) > 0 and all(
+        _token_matches(q, n) for q, n in zip(query_tokens, name_tokens, strict=True)
+    )
+
+
+def _extra_title_tokens(query: str, title: str) -> int | None:
+    """Title words left over once every query word matched one, or None."""
     query_tokens = _query_tokens(query)
     if not query_tokens:
-        return False
-    title_tokens = _query_tokens(title)
-    return all(
-        any(_token_matches(query_token, title_token) for title_token in title_tokens)
-        for query_token in query_tokens
-    )
+        return None
+    unused = _query_tokens(title)
+    for query_token in query_tokens:
+        match = next((t for t in unused if _token_matches(query_token, t)), None)
+        if match is None:
+            return None
+        unused.remove(match)
+    return len(unused)
+
+
+def _match_rank(query: str, title: str) -> tuple[int, int, str] | None:
+    """Exact title, then fewest extra words, then bare substring; shorter wins ties."""
+    if normalize_query(title) == query:
+        tier = -1
+    elif (extra := _extra_title_tokens(query, title)) is not None:
+        tier = extra
+    elif query in normalize_query(title):
+        tier = _SUBSTRING_ONLY
+    else:
+        return None
+    return tier, len(title), title.lower()
 
 
 def is_container_style(style: str | None) -> bool:
@@ -309,27 +336,17 @@ def resolve_shape(
     services = common.get("providers", {}).get(provider, {}).get("services", {})
     for service_id, service in services.items():
         names = [service_id, service.get("title", ""), *service.get("aliases", [])]
-        if normalized in {normalize_query(name) for name in names if name}:
+        if any(_same_words(normalized, name) for name in names if name):
             return {"provider": provider, "id": service_id, **service}
 
-    catalog = parse_catalog(PROVIDER_FILES[provider])
-    exact = [
-        (title, entry)
-        for title, entry in catalog.items()
-        if normalize_query(title) == normalized and entry["style"]
+    ranked = [
+        (rank, title, entry)
+        for title, entry in parse_catalog(PROVIDER_FILES[provider]).items()
+        if entry["style"] and (rank := _match_rank(normalized, title)) is not None
     ]
-    substring_matches = [
-        (title, entry)
-        for title, entry in catalog.items()
-        if normalized in normalize_query(title) and entry["style"]
-    ]
-    whole_word_matches = [
-        item for item in substring_matches if _title_covers_query(normalized, item[0])
-    ]
-    matches = exact or whole_word_matches or substring_matches
-    if not matches:
+    if not ranked:
         return None
-    title, entry = min(matches, key=lambda item: (len(item[0]), item[0].lower()))
+    _, title, entry = min(ranked, key=lambda item: (item[0], item[1]))
     style = entry["style"]
     assert style is not None
     kind = infer_shape_kind(provider, style)

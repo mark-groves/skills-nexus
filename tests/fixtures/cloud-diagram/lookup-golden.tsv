@@ -1,0 +1,64 @@
+provider	query	expected
+aws	iam	Identity & Access Management
+aws	sql	RDS
+aws	kms	Key Management Service
+aws	lambda	Lambda
+aws	s3	Simple Storage Service (S3)
+aws	ec2	EC2
+aws	rds	RDS
+aws	vpc	VPC
+aws	subnet	Public Subnet
+aws	subnets	Public Subnet
+aws	security group	Security Group
+aws	security groups	Security Group
+aws	availability zone	Availability Zone
+aws	availability zones	Availability Zone
+aws	load balancer	Elastic Load Balancing
+aws	load balancers	Elastic Load Balancing
+aws	users	Users
+aws	bucket	Bucket
+aws	buckets	Bucket
+aws	S3 Buckets	Simple Storage Service (S3)
+aws	Lambda Functions	Lambda
+aws	function	Lambda
+aws	functions	Lambda
+aws	monitor	CloudWatch
+aws	monitoring	CloudWatch
+aws	quicksight	Quick
+aws	databases	Databases
+aws	gateway	Gateway
+aws	queue	Queue
+aws	cloud	AWS Cloud
+aws	cloud run	MISS
+aws	bigquery	MISS
+aws	cosmos db	MISS
+aws	zzqxv	MISS
+azure	sql	SQL Database
+azure	storage	Storage Accounts
+azure	subnet	Subnet
+azure	subnets	Subnet
+azure	security groups	Network Security Groups
+azure	load balancers	Load Balancers
+azure	virtual machine	Virtual Machine
+azure	virtual machines	Virtual Machine
+azure	gateway	Application Gateways
+azure	function	Function Apps
+azure	functions	Function Apps
+azure	database	SQL Database
+azure	databases	SQL Database
+azure	aks	Kubernetes Services
+azure	key vault	Key Vaults
+azure	monitor	Monitor
+azure	iam	MISS
+azure	s3	MISS
+gcp	sql	Cloud SQL
+gcp	storage	Cloud Storage
+gcp	bucket	Bucket
+gcp	buckets	Bucket
+gcp	functions	Cloud Functions
+gcp	load balancer	Cloud Load Balancing
+gcp	load balancers	Cloud Load Balancing
+gcp	pubsub	Pub/Sub
+gcp	looker	Looker
+gcp	kms	MISS
+gcp	security groups	MISS

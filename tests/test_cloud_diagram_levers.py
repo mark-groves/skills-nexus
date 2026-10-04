@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import csv
 import json
 import subprocess
 import sys
@@ -180,6 +181,13 @@ class CloudDiagramLeversTest(unittest.TestCase):
         self.assertEqual(proc.returncode, 2)
         self.assertIn("MISS:", proc.stderr)
         self.assertNotIn("generic rounded rectangle", proc.stderr)
+
+    def test_lookup_golden_queries(self) -> None:
+        golden = FIXTURES / "lookup-golden.tsv"
+        for row in csv.DictReader(golden.open(encoding="utf-8"), delimiter="\t"):
+            with self.subTest(provider=row["provider"], query=row["query"]):
+                hit = resolve_shape(row["provider"], row["query"])
+                self.assertEqual(hit["title"] if hit else "MISS", row["expected"])
 
     def test_lookup_named_services(self) -> None:
         cases = (
