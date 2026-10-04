@@ -120,18 +120,28 @@ def infer_shape_kind(provider: str, style: str | None, seed_kind: str | None = N
     return "icon"
 
 
+def _parse_size(value: str | None) -> tuple[int, int] | None:
+    match = re.match(r"(\d+)x(\d+)", (value or "").strip())
+    if match is None:
+        return None
+    width, height = int(match.group(1)), int(match.group(2))
+    return (width, height) if width and height else None
+
+
 def infer_shape_size(
     kind: str,
     catalog_size: str | None,
     default_icon_size: str = "50x50",
 ) -> str:
-    if kind == "gcp_card_icon":
-        return "30x30"
-    if kind == "group" and catalog_size:
-        match = re.match(r"(\d+x\d+)", catalog_size.strip())
-        if match:
-            return match.group(1)
-    return default_icon_size
+    """Groups keep the catalog size; icons fit it into their box, keeping aspect."""
+    native = _parse_size(catalog_size)
+    if kind == "group" and native:
+        return f"{native[0]}x{native[1]}"
+    box = (30, 30) if kind == "gcp_card_icon" else _parse_size(default_icon_size) or (50, 50)
+    if native is None:
+        return f"{box[0]}x{box[1]}"
+    scale = min(box[0] / native[0], box[1] / native[1])
+    return f"{round(native[0] * scale)}x{round(native[1] * scale)}"
 
 
 def parse_catalog(path: Path) -> dict[str, CatalogEntry]:

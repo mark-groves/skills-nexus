@@ -168,6 +168,15 @@ PROVIDERS: dict[str, dict[str, Any]] = {
     },
 }
 
+# GCP diagrams draw services as Service Cards, so a card's own glyph beats
+# a same-named plain icon regardless of size.
+CARD_TYPES = frozenset({"product_card", "product_card_logo"})
+
+
+def is_card_glyph(category: str, entry: dict) -> bool:
+    return entry["type"] in CARD_TYPES or "ProductCard" in category
+
+
 ALIASES = {
     "all": "all",
     "aws": "AWS4",
@@ -225,7 +234,7 @@ def azure_style(entry: dict) -> str:
     )
 
 
-def display_size(library: str, category: str, entry: dict) -> tuple[int, int]:
+def display_size(entry: dict) -> tuple[int, int]:
     def fallback(value: object) -> int:
         if value is None:
             return 50
@@ -240,10 +249,6 @@ def display_size(library: str, category: str, entry: dict) -> tuple[int, int]:
     height = (
         int(round(entry["height"])) if "height" in entry else fallback(entry.get("height_scale"))
     )
-
-    if library == "GCP2" and category.startswith("Icons") and max(width, height) > 100:
-        return 50, 50
-
     return width, height
 
 
@@ -272,7 +277,7 @@ def render_entry(library: str, category: str, entry: dict) -> list[str]:
     else:
         lines.append(f"- **Type:** `{entry['type']}`")
 
-    width, height = display_size(library, category, entry)
+    width, height = display_size(entry)
     lines.append(f"- **Size:** {width}x{height}")
     lines.append("")
     return lines
@@ -343,12 +348,12 @@ def dedupe_entries(
     for category, entries in categories:
         for entry in entries:
             total_before += 1
-            width, height = display_size(library, category, entry)
+            width, height = display_size(entry)
             flattened.append(
                 {
                     "category": category,
                     "entry": entry,
-                    "area": width * height,
+                    "rank": (not is_card_glyph(category, entry), width * height),
                     "index": len(flattened),
                     "key": (entry["family"], entry["name"]),
                 }
@@ -357,7 +362,7 @@ def dedupe_entries(
     best_by_key: dict[tuple[str, str], dict[str, Any]] = {}
     for item in flattened:
         current = best_by_key.get(item["key"])
-        if current is None or item["area"] < current["area"]:
+        if current is None or item["rank"] < current["rank"]:
             best_by_key[item["key"]] = item
 
     keep_indexes = {item["index"] for item in best_by_key.values()}

@@ -84,6 +84,8 @@ def main(argv: list[str] | None = None) -> int:
     print(f"title: {shape['title']}")
     print(f"kind: {shape['kind']}")
     print(f"size: {shape['size']}")
+    if shape.get("catalog_size"):
+        print(f"catalog_size: {shape['catalog_size']}")
     print(f"tokens: {', '.join(shape.get('tokens') or [])}")
     print(f"style: {shape['style']}")
     if shape.get("kind") == "gcp_card_icon":
