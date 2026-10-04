@@ -1,0 +1,118 @@
+prov  query              BEFORE (exit: title)                             AFTER (exit: title)                             
+aws   iam                0: IAM Roles Anywhere                            0: Identity & Access Management                 *
+aws   sql                0: SQL Workbench                                 0: RDS                                          *
+aws   kms                2: MISS: 'aws' 'kms'. Confirmed miss only → lab  0: Key Management Service                       *
+aws   storage            0: Storage                                       0: Storage                                       
+aws   lambda             0: Lambda                                        0: Lambda                                        
+aws   s3                 0: Simple Storage Service (S3)                   0: Simple Storage Service (S3)                   
+aws   ec2                0: EC2                                           0: EC2                                           
+aws   rds                0: RDS                                           0: RDS                                           
+aws   vpc                0: VPC                                           0: VPC                                           
+aws   subnet             0: Public Subnet                                 0: Public Subnet                                 
+aws   security group     0: Security Group                                0: Security Group                                
+aws   load balancer      0: Classic Load Balancer                         0: Classic Load Balancer                         
+aws   users              0: Users                                         0: Users                                         
+aws   cloud run          2: MISS: 'aws' 'cloud run'. Confirmed miss only  2: MISS: 'aws' 'cloud run'.                     *
+aws   bigquery           2: MISS: 'aws' 'bigquery'. Confirmed miss only   2: MISS: 'aws' 'bigquery'.                      *
+aws   pub/sub            2: MISS: 'aws' 'pub/sub'. Confirmed miss only →  2: MISS: 'aws' 'pub/sub'.                       *
+aws   pubsub             2: MISS: 'aws' 'pubsub'. Confirmed miss only →   2: MISS: 'aws' 'pubsub'.                        *
+aws   dataflow           2: MISS: 'aws' 'dataflow'. Confirmed miss only   2: MISS: 'aws' 'dataflow'.                      *
+aws   gcs                2: MISS: 'aws' 'gcs'. Confirmed miss only → lab  2: MISS: 'aws' 'gcs'.                           *
+aws   cloud storage      2: MISS: 'aws' 'cloud storage'. Confirmed miss   2: MISS: 'aws' 'cloud storage'.                 *
+aws   aks                2: MISS: 'aws' 'aks'. Confirmed miss only → lab  2: MISS: 'aws' 'aks'.                           *
+aws   app service        2: MISS: 'aws' 'app service'. Confirmed miss on  2: MISS: 'aws' 'app service'.                   *
+aws   cosmos db          2: MISS: 'aws' 'cosmos db'. Confirmed miss only  2: MISS: 'aws' 'cosmos db'.                     *
+aws   key vault          2: MISS: 'aws' 'key vault'. Confirmed miss only  2: MISS: 'aws' 'key vault'.                     *
+aws   buckets            2: MISS: 'aws' 'buckets'. Confirmed miss only →  2: MISS: 'aws' 'buckets'.                       *
+aws   bucket             0: Bucket                                        0: Bucket                                        
+aws   functions          0: Step Functions                                0: Step Functions                                
+aws   function           0: Step Functions                                0: Step Functions                                
+aws   virtual machines   2: MISS: 'aws' 'virtual machines'. Confirmed mi  2: MISS: 'aws' 'virtual machines'.              *
+aws   databases          2: MISS: 'aws' 'databases'. Confirmed miss only  0: Databases                                    *
+aws   zzqxv              2: MISS: 'aws' 'zzqxv'. Confirmed miss only → l  2: MISS: 'aws' 'zzqxv'.                         *
+aws   flux capacitor     2: MISS: 'aws' 'flux capacitor'. Confirmed miss  2: MISS: 'aws' 'flux capacitor'.                *
+aws   <empty>            2: MISS: 'aws' ''. Confirmed miss only → labele  2: MISS: 'aws' ''.                              *
+aws   gateway            0: Gateway                                       0: Gateway                                       
+aws   database           0: Database                                      0: Databases                                    *
+aws   network            0: Network Firewall                              0: Network Firewall                              
+aws   monitor            0: Monitoring                                    0: Backup Virtual Machine Monitor               *
+aws   queue              0: Queue                                         0: Queue                                         
+aws   looker             2: MISS: 'aws' 'looker'. Confirmed miss only →   2: MISS: 'aws' 'looker'.                        *
+azure iam                2: MISS: 'azure' 'iam'. Confirmed miss only → l  2: MISS: 'azure' 'iam'.                         *
+azure sql                0: SQL Database                                  0: SQL Database                                  
+azure kms                2: MISS: 'azure' 'kms'. Confirmed miss only → l  2: MISS: 'azure' 'kms'.                         *
+azure storage            0: Storage Mover                                 0: Storage Accounts                             *
+azure lambda             2: MISS: 'azure' 'lambda'. Confirmed miss only   2: MISS: 'azure' 'lambda'.                      *
+azure s3                 2: MISS: 'azure' 's3'. Confirmed miss only → la  2: MISS: 'azure' 's3'.                          *
+azure ec2                2: MISS: 'azure' 'ec2'. Confirmed miss only → l  2: MISS: 'azure' 'ec2'.                         *
+azure rds                2: MISS: 'azure' 'rds'. Confirmed miss only → l  2: MISS: 'azure' 'rds'.                         *
+azure vpc                2: MISS: 'azure' 'vpc'. Confirmed miss only → l  2: MISS: 'azure' 'vpc'.                         *
+azure subnet             0: Subnet                                        0: Subnet                                        
+azure security group     0: Network Security Groups                       0: Network Security Groups                       
+azure load balancer      0: Load Balancers                                0: Load Balancers                                
+azure users              0: Users                                         0: Users                                         
+azure cloud run          2: MISS: 'azure' 'cloud run'. Confirmed miss on  2: MISS: 'azure' 'cloud run'.                   *
+azure bigquery           2: MISS: 'azure' 'bigquery'. Confirmed miss onl  2: MISS: 'azure' 'bigquery'.                    *
+azure pub/sub            2: MISS: 'azure' 'pub/sub'. Confirmed miss only  2: MISS: 'azure' 'pub/sub'.                     *
+azure pubsub             2: MISS: 'azure' 'pubsub'. Confirmed miss only   0: PubSub                                       *
+azure dataflow           2: MISS: 'azure' 'dataflow'. Confirmed miss onl  2: MISS: 'azure' 'dataflow'.                    *
+azure gcs                2: MISS: 'azure' 'gcs'. Confirmed miss only → l  2: MISS: 'azure' 'gcs'.                         *
+azure cloud storage      2: MISS: 'azure' 'cloud storage'. Confirmed mis  2: MISS: 'azure' 'cloud storage'.               *
+azure aks                0: Kubernetes Services                           0: Kubernetes Services                           
+azure app service        0: App Services                                  0: App Services                                  
+azure cosmos db          0: Cosmos DB                                     0: Cosmos DB                                     
+azure key vault          0: Key Vaults                                    0: Key Vaults                                    
+azure buckets            2: MISS: 'azure' 'buckets'. Confirmed miss only  2: MISS: 'azure' 'buckets'.                     *
+azure bucket             2: MISS: 'azure' 'bucket'. Confirmed miss only   2: MISS: 'azure' 'bucket'.                      *
+azure functions          0: Function Apps                                 0: Function Apps                                 
+azure function           0: Function Apps                                 0: Function Apps                                 
+azure virtual machines   0: Virtual Machines (Classic)                    0: Virtual Machines (Classic)                    
+azure databases          0: SQL Server Stretch Databases                  0: SQL Server Stretch Databases                  
+azure zzqxv              2: MISS: 'azure' 'zzqxv'. Confirmed miss only →  2: MISS: 'azure' 'zzqxv'.                       *
+azure flux capacitor     2: MISS: 'azure' 'flux capacitor'. Confirmed mi  2: MISS: 'azure' 'flux capacitor'.              *
+azure <empty>            2: MISS: 'azure' ''. Confirmed miss only → labe  2: MISS: 'azure' ''.                            *
+azure gateway            0: Databox Gateway                               0: AI Gateway                                   *
+azure database           0: SQL Database                                  0: SQL Database                                  
+azure network            0: Network Manager                               0: Network Manager                               
+azure monitor            0: Monitor                                       0: Monitor                                       
+azure queue              0: Storage Queue                                 0: Storage Queue                                 
+azure looker             2: MISS: 'azure' 'looker'. Confirmed miss only   2: MISS: 'azure' 'looker'.                      *
+gcp   iam                0: IAM                                           0: IAM                                           
+gcp   sql                0: Cloud SQL                                     0: Cloud SQL                                     
+gcp   kms                2: MISS: 'gcp' 'kms'. Confirmed miss only → lab  2: MISS: 'gcp' 'kms'.                           *
+gcp   storage            0: Cloud Storage                                 0: Cloud Storage                                 
+gcp   lambda             2: MISS: 'gcp' 'lambda'. Confirmed miss only →   2: MISS: 'gcp' 'lambda'.                        *
+gcp   s3                 2: MISS: 'gcp' 's3'. Confirmed miss only → labe  2: MISS: 'gcp' 's3'.                            *
+gcp   ec2                2: MISS: 'gcp' 'ec2'. Confirmed miss only → lab  2: MISS: 'gcp' 'ec2'.                           *
+gcp   rds                2: MISS: 'gcp' 'rds'. Confirmed miss only → lab  2: MISS: 'gcp' 'rds'.                           *
+gcp   vpc                2: MISS: 'gcp' 'vpc'. Confirmed miss only → lab  2: MISS: 'gcp' 'vpc'.                           *
+gcp   subnet             2: MISS: 'gcp' 'subnet'. Confirmed miss only →   2: MISS: 'gcp' 'subnet'.                        *
+gcp   security group     2: MISS: 'gcp' 'security group'. Confirmed miss  2: MISS: 'gcp' 'security group'.                *
+gcp   load balancer      0: Cloud Load Balancing                          0: Cloud Load Balancing                          
+gcp   users              0: Users                                         0: Users                                         
+gcp   cloud run          0: Cloud Run                                     0: Cloud Run                                     
+gcp   bigquery           0: BigQuery                                      0: BigQuery                                      
+gcp   pub/sub            0: Pub/Sub                                       0: Pub/Sub                                       
+gcp   pubsub             0: Pub/Sub                                       0: Pub/Sub                                       
+gcp   dataflow           0: Dataflow                                      0: Dataflow                                      
+gcp   gcs                0: Cloud Storage                                 0: Cloud Storage                                 
+gcp   cloud storage      0: Cloud Storage                                 0: Cloud Storage                                 
+gcp   aks                2: MISS: 'gcp' 'aks'. Confirmed miss only → lab  2: MISS: 'gcp' 'aks'.                           *
+gcp   app service        2: MISS: 'gcp' 'app service'. Confirmed miss on  2: MISS: 'gcp' 'app service'.                   *
+gcp   cosmos db          2: MISS: 'gcp' 'cosmos db'. Confirmed miss only  2: MISS: 'gcp' 'cosmos db'.                     *
+gcp   key vault          2: MISS: 'gcp' 'key vault'. Confirmed miss only  2: MISS: 'gcp' 'key vault'.                     *
+gcp   buckets            2: MISS: 'gcp' 'buckets'. Confirmed miss only →  2: MISS: 'gcp' 'buckets'.                       *
+gcp   bucket             0: Bucket                                        0: Bucket                                        
+gcp   functions          0: Cloud Functions                               0: Cloud Functions                               
+gcp   function           0: Cloud Functions                               0: Cloud Functions                               
+gcp   virtual machines   2: MISS: 'gcp' 'virtual machines'. Confirmed mi  2: MISS: 'gcp' 'virtual machines'.              *
+gcp   databases          2: MISS: 'gcp' 'databases'. Confirmed miss only  2: MISS: 'gcp' 'databases'.                     *
+gcp   zzqxv              2: MISS: 'gcp' 'zzqxv'. Confirmed miss only → l  2: MISS: 'gcp' 'zzqxv'.                         *
+gcp   flux capacitor     2: MISS: 'gcp' 'flux capacitor'. Confirmed miss  2: MISS: 'gcp' 'flux capacitor'.                *
+gcp   <empty>            2: MISS: 'gcp' ''. Confirmed miss only → labele  2: MISS: 'gcp' ''.                              *
+gcp   gateway            0: Gateway                                       0: Gateway                                       
+gcp   database           0: Database                                      0: Database                                      
+gcp   network            0: Network                                       0: Network                                       
+gcp   monitor            0: Monitor                                       0: Monitor                                       
+gcp   queue              0: Task Queues                                   0: Task Queues                                   
+gcp   looker             0: Looker                                        0: Looker                                        

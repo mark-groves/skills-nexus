@@ -1,0 +1,6 @@
+$ validate_diagram.py diagrams/broken/private-only-subnets.drawio --provider aws --require-services "vpc,subnet,ec2"
+ERROR: missing provider shape for subnet
+    exit=1
+$ validate_diagram.py diagrams/broken/private-only-subnets.drawio --provider aws --require-services "vpc,private subnet,ec2"
+OK diagrams/broken/private-only-subnets.drawio
+    exit=0

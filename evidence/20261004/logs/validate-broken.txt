@@ -1,0 +1,101 @@
+######## validator=before
+$ validate_diagram.py /tmp/before/tests/fixtures/cloud-diagram/bad-edge.drawio 
+    ERROR: edge e1: missing mxGeometry child
+    ERROR: overlap: a and b
+    exit=1
+$ validate_diagram.py diagrams/broken/self-closing-edge.drawio --provider aws
+    ERROR: edge edge-web-db: missing mxGeometry child
+    exit=1
+$ validate_diagram.py diagrams/broken/abs-edge.drawio --provider aws
+    OK /tmp/evidence/diagrams/broken/abs-edge.drawio
+    exit=0
+$ validate_diagram.py diagrams/broken/relative-zero-edge.drawio --provider aws
+    OK /tmp/evidence/diagrams/broken/relative-zero-edge.drawio
+    exit=0
+$ validate_diagram.py diagrams/broken/swimlane-plain.drawio --provider azure
+    OK /tmp/evidence/diagrams/broken/swimlane-plain.drawio
+    exit=0
+$ validate_diagram.py diagrams/broken/swimlane-generic-container.drawio --provider azure
+    OK /tmp/evidence/diagrams/broken/swimlane-generic-container.drawio
+    exit=0
+$ validate_diagram.py diagrams/broken/swimlane-azure-vnet-only.drawio --provider azure
+    OK /tmp/evidence/diagrams/broken/swimlane-azure-vnet-only.drawio
+    exit=0
+$ validate_diagram.py diagrams/broken/swimlane-azure-vnet-only.drawio --provider azure --require-services vnet
+    OK /tmp/evidence/diagrams/broken/swimlane-azure-vnet-only.drawio
+    exit=0
+$ validate_diagram.py diagrams/broken/sg-drawn-as-subnet.drawio --provider aws --require-services vpc,availability zone,public subnet,private subnet,security group,internet gateway,nat gateway,ec2,rds,users
+    OK /tmp/evidence/diagrams/broken/sg-drawn-as-subnet.drawio
+    exit=0
+$ validate_diagram.py diagrams/broken/subnet-drawn-as-sg.drawio --provider aws --require-services vpc,availability zone,public subnet,private subnet,security group,internet gateway,nat gateway,ec2,rds,users
+    OK /tmp/evidence/diagrams/broken/subnet-drawn-as-sg.drawio
+    exit=0
+$ validate_diagram.py diagrams/broken/sg-lowercase-hex.drawio --provider aws --require-services vpc,availability zone,public subnet,private subnet,security group,internet gateway,nat gateway,ec2,rds,users
+    OK /tmp/evidence/diagrams/broken/sg-lowercase-hex.drawio
+    exit=0
+$ validate_diagram.py diagrams/broken/sg-tinted-fill.drawio --provider aws --require-services vpc,availability zone,public subnet,private subnet,security group,internet gateway,nat gateway,ec2,rds,users
+    OK /tmp/evidence/diagrams/broken/sg-tinted-fill.drawio
+    exit=0
+$ validate_diagram.py diagrams/broken/malformed-truncated.drawio --provider aws
+    ERROR: could not parse diagram: unclosed token: line 27, column 2
+    exit=1
+$ validate_diagram.py diagrams/broken/malformed-unclosed-attr.drawio --provider aws
+    ERROR: could not parse diagram: not well-formed (invalid token): line 41, column 39
+    exit=1
+$ validate_diagram.py diagrams/broken/empty.drawio --provider aws
+    ERROR: could not parse diagram: no element found: line 1, column 0
+    exit=1
+$ validate_diagram.py diagrams/broken/xxe.drawio --provider aws
+    ERROR: could not parse diagram: DTD and entity declarations are not allowed
+    exit=1
+######## validator=after
+$ validate_diagram.py /tmp/after/tests/fixtures/cloud-diagram/bad-edge.drawio 
+    ERROR: edge e1: missing mxGeometry child
+    ERROR: overlap: a and b
+    exit=1
+$ validate_diagram.py diagrams/broken/self-closing-edge.drawio --provider aws
+    ERROR: edge edge-web-db: missing mxGeometry child
+    exit=1
+$ validate_diagram.py diagrams/broken/abs-edge.drawio --provider aws
+    ERROR: edge edge-lb-web: mxGeometry must set relative="1"
+    exit=1
+$ validate_diagram.py diagrams/broken/relative-zero-edge.drawio --provider aws
+    ERROR: edge edge-web-db: mxGeometry must set relative="1"
+    exit=1
+$ validate_diagram.py diagrams/broken/swimlane-plain.drawio --provider azure
+    ERROR: no provider shape tokens found for azure
+    exit=1
+$ validate_diagram.py diagrams/broken/swimlane-generic-container.drawio --provider azure
+    OK /tmp/evidence/diagrams/broken/swimlane-generic-container.drawio
+    exit=0
+$ validate_diagram.py diagrams/broken/swimlane-azure-vnet-only.drawio --provider azure
+    OK /tmp/evidence/diagrams/broken/swimlane-azure-vnet-only.drawio
+    exit=0
+$ validate_diagram.py diagrams/broken/swimlane-azure-vnet-only.drawio --provider azure --require-services vnet
+    OK /tmp/evidence/diagrams/broken/swimlane-azure-vnet-only.drawio
+    exit=0
+$ validate_diagram.py diagrams/broken/sg-drawn-as-subnet.drawio --provider aws --require-services vpc,availability zone,public subnet,private subnet,security group,internet gateway,nat gateway,ec2,rds,users
+    ERROR: missing provider shape for security group
+    exit=1
+$ validate_diagram.py diagrams/broken/subnet-drawn-as-sg.drawio --provider aws --require-services vpc,availability zone,public subnet,private subnet,security group,internet gateway,nat gateway,ec2,rds,users
+    ERROR: missing provider shape for public subnet
+    ERROR: missing provider shape for private subnet
+    exit=1
+$ validate_diagram.py diagrams/broken/sg-lowercase-hex.drawio --provider aws --require-services vpc,availability zone,public subnet,private subnet,security group,internet gateway,nat gateway,ec2,rds,users
+    ERROR: missing provider shape for security group
+    exit=1
+$ validate_diagram.py diagrams/broken/sg-tinted-fill.drawio --provider aws --require-services vpc,availability zone,public subnet,private subnet,security group,internet gateway,nat gateway,ec2,rds,users
+    ERROR: missing provider shape for security group
+    exit=1
+$ validate_diagram.py diagrams/broken/malformed-truncated.drawio --provider aws
+    ERROR: could not parse diagram: unclosed token: line 27, column 2
+    exit=1
+$ validate_diagram.py diagrams/broken/malformed-unclosed-attr.drawio --provider aws
+    ERROR: could not parse diagram: not well-formed (invalid token): line 41, column 39
+    exit=1
+$ validate_diagram.py diagrams/broken/empty.drawio --provider aws
+    ERROR: could not parse diagram: no element found: line 1, column 0
+    exit=1
+$ validate_diagram.py diagrams/broken/xxe.drawio --provider aws
+    ERROR: could not parse diagram: DTD and entity declarations are not allowed
+    exit=1
