@@ -168,6 +168,7 @@ PROVIDERS: dict[str, dict[str, Any]] = {
     },
 }
 
+
 # GCP diagrams draw services as Service Cards, so a card's own glyph beats
 # a same-named plain icon regardless of size. A ProductCardSet logo is a
 # standalone mxgraph.gcp2.*_logo stencil that cannot sit in a Service Card,
