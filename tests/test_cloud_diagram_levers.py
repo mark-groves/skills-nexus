@@ -226,6 +226,43 @@ class CloudDiagramLeversTest(unittest.TestCase):
         self.assertEqual(result["id"], "blob")
         self.assertIn("img/lib/azure2/storage/", result["style"])
 
+    def test_lookup_sizes_follow_the_sidebar(self) -> None:
+        cases = (
+            ("gcp", "Clock", "100x100", "50x50"),
+            ("gcp", "Biomedical Trio", "100x68", "50x34"),
+            ("gcp", "AI Hub (GCPIcons)", "38x40", "29x30"),
+            ("azure", "Azure SQL", "48x64", "38x50"),
+            ("aws", "EC2", "78x78", "50x50"),
+        )
+        for provider, query, catalog_size, size in cases:
+            with self.subTest(provider=provider, query=query):
+                proc = subprocess.run(
+                    [
+                        sys.executable,
+                        str(SCRIPTS / "lookup_shape.py"),
+                        "--provider",
+                        provider,
+                        "--json",
+                        query,
+                    ],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(proc.returncode, 0, proc.stderr)
+                result = json.loads(proc.stdout)
+                self.assertEqual((result["catalog_size"], result["size"]), (catalog_size, size))
+
+    def test_lookup_text_prints_catalog_size(self) -> None:
+        proc = subprocess.run(
+            [sys.executable, str(SCRIPTS / "lookup_shape.py"), "--provider", "gcp", "Clock"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn("size: 50x50\ncatalog_size: 100x100\n", proc.stdout)
+
     def test_validate_three_tier_aws(self) -> None:
         path = REFERENCES / "templates" / "three-tier-aws.drawio.xml"
         issues = collect_issues(path, "aws", ["ALB", "EC2", "RDS"])

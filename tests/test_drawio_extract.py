@@ -38,6 +38,18 @@ class DrawioExtractTest(unittest.TestCase):
         self.assertEqual(icon["width"], 20)
         self.assertEqual(icon["height"], 20)
 
+    def test_gcp_sizes_honour_each_palette_s(self) -> None:
+        data = extract.extract_file(SIDEBARS / "gcp2-var-s.js")
+        sizes = {
+            icon["name"]: (icon["width"], icon["height"])
+            for icons in data["categories"].values()
+            for icon in icons
+        }
+        self.assertEqual(
+            sizes,
+            {"Clock": (100, 100), "Biomedical Trio": (100, 68), "AI Hub": (38, 40)},
+        )
+
     def test_aws_unresolved_vertex_calls_are_counted(self) -> None:
         data = extract.extract_file(SIDEBARS / "aws4-unresolved.js")
         self.assertEqual(data["library"], "AWS4")
