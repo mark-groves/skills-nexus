@@ -1,0 +1,48 @@
+name: Grok Bot PR webhook
+
+on:
+  pull_request:
+    types: [opened, ready_for_review]
+
+permissions: {}
+
+jobs:
+  notify:
+    name: Notify Grok Bot
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Post pull request to Grok Bot
+        env:
+          WEBHOOK_URL: ${{ secrets.GROKBOT_PR_WEBHOOK_URL }}
+          WEBHOOK_KEY: ${{ secrets.GROKBOT_PR_WEBHOOK_KEY }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_ACTION: ${{ github.event.action }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          PR_DRAFT: ${{ github.event.pull_request.draft }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${WEBHOOK_URL}" || -z "${WEBHOOK_KEY}" ]]; then
+            echo "::notice::GROKBOT_PR_WEBHOOK_URL or GROKBOT_PR_WEBHOOK_KEY is unset; skipping webhook"
+            exit 0
+          fi
+          body="$(
+            jq -n \
+              --arg repo "${REPO}" \
+              --argjson pr "${PR_NUMBER}" \
+              --arg action "${PR_ACTION}" \
+              --arg url "${PR_URL}" \
+              --arg title "${PR_TITLE}" \
+              --arg author "${PR_AUTHOR}" \
+              --argjson draft "${PR_DRAFT}" \
+              '{repo:$repo,pr:$pr,action:$action,url:$url,title:$title,author:$author,draft:$draft}'
+          )"
+          curl --fail-with-body --retry 3 --max-time 20 \
+            --request POST \
+            --header "Authorization: Bearer ${WEBHOOK_KEY}" \
+            --header "Content-Type: application/json" \
+            --data "${body}" \
+            "${WEBHOOK_URL}"
