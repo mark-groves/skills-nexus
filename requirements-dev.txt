@@ -3,5 +3,5 @@ actionlint-py==1.7.12.25
 bandit[toml]==1.9.4
 mypy==2.4.0
 pip-audit==2.10.1
-ruff==0.16.10
+ruff==0.17.0
 zizmor==1.30.1
