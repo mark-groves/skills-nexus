@@ -145,13 +145,10 @@ in the catalog. Prefer Service Cards with catalog `data:image` icons
 for product services. Use `mxgraph.gcp2.*` only for personas, logos,
 and other non-card glyphs listed that way.
 
-Resolve services with `scripts/lookup_shape.py --provider gcp <name>`
-or `references/common-shapes.json` first. For every product hit, emit
-paste-ready markup with:
-
-```bash
-python3 scripts/lookup_shape.py --provider gcp --card "<name>"
-```
+Resolve services with `scripts/lookup_shape.py` by writing the query to
+a JSON file and passing `--input-file` (see the cloud-diagram skill).
+For every product hit, set `card` to true in that file and paste the
+returned markup. Do not put the service name in a shell command.
 
 Do not invent stencil names. Do not paste the raw catalog `style` as a
 standalone vertex.

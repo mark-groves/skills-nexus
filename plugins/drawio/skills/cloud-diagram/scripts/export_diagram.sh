@@ -3,67 +3,103 @@
 # Never falls back to drawio-headless (grey placeholders / wrong layout).
 set -euo pipefail
 
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 usage() {
   cat <<'EOF' >&2
-Usage: export_diagram.sh <input.drawio> <output> [--format svg|png|pdf]
+Usage: export_diagram.sh --input-file diagram-export.json
+       export_diagram.sh architecture.drawio architecture.review.svg [--format svg|png|pdf]
 
 Exports with the official jgraph draw.io desktop CLI under xvfb.
 Exits non-zero when drawio/xvfb are missing. Does not use npx
 drawio-headless (that path is not valid human-review evidence).
 
+--input-file is a JSON object. input must match
+^[A-Za-z0-9._-]+\.drawio$ and output must match
+^[A-Za-z0-9._-]+\.(svg|png|pdf)$. format is svg, png, or pdf.
+Do not place untrusted names in the shell command. The request
+filename must match ^[A-Za-z0-9._-]+\.json$.
+
 Examples:
+  scripts/export_diagram.sh --input-file diagram-export.json
   scripts/export_diagram.sh architecture.drawio architecture.review.svg
   scripts/export_diagram.sh architecture.drawio architecture.review.png --format png
 EOF
 }
 
-if [[ "${1:-}" == "-h" || "${1:-}" == "--help" || "$#" -lt 2 ]]; then
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   usage
   exit 2
 fi
 
-input="$1"
-output="$2"
-shift 2
-
-format=""
-while [[ "$#" -gt 0 ]]; do
-  case "$1" in
-    --format)
-      format="${2:-}"
-      shift 2
-      ;;
-    --format=*)
-      format="${1#--format=}"
-      shift
-      ;;
-    *)
-      echo "ERROR: unknown argument: $1" >&2
-      usage
-      exit 2
-      ;;
-  esac
-done
-
-if [[ -z "${format}" ]]; then
-  case "${output}" in
-    *.svg) format="svg" ;;
-    *.png) format="png" ;;
-    *.pdf) format="pdf" ;;
-    *)
-      echo "ERROR: cannot infer --format from output path; pass --format svg|png|pdf" >&2
-      exit 2
-      ;;
-  esac
-fi
-
-case "${format}" in
-  svg | png | pdf) ;;
-  *)
-    echo "ERROR: unsupported format '${format}' (use svg, png, or pdf)" >&2
+if [[ "${1:-}" == "--input-file" ]]; then
+  if [[ "$#" -ne 2 ]]; then
+    usage
     exit 2
-    ;;
-esac
+  fi
+  spec="$(python3 "${script_dir}/safe_names.py" emit-export-request "${2}")"
+  mapfile -t fields <<<"${spec}"
+  if [[ "${#fields[@]}" -ne 3 ]]; then
+    echo "ERROR: export request validator returned an unexpected response" >&2
+    exit 2
+  fi
+  input="${fields[0]}"
+  output="${fields[1]}"
+  format="${fields[2]}"
+else
+  if [[ "$#" -lt 2 ]]; then
+    usage
+    exit 2
+  fi
+
+  input="$1"
+  output="$2"
+  shift 2
+
+  format=""
+  while [[ "$#" -gt 0 ]]; do
+    case "$1" in
+      --format)
+        format="${2:-}"
+        shift 2
+        ;;
+      --format=*)
+        format="${1#--format=}"
+        shift
+        ;;
+      *)
+        echo "ERROR: unknown argument: $1" >&2
+        usage
+        exit 2
+        ;;
+    esac
+  done
+
+  if [[ -z "${format}" ]]; then
+    case "${output}" in
+      *.svg) format="svg" ;;
+      *.png) format="png" ;;
+      *.pdf) format="pdf" ;;
+      *)
+        echo "ERROR: cannot infer --format from output path; pass --format svg|png|pdf" >&2
+        exit 2
+        ;;
+    esac
+  fi
+
+  case "${format}" in
+    svg | png | pdf) ;;
+    *)
+      echo "ERROR: unsupported format '${format}' (use svg, png, or pdf)" >&2
+      exit 2
+      ;;
+  esac
+
+  python3 "${script_dir}/safe_names.py" check-export-argv \
+    --input "${input}" \
+    --output "${output}" \
+    --format "${format}"
+fi
 
 if [[ ! -f "${input}" ]]; then
   echo "ERROR: input diagram not found: ${input}" >&2

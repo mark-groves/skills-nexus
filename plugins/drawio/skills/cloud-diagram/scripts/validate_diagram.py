@@ -17,6 +17,14 @@ if str(_SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS_DIR))
 
 from gcp_card import is_gcp_service_card_style  # noqa: E402
+from safe_names import (  # noqa: E402
+    DIAGRAM_BASENAME_RE,
+    UnsafeValueError,
+    load_json_object,
+    parse_validate_payload,
+    require_developer_path,
+    split_csv_names,
+)
 from shape_catalog import (  # noqa: E402
     PROVIDER_FILES,
     extract_identity_tokens,
@@ -79,7 +87,14 @@ def _parse_xml(path: Path) -> ET.Element:
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("diagram", type=Path)
+    parser.add_argument("diagram", nargs="?")
+    parser.add_argument(
+        "--input-file",
+        help=(
+            "JSON file (or - for stdin) with the diagram basename, provider, "
+            "and service names. Untrusted filenames belong here, not in the shell."
+        ),
+    )
     parser.add_argument("--provider", choices=sorted(PROVIDER_FILES))
     parser.add_argument(
         "--allow-providers",
@@ -124,7 +139,8 @@ def _upgrade_legacy_gcp_tokens(cells: list[ET.Element]) -> list[str]:
             warnings.append(
                 f"cell {cell.get('id', '<unknown>')}: legacy GCP icon for {title} "
                 f"(sha256:{token_digest(token)[:16]}); replace it with the current token "
-                f'sha256:{token_digest(current)[:16]} from lookup_shape.py --provider gcp --card "{title}"'
+                f"sha256:{token_digest(current)[:16]} via lookup_shape.py --input-file "
+                f"(card=true and an allowlisted query for this title)"
             )
         if upgraded != style:
             cell.set("style", upgraded)
@@ -481,10 +497,43 @@ def collect_findings(
     return issues, warnings
 
 
+def _validation_inputs(
+    args: argparse.Namespace,
+) -> tuple[Path, str | None, list[str], list[str]]:
+    if args.input_file:
+        if (
+            args.diagram is not None
+            or args.provider
+            or args.allow_providers
+            or args.require_services
+        ):
+            raise UnsafeValueError("--input-file cannot be combined with other arguments")
+        request = parse_validate_payload(
+            load_json_object(args.input_file), frozenset(PROVIDER_FILES)
+        )
+        return (
+            Path(request.diagram),
+            request.provider,
+            list(request.require_services),
+            list(request.allow_providers),
+        )
+    if args.diagram is None:
+        raise UnsafeValueError("diagram path is required")
+    return (
+        require_developer_path(args.diagram, "diagram", DIAGRAM_BASENAME_RE),
+        args.provider,
+        split_csv_names(args.require_services, "require_services"),
+        split_csv_names(args.allow_providers, "allow_providers"),
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
-    required = [service.strip() for service in args.require_services.split(",") if service.strip()]
-    allowed = [name.strip() for name in args.allow_providers.split(",") if name.strip()]
+    try:
+        diagram, provider, required, allowed = _validation_inputs(args)
+    except UnsafeValueError as err:
+        print(f"ERROR: {err}", file=sys.stderr)
+        return 2
     unknown = [name for name in allowed if name not in PROVIDER_FILES]
     if unknown:
         print(
@@ -493,8 +542,8 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 2
     issues, warnings = collect_findings(
-        args.diagram,
-        args.provider,
+        diagram,
+        provider,
         required or None,
         allow_providers=allowed or None,
     )
@@ -504,7 +553,7 @@ def main(argv: list[str] | None = None) -> int:
         for issue in issues:
             print(f"ERROR: {issue}", file=sys.stderr)
         return 1
-    print(f"OK {args.diagram}")
+    print(f"OK {diagram}")
     return 0
 
 

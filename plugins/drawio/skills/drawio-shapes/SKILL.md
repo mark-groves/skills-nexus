@@ -30,13 +30,23 @@ files, download methods, and shape encoding formats.
 
 ## Step 2 — Download the sidebar JS file
 
-Run the bundled fetch script once per file:
+The sidebar basename is one of the fixed names in the table above.
+It must match `^Sidebar-[A-Za-z0-9]+\.js$`. Reject `$`, backticks,
+quotes, newlines, and `;`. Write `sidebar-request.json` with the Write
+tool. Do not build that file with a shell redirect, a heredoc, or
+`python -c`. The shell command is a fixed literal. Its `--input-file`
+argument matches `^[A-Za-z0-9._-]+\.json$` and never comes from the
+request.
 
-```bash
-bash scripts/fetch_sidebar.sh <FILE>
+```json
+{"file": "Sidebar-AWS4.js"}
 ```
 
-It downloads `<FILE>` at draw.io commit
+```bash
+bash scripts/fetch_sidebar.sh --input-file sidebar-request.json
+```
+
+It downloads that sidebar at draw.io commit
 `24b76c2cbd55d88e354042e8d329a2e4708972bc` through the `gh` git blob
 endpoint. It writes to the gitignored skill-local working directory.
 It sends an empty `GH_TOKEN` so a broken local token cannot block
@@ -44,16 +54,23 @@ anonymous reads.
 
 The script fails closed. A `gh` error, an empty body, or a body whose
 git blob hash differs from the pinned SHA exits non-zero. The existing
-`working/<FILE>` stays untouched in each case. Stop on a non-zero exit.
-Do not extract a stale or partial file.
+file in the skill-local working directory stays untouched in each case. Stop on a non-zero
+exit. Do not extract a stale or partial file.
 
 ## Step 3 — Extract shapes
 
-Run the bundled extraction script against the downloaded sidebar file:
+Write `extract-request.json` with the Write tool. `file` must match
+`^working/Sidebar-[A-Za-z0-9]+\.js$`. `output` must match
+`^working/[A-Za-z0-9._-]+\.json$`. Both are relative basenames under
+the skill-local working directory, with no `..` and no shell metacharacters. Then run only
+this fixed command:
+
+```json
+{"file": "working/Sidebar-AWS4.js", "output": "working/aws4_extracted.json"}
+```
 
 ```bash
-python scripts/extract.py working/<FILE> \
-  -o working/<library>_extracted.json
+python scripts/extract.py --input-file extract-request.json
 ```
 
 The script auto-detects the library type (GCPIcons, GCP2, AWS4,
@@ -85,8 +102,8 @@ consumer, generate import-ready markdown fragments.
 
 ### JSON (for programmatic use)
 
-The extraction script already produces this. The JSON at
-`working/<library>_extracted.json` has this structure:
+The extraction script already produces this. The JSON named by the
+extract request `output` field has this structure:
 
 ```json
 {
@@ -117,8 +134,17 @@ than writing one ad hoc in the working directory. This keeps the
 refresh workflow
 reproducible:
 
+Write `catalog-request.json` with the Write tool. Each provider is
+`aws`, `gcp`, `azure`, or `all` and must match `^[A-Za-z0-9._-]+$`.
+`output_dir` is a relative directory whose components match
+`^[A-Za-z0-9._-]+$`. Then run only this fixed command:
+
+```json
+{"providers": ["aws"], "output_dir": "catalog-out"}
+```
+
 ```bash
-python scripts/generate_catalog.py <provider> --output-dir <destination>
+python scripts/generate_catalog.py --input-file catalog-request.json
 ```
 
 The generator writes provider-specific fragments to the current working

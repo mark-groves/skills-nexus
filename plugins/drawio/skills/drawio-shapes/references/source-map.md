@@ -20,10 +20,13 @@ src/main/webapp/stencils/
 ## Downloading files
 
 Sidebar JS files are typically 200KB-600KB, exceeding the GitHub
-contents API's 100KB limit. `scripts/fetch_sidebar.sh <FILE>` reads
-the blob SHA from the contents API, downloads the blob, and checks
-`git hash-object` against that SHA before it replaces
-`working/<FILE>`. Any failure exits non-zero and keeps the old copy.
+contents API's 100KB limit. `scripts/fetch_sidebar.sh --input-file`
+reads the sidebar basename from a JSON file. That basename must match
+`^Sidebar-[A-Za-z0-9]+\.js$`. The script reads the blob SHA from the
+contents API, downloads the blob, and checks `git hash-object` against
+that SHA before it replaces the copy under `working/`. Any failure
+exits non-zero and keeps the old copy. Do not put the filename in the
+shell command.
 
 The script runs `gh` with an empty `GH_TOKEN` so a broken local token
 does not poison anonymous API access.

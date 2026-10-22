@@ -5,13 +5,25 @@ set -euo pipefail
 
 PIN="24b76c2cbd55d88e354042e8d329a2e4708972bc"
 SIDEBAR_DIR="src/main/webapp/js/diagramly/sidebar"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+default_dest="$(cd "${script_dir}/.." && pwd)/working"
 
-if [[ "$#" -lt 1 || "$#" -gt 2 ]]; then
-  echo "Usage: fetch_sidebar.sh <Sidebar-FILE.js> [dest-dir]" >&2
+if [[ "${1:-}" == "--input-file" ]]; then
+  if [[ "$#" -ne 2 ]]; then
+    echo "Usage: fetch_sidebar.sh --input-file sidebar-request.json" >&2
+    exit 2
+  fi
+  # The basename is allowlisted by sidebar_names.py before it reaches the shell.
+  file="$(python3 "${script_dir}/sidebar_names.py" emit-fetch-request "${2}")"
+  dest="${default_dest}"
+elif [[ "$#" -lt 1 || "$#" -gt 2 ]]; then
+  echo "Usage: fetch_sidebar.sh Sidebar-AWS4.js [dest-dir]" >&2
+  echo "       fetch_sidebar.sh --input-file sidebar-request.json" >&2
   exit 2
+else
+  file="$1"
+  dest="${2:-${default_dest}}"
 fi
-file="$1"
-dest="${2:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/working}"
 if [[ ! "${file}" =~ ^Sidebar-[A-Za-z0-9]+\.js$ ]]; then
   echo "ERROR: expected a sidebar file name like Sidebar-AWS4.js (got '${file}')" >&2
   exit 2
