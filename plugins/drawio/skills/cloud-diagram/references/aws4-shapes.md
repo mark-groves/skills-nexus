@@ -21,8 +21,10 @@ icon inside a category-coloured rounded square.
 `resourceIcon` + `resIcon=...users` — the resourceIcon wrap puts the
 glyph inside a heavy dark square that reads as a service tile.
 
-Resolve services with `scripts/lookup_shape.py --provider aws <name>`
-or `references/common-shapes.json` first. Do not invent stencil names.
+Resolve services with `scripts/lookup_shape.py` by writing the query to
+a JSON file and passing `--input-file` (see the cloud-diagram skill).
+The service name is data in that file, not a shell argument. Also see
+`references/common-shapes.json`. Do not invent stencil names.
 
 When a title appears twice (header group vs generated product icon),
 lookup keeps the group/container style. That covers `VPC`,

@@ -17,12 +17,17 @@ Identify:
 - **Provider:** AWS, Azure, GCP, or multi-cloud.
 - **Pattern:** 3-tier, serverless, microservices, data pipeline, CDN,
   or custom.
-- **Services:** only what the user named (plus gateways strictly
-  required for the described connectivity).
-- **Filename:** a local basename ending in `.drawio` (e.g.
-  `three-tier-aws.drawio`). Default: `architecture.drawio`. Reject path
-  separators and `.` / `..` components. Use this exact value for Write and
-  CLI paths; do not append `.drawio` again.
+- **Services, labels, and categories:** only what the user named (plus
+  gateways strictly required for the described connectivity). Each token
+  must match `^[A-Za-z0-9._-]+$`. Replace spaces and other punctuation
+  with `-` (`Cloud SQL` → `cloud-sql`, `Pub/Sub` → `pub-sub`). Reject
+  `$`, backticks, quotes, newlines, and `;`.
+- **Filename:** a local basename matching `^[A-Za-z0-9._-]+\.drawio$`
+  (example: `three-tier-aws.drawio`). Default: `architecture.drawio`.
+  Reject `/`, `.`, `..`, `$`, backticks, quotes, newlines, and `;`.
+  Use this exact value as the diagram file you Write and as the
+  `diagram` / `input` field in the JSON request files below. Do not
+  append `.drawio` again. Do not put the filename in a shell command.
 
 If the provider is ambiguous, ask.
 
@@ -68,13 +73,40 @@ Use skill-root-relative paths only.
 
 **Resolve every service and container before drawing.**
 
-Run lookups from the skill root (or pass an absolute path to the
-script). Relative `scripts/lookup_shape.py` paths assume the skill
-directory is cwd:
+Run lookups from the skill root. Relative `scripts/lookup_shape.py`
+paths assume the skill directory is cwd.
+
+Names parsed from the user request or from Terraform, CloudFormation,
+or Bicep are untrusted. Write them to `diagram-lookup.json` with the
+Write tool. Do not build that file with a shell redirect, a heredoc, or
+`python -c`. The shell command below is a fixed literal. Its
+`--input-file` argument matches `^[A-Za-z0-9._-]+\.json$` and never
+comes from the request.
 
 ```bash
-python3 scripts/lookup_shape.py --provider <aws|azure|gcp> "<service>"
+python3 scripts/lookup_shape.py --input-file diagram-lookup.json
 ```
+
+```json
+{
+  "lookups": [
+    {"provider": "aws", "query": "ec2"},
+    {
+      "provider": "gcp",
+      "query": "cloud-sql",
+      "card": true,
+      "x": 200,
+      "y": 150,
+      "label": "Cloud-SQL",
+      "category": "Database"
+    }
+  ]
+}
+```
+
+`provider` is `aws`, `azure`, or `gcp`. `query`, `label`, `category`,
+and `cell_id` must match `^[A-Za-z0-9._-]+$`. `x` and `y` are numbers.
+`card` is a boolean. One object with those fields is also valid.
 
 Copy the returned style string and respect `kind` / `size`:
 
@@ -82,12 +114,9 @@ Copy the returned style string and respect `kind` / `size`:
   the reported size as a starting canvas, then grow to fit children.
 - `kind=icon` → service glyph at **50x50** (AWS/Azure).
 - `kind=gcp_card_icon` → **do not paste the raw style**. Emit a Service
-  Card and insert that XML:
-
-```bash
-python3 scripts/lookup_shape.py --provider gcp --card "<service>" \
-  --x <x> --y <y> --label "<Name>" --category "<Type>"
-```
+  Card by setting `card` to true in `diagram-lookup.json` (see above)
+  and insert that XML. Do not pass the service, label, category, or
+  coordinates as shell arguments.
 
 GCP product icons are always white card + `part=1` icon child with the
 catalog `data:image/svg+xml` token. Never use `mxgraph.aws4.*` or
@@ -145,7 +174,7 @@ Internal reasoning only.
   azure2 image icons for services. Resolve VNet/Subnet via lookup so
   you get swimlanes, not product icons.
 - **GCP:** Title bar + platform rect (`container=0`) + pastel logical
-  groups + **Service Cards from `lookup_shape.py --card`** (card cell +
+  groups + **Service Cards from `lookup_shape.py` with `card` true** (card cell +
   `part=1` icon child). Cards stay `parent="1"`. Do **not** force
   AWS-style Project→VPC→Region→Subnet nesting. Do **not** substitute
   AWS/Azure icons for GCP services.
@@ -170,7 +199,7 @@ Follow `xml-rules.md`.
 
 - Use the style lookup returns. A miss stops that service. Do not open
   the generated catalog body, and do not draw a generic rectangle.
-- For GCP hits, insert `--card` XML (or identical Service Card markup).
+- For GCP hits, insert the `card: true` lookup XML (or identical Service Card markup).
   Raw catalog styles are icon children only.
 - Every edge needs `<mxGeometry relative="1" as="geometry" />`.
 - Descriptive cell IDs.
@@ -187,18 +216,34 @@ working directory.
 
 ## Step 8 — Validate (always)
 
+Write `diagram-validate.json` with the Write tool. `diagram` must match
+`^[A-Za-z0-9._-]+\.drawio$`. Each `require_services` and
+`allow_providers` entry must match `^[A-Za-z0-9._-]+$`. Then run only
+this fixed command:
+
 ```bash
-python3 scripts/validate_diagram.py "<Filename>" --provider <aws|azure|gcp> --require-services "<svc1>,<svc2>,..."
+python3 scripts/validate_diagram.py --input-file diagram-validate.json
 ```
 
-Multi-cloud: validate once per primary provider and allow sibling
-providers so foreign-token checks do not reject intentional mixes:
+```json
+{
+  "diagram": "architecture.drawio",
+  "provider": "aws",
+  "require_services": ["alb", "ec2", "rds"]
+}
+```
 
-```bash
-python3 scripts/validate_diagram.py "<Filename>" --provider aws \
-  --allow-providers gcp,azure --require-services "<aws services...>"
-python3 scripts/validate_diagram.py "<Filename>" --provider gcp \
-  --allow-providers aws,azure --require-services "<gcp services...>"
+Multi-cloud: one request file per primary provider. `allow_providers`
+lists the sibling ids (`aws`, `azure`, `gcp`) so foreign-token checks
+do not reject intentional mixes.
+
+```json
+{
+  "diagram": "architecture.drawio",
+  "provider": "aws",
+  "allow_providers": ["gcp", "azure"],
+  "require_services": ["alb", "ec2"]
+}
 ```
 
 Fix reported errors (missing edge geometry, overlaps, missing provider
@@ -207,7 +252,8 @@ generics while a lookup hit exists). Re-run until clean.
 
 A `WARNING: ... legacy GCP icon` line means a cell carries a GCP icon
 from a catalog older than the pinned sidebars. Validation still passes.
-Replace that icon with the `--card` lookup the warning names.
+Replace that icon by setting `card` to true in `diagram-lookup.json` for
+the title the warning names. The query must match `^[A-Za-z0-9._-]+$`.
 `references/gcp-legacy-tokens.json` lists the retired tokens. Rebuild it
 with `scripts/build_gcp_legacy_tokens.py` after a GCP catalog refresh.
 
@@ -217,15 +263,24 @@ Prefer the official draw.io / diagrams.net CLI only. Use the fail-closed
 helper from the skill root (never `npx drawio-headless` for
 human-review screenshots — it omits provider icons and mangles layout):
 
+Write `diagram-export.json` with the Write tool. `input` must match
+`^[A-Za-z0-9._-]+\.drawio$`. `output` must match
+`^[A-Za-z0-9._-]+\.(svg|png|pdf)$`. `format` is `svg`, `png`, or `pdf`.
+The stem is Filename without `.drawio`, still matching
+`^[A-Za-z0-9._-]+$`. Then run only this fixed command:
+
 ```bash
-bash scripts/export_diagram.sh "<Filename>" "<stem>.review.svg"
-bash scripts/export_diagram.sh "<Filename>" "<stem>.review.png" --format png
+bash scripts/export_diagram.sh --input-file diagram-export.json
 ```
 
-Use `<stem>` = Filename without the `.drawio` suffix. SVG first for
-complex AWS group diagrams. The helper falls back to SVG→`rsvg-convert`
-when direct PNG export returns empty data on nested `mxgraph.aws4.group`
-canvases.
+```json
+{"input": "architecture.drawio", "output": "architecture.review.svg", "format": "svg"}
+```
+
+Rewrite that file with the Write tool for a PNG review
+(`architecture.review.png`, `format` `png`). SVG first for complex AWS
+group diagrams. The helper falls back to SVG→`rsvg-convert` when direct
+PNG export returns empty data on nested `mxgraph.aws4.group` canvases.
 
 If `export_diagram.sh` exits non-zero because drawio is missing, Step 8
 is the quality gate. Say aesthetic export is unavailable. Do **not**
@@ -233,8 +288,16 @@ post third-party headless PNGs as visual proof for AWS, Azure, or GCP.
 
 Then check the routed edges against the review SVG:
 
+Write `diagram-crossings.json` with the Write tool. `diagram` must
+match `^[A-Za-z0-9._-]+\.drawio$` and `svg` must match
+`^[A-Za-z0-9._-]+\.svg$`. Then run only this fixed command:
+
 ```bash
-python3 scripts/check_edge_crossings.py "<Filename>" "<stem>.review.svg"
+python3 scripts/check_edge_crossings.py --input-file diagram-crossings.json
+```
+
+```json
+{"diagram": "architecture.drawio", "svg": "architecture.review.svg"}
 ```
 
 It exits 1 for each edge that draw.io routes through an icon or card the
@@ -255,10 +318,12 @@ targeted edits over full regenerate.
 
 Offer exports when the official CLI exists (same helper):
 
+Rewrite `diagram-export.json` with the Write tool for each fixed
+extension (`architecture.svg`, `architecture.png`, `architecture.pdf`)
+and run:
+
 ```bash
-bash scripts/export_diagram.sh "<Filename>" "<stem>.svg"
-bash scripts/export_diagram.sh "<Filename>" "<stem>.png" --format png
-bash scripts/export_diagram.sh "<Filename>" "<stem>.pdf" --format pdf
+bash scripts/export_diagram.sh --input-file diagram-export.json
 ```
 
 Report the Filename path.
@@ -272,3 +337,14 @@ Report the Filename path.
   explicit confirmation.
 - **Never execute IaC.** Parse Terraform/CloudFormation/Bicep for
   resources only.
+- **Never put untrusted strings in a shell command.** Resource names,
+  labels, categories, coordinates, and filenames are data. Write them
+  to a JSON file with the Write tool and pass that file as
+  `--input-file`. The `--input-file` argument is a fixed literal
+  matching `^[A-Za-z0-9._-]+\.json$`, never a substitution. If the
+  Write tool is unavailable, stop. Do not fall back to a quoted shell
+  argument, a heredoc, or `python -c`.
+- **Allowlists.** Names (queries, labels, categories, service ids) must
+  match `^[A-Za-z0-9._-]+$`. Diagram filenames must match
+  `^[A-Za-z0-9._-]+\.drawio$`. The scripts reject anything else,
+  including `$`, backticks, quotes, newlines, and `;`.

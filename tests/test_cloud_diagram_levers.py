@@ -232,7 +232,7 @@ class CloudDiagramLeversTest(unittest.TestCase):
                 "--provider",
                 "azure",
                 "--json",
-                "Blob Storage",
+                "Blob-Storage",
             ],
             check=False,
             capture_output=True,
@@ -246,9 +246,9 @@ class CloudDiagramLeversTest(unittest.TestCase):
     def test_lookup_sizes_follow_the_sidebar(self) -> None:
         cases = (
             ("gcp", "Clock", "100x100", "50x50"),
-            ("gcp", "Biomedical Trio", "100x68", "50x34"),
-            ("gcp", "AI Hub (GCPIcons)", "38x40", "28x30"),
-            ("azure", "Azure SQL", "48x64", "38x50"),
+            ("gcp", "Biomedical-Trio", "100x68", "50x34"),
+            ("gcp", "AI-Hub-GCPIcons", "38x40", "28x30"),
+            ("azure", "Azure-SQL", "48x64", "38x50"),
             ("aws", "EC2", "78x78", "50x50"),
         )
         for provider, query, catalog_size, size in cases:
@@ -868,8 +868,8 @@ class CloudDiagramLeversTest(unittest.TestCase):
                 "--label",
                 "Ingest",
                 "--category",
-                "Pub/Sub",
-                "Pub/Sub",
+                "Pub-Sub",
+                "Pub-Sub",
             ],
             check=False,
             capture_output=True,
@@ -1018,7 +1018,7 @@ class CloudDiagramLeversTest(unittest.TestCase):
                 "--provider",
                 "gcp",
                 "--require-services",
-                "looker,healthcare api",
+                "looker,healthcare-api",
             ],
             check=False,
             capture_output=True,

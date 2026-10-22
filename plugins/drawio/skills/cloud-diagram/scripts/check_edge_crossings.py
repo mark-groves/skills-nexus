@@ -19,6 +19,19 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
 
+_SCRIPTS_DIR = Path(__file__).resolve().parent
+if str(_SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPTS_DIR))
+
+from safe_names import (  # noqa: E402
+    DIAGRAM_BASENAME_RE,
+    SVG_FILENAME_RE,
+    UnsafeValueError,
+    load_json_object,
+    parse_crossings_payload,
+    require_developer_path,
+)
+
 SVG_NS = "{http://www.w3.org/2000/svg}"
 Point = tuple[float, float]
 Box = tuple[float, float, float, float]
@@ -298,15 +311,41 @@ def find_crossings(diagram: Path, svg: Path) -> list[Crossing]:
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("diagram", type=Path, help="The .drawio file.")
-    parser.add_argument("svg", type=Path, help="Its SVG from scripts/export_diagram.sh.")
+    parser.add_argument("diagram", nargs="?", help="The .drawio file.")
+    parser.add_argument("svg", nargs="?", help="Its SVG from scripts/export_diagram.sh.")
+    parser.add_argument(
+        "--input-file",
+        help=(
+            "JSON file (or - for stdin) with diagram and svg basenames. "
+            "Untrusted filenames belong here, not in the shell."
+        ),
+    )
     return parser.parse_args(argv)
+
+
+def _paths(args: argparse.Namespace) -> tuple[Path, Path]:
+    if args.input_file:
+        if args.diagram is not None or args.svg is not None:
+            raise UnsafeValueError("--input-file cannot be combined with positional paths")
+        diagram, svg = parse_crossings_payload(load_json_object(args.input_file))
+        return Path(diagram), Path(svg)
+    if args.diagram is None or args.svg is None:
+        raise UnsafeValueError("diagram and svg are required")
+    return (
+        require_developer_path(args.diagram, "diagram", DIAGRAM_BASENAME_RE),
+        require_developer_path(args.svg, "svg", SVG_FILENAME_RE),
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     try:
-        crossings = find_crossings(args.diagram, args.svg)
+        diagram, svg = _paths(args)
+    except UnsafeValueError as error:
+        print(f"ERROR: {error}", file=sys.stderr)
+        return 2
+    try:
+        crossings = find_crossings(diagram, svg)
     except (ET.ParseError, OSError, ExportError) as error:
         print(f"ERROR: {error}", file=sys.stderr)
         return 2
@@ -314,7 +353,7 @@ def main(argv: list[str] | None = None) -> int:
         print(crossing.message)
     if crossings:
         return 1
-    print(f"OK {args.diagram}")
+    print(f"OK {diagram}")
     return 0
 
 

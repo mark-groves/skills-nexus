@@ -13,8 +13,10 @@ cell IDs, or service inventory as required structure.
 | Azure | `templates/three-tier-azure.drawio.xml` |
 | GCP | `templates/three-tier-gcp.drawio.xml` |
 
-Resolve every service with `scripts/lookup_shape.py`. For GCP, add
-`--card` and paste the Service Card.
+Resolve every service with `scripts/lookup_shape.py --input-file`.
+Write the query to that JSON file. For GCP, set `card` to true in the
+file and paste the Service Card. Do not put service names in the shell
+command.
 
 ## AWS
 
@@ -31,7 +33,7 @@ network boundary. Users use `img/lib/azure2/identity/Users.svg`.
 
 ## GCP
 
-Service Cards from `lookup_shape.py --provider gcp --card`. That is a
+Service Cards from `lookup_shape.py` with `card` set in `--input-file`. That is a
 white card plus a `part=1` icon child with `data:image/svg+xml`. Cards
 stay `parent="1"`. Do not nest Project, VPC, and Subnet like AWS. Never
 substitute aws4 or azure2 icons.

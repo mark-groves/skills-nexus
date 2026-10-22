@@ -39,8 +39,10 @@ The full list of azure2 category folders:
 | `storage` | Storage accounts, Data Lake |
 | `web` | SignalR, Notification Hubs |
 
-Resolve services with `scripts/lookup_shape.py --provider azure <name>`
-or `references/common-shapes.json` first. Do not invent azure2 paths.
+Resolve services with `scripts/lookup_shape.py` by writing the query to
+a JSON file and passing `--input-file` (see the cloud-diagram skill).
+The service name is data in that file, not a shell argument. Also see
+`references/common-shapes.json`. Do not invent azure2 paths.
 
 When `Subnet` or `VNet` / `Virtual Network` appears as both a swimlane
 group and an azure2 product icon, lookup keeps the swimlane container.

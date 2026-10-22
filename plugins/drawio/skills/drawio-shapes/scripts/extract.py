@@ -2,7 +2,8 @@
 """Extract shape definitions from draw.io sidebar JS files.
 
 Usage:
-    python extract.py <sidebar_js_file> [--output <path>]
+    python extract.py --input-file extract-request.json
+    python extract.py path/to/Sidebar-AWS4.js --output out.json
 
 Supports GCPIcons, GCP2, and other draw.io sidebar files.
 Outputs structured JSON with all extracted shapes grouped by category.
@@ -15,6 +16,22 @@ import re
 import sys
 from pathlib import Path
 from typing import Any
+
+_SCRIPTS_DIR = Path(__file__).resolve().parent
+if str(_SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPTS_DIR))
+
+from sidebar_names import (  # noqa: E402
+    EXTRACT_FILE_PATTERN,
+    EXTRACT_FILE_RE,
+    EXTRACT_OUTPUT_PATTERN,
+    EXTRACT_OUTPUT_RE,
+    UnsafeValueError,
+    load_json_object,
+    reject_shell_text,
+    require_keys,
+    require_pattern,
+)
 
 KNOWN_LIBRARIES = {"GCPIcons", "GCP2", "AWS4", "Azure2"}
 SKIPPED_LIBRARIES = {
@@ -657,13 +674,41 @@ def print_summary(data):
 # ---------------------------------------------------------------------------
 
 
-def main():
+def _resolve_paths(args: argparse.Namespace) -> tuple[Path, Path | None]:
+    if args.input_file:
+        if args.file or args.output:
+            raise UnsafeValueError(
+                "--input-file cannot be combined with a positional file or --output"
+            )
+        payload = load_json_object(args.input_file)
+        require_keys(payload, frozenset({"file", "output"}))
+        source = require_pattern(payload.get("file"), "file", EXTRACT_FILE_RE, EXTRACT_FILE_PATTERN)
+        output = require_pattern(
+            payload.get("output"), "output", EXTRACT_OUTPUT_RE, EXTRACT_OUTPUT_PATTERN
+        )
+        return Path(source), Path(output)
+    if not args.file:
+        raise UnsafeValueError("sidebar file is required")
+    reject_shell_text(args.file, "file")
+    if args.output:
+        reject_shell_text(args.output, "output")
+    return Path(args.file), Path(args.output) if args.output else None
+
+
+def main() -> None:
     parser = argparse.ArgumentParser(description="Extract shapes from a draw.io sidebar JS file.")
-    parser.add_argument("file", help="Path to the sidebar JS file")
+    parser.add_argument("file", nargs="?", help="Path to the sidebar JS file")
+    parser.add_argument(
+        "--input-file",
+        help=(
+            "JSON file with working/Sidebar-NAME.js and working/NAME.json. "
+            "Untrusted filenames belong here, not in the shell command."
+        ),
+    )
     parser.add_argument(
         "-o",
         "--output",
-        help="Output JSON path (default: <file>_extracted.json)",
+        help="Output JSON path (default: NAME_extracted.json next to the input basename)",
     )
     parser.add_argument(
         "-q",
@@ -672,8 +717,11 @@ def main():
         help="Suppress per-icon output, show summary only",
     )
     args = parser.parse_args()
-
-    filepath = Path(args.file)
+    try:
+        filepath, output_override = _resolve_paths(args)
+    except UnsafeValueError as err:
+        print(f"ERROR: {err}", file=sys.stderr)
+        sys.exit(2)
     if not filepath.exists():
         print(f"Error: {filepath} not found", file=sys.stderr)
         sys.exit(1)
@@ -713,8 +761,12 @@ def main():
     else:
         print(f"{errors} base64 decode error(s) found.")
 
-    output_path = args.output or filepath.with_suffix("").name + "_extracted.json"
-    Path(output_path).write_text(json.dumps(data, indent=2))
+    output_path = (
+        output_override
+        if output_override is not None
+        else Path(filepath.with_suffix("").name + "_extracted.json")
+    )
+    output_path.write_text(json.dumps(data, indent=2))
     print(f"\nSaved to {output_path} ({total} entries)")
 
 

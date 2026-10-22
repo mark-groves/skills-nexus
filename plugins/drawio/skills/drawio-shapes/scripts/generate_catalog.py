@@ -6,8 +6,24 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import sys
 from pathlib import Path
 from typing import Any
+
+_SCRIPTS_DIR = Path(__file__).resolve().parent
+if str(_SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPTS_DIR))
+
+from sidebar_names import (  # noqa: E402
+    RELATIVE_DIR_PATTERN,
+    RELATIVE_DIR_RE,
+    UnsafeValueError,
+    load_json_object,
+    reject_shell_text,
+    require_keys,
+    require_name,
+    require_pattern,
+)
 
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 WORKING_ROOT = SKILL_ROOT / "working"
@@ -427,6 +443,13 @@ def parse_args() -> argparse.Namespace:
         help="Providers to generate: aws, gcp, azure, or all (default: all)",
     )
     parser.add_argument(
+        "--input-file",
+        help=(
+            "JSON file with providers and output_dir. Untrusted names belong "
+            "here, not in the shell command."
+        ),
+    )
+    parser.add_argument(
         "--input-dir",
         default=str(WORKING_ROOT),
         help="Directory containing extracted JSON files (default: drawio-shapes/working)",
@@ -437,6 +460,34 @@ def parse_args() -> argparse.Namespace:
         help="Directory for generated *.generated.md fragments (default: current working directory)",
     )
     return parser.parse_args()
+
+
+def _request_from_file(path: str) -> tuple[list[str], Path, Path]:
+    payload = load_json_object(path)
+    require_keys(payload, frozenset({"providers", "output_dir", "input_dir"}))
+    if "providers" not in payload:
+        raise UnsafeValueError("providers is required")
+    raw_providers = payload["providers"]
+    if not isinstance(raw_providers, list) or not raw_providers:
+        raise UnsafeValueError("providers must be a non-empty array of names")
+    providers = [require_name(item, "providers") for item in raw_providers]
+    if "output_dir" in payload:
+        output_dir = Path(
+            require_pattern(
+                payload["output_dir"], "output_dir", RELATIVE_DIR_RE, RELATIVE_DIR_PATTERN
+            )
+        )
+    else:
+        output_dir = Path(".")
+    if "input_dir" in payload:
+        input_dir = Path(
+            require_pattern(
+                payload["input_dir"], "input_dir", RELATIVE_DIR_RE, RELATIVE_DIR_PATTERN
+            )
+        )
+    else:
+        input_dir = WORKING_ROOT
+    return providers, input_dir, output_dir
 
 
 def normalize_provider_args(values: list[str]) -> list[str]:
@@ -457,14 +508,36 @@ def normalize_provider_args(values: list[str]) -> list[str]:
 
 def main() -> None:
     args = parse_args()
-    input_dir = Path(args.input_dir).resolve()
-    output_dir = Path(args.output_dir).resolve()
+    if args.input_file:
+        if args.providers or "--output-dir" in sys.argv[1:] or "--input-dir" in sys.argv[1:]:
+            print(
+                "ERROR: --input-file cannot be combined with other arguments",
+                file=sys.stderr,
+            )
+            raise SystemExit(2)
+        try:
+            provider_args, input_dir, output_dir = _request_from_file(args.input_file)
+        except UnsafeValueError as err:
+            print(f"ERROR: {err}", file=sys.stderr)
+            raise SystemExit(2) from None
+    else:
+        try:
+            reject_shell_text(args.input_dir, "input_dir")
+            reject_shell_text(args.output_dir, "output_dir")
+            provider_args = [require_name(value, "providers") for value in args.providers]
+        except UnsafeValueError as err:
+            print(f"ERROR: {err}", file=sys.stderr)
+            raise SystemExit(2) from None
+        input_dir = Path(args.input_dir)
+        output_dir = Path(args.output_dir)
+    input_dir = input_dir.resolve()
+    output_dir = output_dir.resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
 
     try:
         built = [
             build_fragment(provider_key, input_dir)
-            for provider_key in normalize_provider_args(args.providers)
+            for provider_key in normalize_provider_args(provider_args)
         ]
     except RuntimeError as err:
         raise SystemExit(f"Error: {err}") from None
